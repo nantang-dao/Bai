@@ -8,8 +8,10 @@
           @click="toggleDropdown"
           @blur="handleBlur"
         >
-          <div class="w-12 h-12 bg-primary rounded-2xl flex items-center justify-center shadow-soft group-hover:-translate-y-0.5 transition-transform">
-            <img src="/images/icons/myco-seed-logo.svg" alt="MycoSeed" class="w-8 h-8" />
+          <div class="w-12 h-12 rounded-2xl flex items-center justify-center shadow-soft group-hover:-translate-y-0.5 transition-transform overflow-hidden bg-primary">
+            <img v-if="communityStore.currentCommunity?.avatarUrl" :src="communityStore.currentCommunity.avatarUrl" :alt="communityStore.currentCommunity?.name" class="w-full h-full object-cover" />
+            <PixelAvatar v-else-if="communityStore.currentCommunity?.name" :seed="communityStore.currentCommunity.name" size="md" class="!w-12 !h-12 !rounded-2xl" />
+            <img v-else src="/images/icons/myco-seed-logo.svg" alt="MycoSeed" class="w-8 h-8" />
           </div>
           <div class="hidden md:block text-left">
             <h1 class="font-bold text-text-title text-sm md:text-base leading-tight">
@@ -40,14 +42,18 @@
               <div 
                 v-for="community in communities" 
                 :key="community.id"
-                class="p-3 rounded-xl cursor-pointer hover:bg-input-bg transition-all"
+                class="p-3 rounded-xl cursor-pointer hover:bg-input-bg transition-all flex items-center gap-3"
                 :class="{ 'bg-primary/10': community.id === communityStore.currentCommunityId }"
                 @click="selectCommunity(community.id)"
               >
-                <div class="font-bold text-sm text-text-title">{{ community.name }}</div>
-                <div class="text-xs text-text-body mt-1">{{ community.description }}</div>
-                <div class="text-xs text-text-placeholder mt-1">
-                  {{ community.pointName || '积分' }}: {{ community.totalPoints }}
+                <div class="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 bg-input-bg">
+                  <img v-if="community.avatarUrl" :src="community.avatarUrl" :alt="community.name" class="w-full h-full object-cover" />
+                  <PixelAvatar v-else :seed="community.name" size="sm" class="!w-10 !h-10 !rounded-xl" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="font-bold text-sm text-text-title">{{ community.name }}</div>
+                  <div class="text-xs text-text-body mt-0.5 line-clamp-1">{{ community.description }}</div>
+                  <div class="text-xs text-text-placeholder mt-0.5">{{ community.pointName || '积分' }}</div>
                 </div>
               </div>
             </div>

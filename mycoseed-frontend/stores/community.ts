@@ -2,8 +2,8 @@ import { defineStore } from 'pinia'
 import { getCommunities, getCommunityById, type Community } from '~/utils/api'
 
 const STORAGE_KEY = 'mycoseed_current_community_id'
-const NANTANG_ID = '00000000-0000-0000-0000-000000000002'
 
+/** 当前社区 ID：发布任务、社区圈发帖/列表、公告等均依赖此值，仅通过 setCurrentCommunity / loadFromStorage 更新 */
 export const useCommunityStore = defineStore('community', {
   state: () => ({
     currentCommunityId: null as string | null,
@@ -18,18 +18,18 @@ export const useCommunityStore = defineStore('community', {
     loadFromStorage() {
       if (typeof window === 'undefined') return
       const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const idNum = parseInt(stored, 10)
-        if (!isNaN(idNum)) this.currentCommunityId = NANTANG_ID
-        else this.currentCommunityId = stored
+      if (stored && stored.trim()) {
+        this.currentCommunityId = stored.trim()
       }
     },
     
+    /** 切换当前社区（左上角或社区广场进入时调用），保证与 localStorage 同步 */
     async setCurrentCommunity(id: string) {
-      this.currentCommunityId = id
-      if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, id)
+      const idStr = String(id).trim()
+      this.currentCommunityId = idStr
+      if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, idStr)
       try {
-        this.currentCommunity = await getCommunityById(id)
+        this.currentCommunity = await getCommunityById(idStr)
       } catch (error) {
         console.error('Failed to load community:', error)
         this.currentCommunity = null

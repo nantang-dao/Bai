@@ -14,6 +14,7 @@ function toCommunity(row: any) {
         isPublic: row.is_public,
         pointName: row.point_name || '积分',
         superAdminId: row.super_admin_id,
+        avatarUrl: row.avatar_url || null,
         memberCount: row.member_count ?? 0,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
@@ -84,10 +85,10 @@ export const getById = async (req: AuthRequest, res: Response) => {
     }
 }
 
-/** POST /api/communities — 创建社区（仅系统管理员），body: name, slug, description?, markdown_intro?, is_public?, point_name?, super_admin_id */
+/** POST /api/communities — 创建社区（仅系统管理员），body: name, slug, description?, markdown_intro?, is_public?, point_name?, super_admin_id?, avatar_url? */
 export const create = async (req: AuthRequest, res: Response) => {
     try {
-        const { name, slug, description, markdown_intro, is_public, point_name, super_admin_id } = req.body || {}
+        const { name, slug, description, markdown_intro, is_public, point_name, super_admin_id, avatar_url } = req.body || {}
         if (!name || !slug) return res.status(400).json({ result: 'error', message: 'name and slug required' })
         const slugNorm = String(slug).trim().toLowerCase().replace(/\s+/g, '-')
         const { data: existing } = await supabase.from('communities').select('id').eq('slug', slugNorm).maybeSingle()
@@ -102,6 +103,7 @@ export const create = async (req: AuthRequest, res: Response) => {
                 is_public: is_public !== false,
                 point_name: point_name != null ? String(point_name) : '积分',
                 super_admin_id: super_admin_id || null,
+                avatar_url: avatar_url != null && String(avatar_url).trim() ? String(avatar_url).trim() : null,
             })
             .select()
             .single()
@@ -142,6 +144,8 @@ export const update = async (req: AuthRequest, res: Response) => {
         if (req.body.markdown_intro !== undefined) updatePayload.markdown_intro = req.body.markdown_intro
         if (req.body.isPublic !== undefined) updatePayload.is_public = req.body.isPublic
         if (req.body.pointName !== undefined) updatePayload.point_name = req.body.pointName
+        if (req.body.avatarUrl !== undefined) updatePayload.avatar_url = req.body.avatarUrl
+        if (req.body.avatar_url !== undefined) updatePayload.avatar_url = req.body.avatar_url
         if (Object.keys(updatePayload).length === 0) return res.json(toCommunity((await supabase.from('communities').select('*').eq('id', id).single()).data))
         const { data, error } = await supabase.from('communities').update(updatePayload).eq('id', id).select().single()
         if (error) throw error

@@ -616,6 +616,7 @@ export interface CreateTaskParams {
   submissionInstructions?: string
   assignedUserId?: string  // 指定参与人员ID（可选，向后兼容）
   assignedUserIds?: string[]  // 指定参与人员ID列表（多人任务）
+  communityId?: string  // 所属社区 ID，不传则任务不归属任何社区
 }
 
 /**
@@ -639,8 +640,9 @@ export const createTask = async (params: CreateTaskParams, baseUrl: string): Pro
       participantLimit: params.participantLimit ?? null,
       rewardDistributionMode: params.rewardDistributionMode || 'per_person',
       submissionInstructions: params.submissionInstructions,
-      assignedUserId: params.assignedUserId || undefined,  // 指定参与人员ID（向后兼容）
-      assignedUserIds: params.assignedUserIds || undefined,  // 指定参与人员ID列表（多人任务）
+      assignedUserId: params.assignedUserId || undefined,
+      assignedUserIds: params.assignedUserIds || undefined,
+      communityId: params.communityId || undefined,
     }
     
     console.log('[API] createTask - 请求体:', requestBody)
@@ -1399,6 +1401,7 @@ export interface Community {
   slug?: string                  // 邀请码（英文/拼音）
   isPublic?: boolean             // 是否公开
   superAdminId?: string | null   // 总管理员 user_id
+  avatarUrl?: string | null      // 社区头像 URL
   myRole?: 'member' | 'sub_admin' | 'super_admin'  // 当前用户在该社区的角色（仅 getById 返回）
 }
 
@@ -1591,7 +1594,8 @@ export async function createPost (
   baseUrl?: string
 ): Promise<Post> {
   const url = baseUrl ?? getApiBaseUrl()
-  const communityId = params.communityId || DEFAULT_COMMUNITY_UUID
+  const communityId = params.communityId
+  if (!communityId) throw new Error('请先选择社区再发帖')
   const body: Record<string, unknown> = {
     communityId,
     content: params.content,
@@ -1907,6 +1911,7 @@ export const getCommunities = async (
     slug: c.slug,
     isPublic: c.isPublic,
     superAdminId: c.superAdminId,
+    avatarUrl: c.avatarUrl ?? c.avatar_url ?? null,
     createdAt: c.createdAt || '',
   }))
 }
@@ -1942,6 +1947,7 @@ export const getCommunityById = async (
     slug: c.slug,
     isPublic: c.isPublic,
     superAdminId: c.superAdminId,
+    avatarUrl: c.avatarUrl ?? c.avatar_url ?? null,
     myRole: c.myRole,
     createdAt: c.createdAt || '',
   }
@@ -2060,6 +2066,7 @@ export const createCommunity = async (
     isPublic?: boolean
     pointName?: string
     superAdminId?: string
+    avatarUrl?: string
   },
   baseUrl?: string
 ): Promise<Community> => {
@@ -2075,6 +2082,7 @@ export const createCommunity = async (
       is_public: payload.isPublic !== false,
       point_name: payload.pointName || '积分',
       super_admin_id: payload.superAdminId || null,
+      avatar_url: payload.avatarUrl || null,
     }),
   })
   if (!res.ok) {
@@ -2092,14 +2100,15 @@ export const createCommunity = async (
     slug: c.slug,
     isPublic: c.isPublic,
     superAdminId: c.superAdminId,
+    avatarUrl: c.avatarUrl ?? c.avatar_url ?? null,
     createdAt: c.createdAt || '',
   }
 }
 
-/** 更新社区（名称、简介、公开性等，需总管理员或系统管理员） */
+/** 更新社区（名称、简介、公开性、头像等，需总管理员或系统管理员） */
 export const updateCommunity = async (
   communityId: string,
-  payload: { name?: string; description?: string; markdownIntro?: string; isPublic?: boolean; pointName?: string },
+  payload: { name?: string; description?: string; markdownIntro?: string; isPublic?: boolean; pointName?: string; avatarUrl?: string },
   baseUrl?: string
 ): Promise<Community> => {
   const url = baseUrl ?? getApiBaseUrl()
@@ -2122,6 +2131,7 @@ export const updateCommunity = async (
     markdownIntro: c.markdownIntro,
     slug: c.slug,
     isPublic: c.isPublic,
+    avatarUrl: c.avatarUrl ?? c.avatar_url ?? null,
     createdAt: c.createdAt || '',
   }
 }

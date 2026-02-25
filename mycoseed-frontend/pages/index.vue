@@ -112,15 +112,33 @@
 
               <PixelCard>
                 <template #header>村民 (VILLAGERS)</template>
-                <div class="grid grid-cols-4 gap-2">
-                   <PixelAvatar 
-                     v-for="member in members.slice(0, 12)" 
-                     :key="member.id" 
-                     :seed="member.avatarSeed || member.name" 
-                     size="sm"
-                     class="cursor-pointer hover:scale-110 transition-transform"
-                     @click="navigateTo(`/member/${member.id}`)"
-                   />
+                <div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                  <button
+                    v-for="member in members.slice(0, 12)"
+                    :key="member.id"
+                    type="button"
+                    class="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-input-bg transition-colors text-left min-w-0"
+                    @click="navigateTo(`/member/${member.id}`)"
+                  >
+                    <div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-border">
+                      <PixelAvatar
+                        v-if="member.avatar"
+                        :src="member.avatar"
+                        :seed="member.name || member.id"
+                        size="md"
+                        class="!w-12 !h-12"
+                      />
+                      <PixelAvatar
+                        v-else
+                        :seed="member.name || member.id"
+                        size="md"
+                        class="!w-12 !h-12"
+                      />
+                    </div>
+                    <span class="text-xs font-medium text-text-title truncate w-full text-center" :title="member.name || '未命名'">
+                      {{ member.name || '未命名' }}
+                    </span>
+                  </button>
                 </div>
                 <div v-if="members.length > 12" class="text-sm text-text-placeholder mt-2 text-center">
                   还有 {{ members.length - 12 }} 位成员...

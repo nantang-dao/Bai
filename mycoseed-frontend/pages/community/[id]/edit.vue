@@ -10,6 +10,10 @@
     <div class="max-w-2xl mx-auto px-4 py-6 space-y-4">
       <div v-if="error" class="text-red-600 text-sm">{{ error }}</div>
       <div class="space-y-2">
+        <label class="text-sm font-medium text-text-title">社区头像（可选）</label>
+        <input v-model="form.avatarUrl" type="url" class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body text-sm" placeholder="图片 URL，留空则使用默认" />
+      </div>
+      <div class="space-y-2">
         <label class="text-sm font-medium text-text-title">社区名称</label>
         <input v-model="form.name" type="text" class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body" placeholder="名称" />
       </div>
@@ -54,7 +58,7 @@ const id = route.params.id as string
 const community = ref<Community | null>(null)
 const error = ref('')
 const saving = ref(false)
-const form = reactive({ name: '', description: '', markdownIntro: '', pointName: '积分', isPublic: true })
+const form = reactive({ name: '', description: '', markdownIntro: '', pointName: '积分', isPublic: true, avatarUrl: '' })
 
 onMounted(async () => {
   try {
@@ -65,6 +69,7 @@ onMounted(async () => {
       form.markdownIntro = community.value.markdownIntro || ''
       form.pointName = community.value.pointName || '积分'
       form.isPublic = community.value.isPublic !== false
+      form.avatarUrl = community.value.avatarUrl || ''
     }
   } catch (e: any) {
     error.value = e.message || '加载失败'
@@ -85,6 +90,7 @@ async function save() {
       markdownIntro: form.markdownIntro,
       pointName: form.pointName,
       isPublic: form.isPublic,
+      avatarUrl: form.avatarUrl || undefined,
     }, getApiBaseUrl())
     await getCommunityById(id).then(c => { if (c) community.value = c })
     router.push('/')

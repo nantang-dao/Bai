@@ -7,6 +7,14 @@
         <div class="w-24 md:w-32 h-1 bg-border mx-auto border border-border rounded-2xl"></div>
       </div>
 
+      <!-- 未选择社区时提示 -->
+      <div
+        v-if="!communityStore.currentCommunityId"
+        class="mb-4 px-4 py-3 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-800 dark:text-amber-200 text-sm"
+      >
+        请先通过社区广场或左上角选择社区，再发布任务。
+      </div>
+
       <!-- 任务创建表单 -->
       <PixelCard>
         <div class="space-y-4 md:space-y-6">
@@ -483,7 +491,8 @@ const photoCountOptions = [
 
 // 计算属性
 const canPublish = computed(() => {
-  return taskForm.value.title && 
+  return communityStore.currentCommunityId &&
+         taskForm.value.title && 
          taskForm.value.objective && 
          taskForm.value.reward && 
          // startDate 现在是可选的，如果为空会使用当前时间
@@ -586,6 +595,15 @@ watch(() => [taskForm.value.startDate, taskForm.value.deadline, taskForm.value.s
 // 发布任务
 const publishTask = async () => {
   if (isPublishing.value) return
+  if (!communityStore.currentCommunityId) {
+    const toast = useToast()
+    toast.add({
+      title: '请先选择社区',
+      description: '请先通过社区广场或左上角选择社区',
+      color: 'red',
+    })
+    return
+  }
   // 最终前再做一轮校验，给出明确提示
   const participantsOK = validateParticipants()
   const datesOK = validateDates()

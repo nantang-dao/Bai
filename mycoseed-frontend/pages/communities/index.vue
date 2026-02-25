@@ -41,6 +41,10 @@
           class="bg-card rounded-2xl border border-border p-4 shadow-soft"
         >
           <div class="flex justify-between items-start gap-2">
+            <div class="w-14 h-14 rounded-2xl overflow-hidden flex-shrink-0 bg-input-bg">
+              <img v-if="c.avatarUrl" :src="c.avatarUrl" :alt="c.name" class="w-full h-full object-cover" />
+              <PixelAvatar v-else :seed="c.name" size="md" class="!w-14 !h-14 !rounded-2xl" />
+            </div>
             <div class="flex-1 min-w-0">
               <h2 class="font-bold text-text-title">{{ c.name }}</h2>
               <p class="text-sm text-text-body mt-1 line-clamp-2">{{ c.description || '暂无简介' }}</p>
@@ -174,6 +178,15 @@
                 class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body"
               />
             </div>
+            <div>
+              <label class="block text-sm font-medium text-text-title mb-1">社区头像（可选）</label>
+              <input
+                v-model="createForm.avatarUrl"
+                type="url"
+                placeholder="图片 URL，留空则使用默认头像"
+                class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body text-sm"
+              />
+            </div>
             <div class="flex items-center gap-2">
               <input id="createIsPublic" v-model="createForm.isPublic" type="checkbox" class="rounded" />
               <label for="createIsPublic" class="text-sm text-text-body">公开社区（未勾选则为私有，需邀请码加入）</label>
@@ -266,6 +279,7 @@ const createForm = ref({
   pointName: '积分',
   isPublic: true,
   superAdminId: '',
+  avatarUrl: '',
 })
 const superAdminSearch = ref('')
 const superAdminSearchResults = ref<UserListItem[]>([])
@@ -404,9 +418,10 @@ async function doCreateCommunity() {
       pointName: createForm.value.pointName.trim() || '积分',
       isPublic: createForm.value.isPublic,
       superAdminId: selectedSuperAdmin.value?.id || createForm.value.superAdminId.trim() || undefined,
+      avatarUrl: createForm.value.avatarUrl.trim() || undefined,
     }, baseUrl)
     showCreateModal.value = false
-    createForm.value = { name: '', slug: '', description: '', markdownIntro: '', pointName: '积分', isPublic: true, superAdminId: '' }
+    createForm.value = { name: '', slug: '', description: '', markdownIntro: '', pointName: '积分', isPublic: true, superAdminId: '', avatarUrl: '' }
     clearSuperAdmin()
     await fetchPublic()
     await fetchMine()

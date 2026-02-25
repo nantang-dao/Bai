@@ -15,8 +15,9 @@
           @click="toggleMobileDropdown"
           @blur="handleMobileBlur"
         >
-          <div class="w-8 h-8 bg-primary rounded-xl flex items-center justify-center shadow-soft">
-            <img src="/images/icons/myco-seed-logo.svg" alt="MycoSeed" class="w-5 h-5" />
+          <div class="w-8 h-8 rounded-xl overflow-hidden flex-shrink-0 bg-primary flex items-center justify-center">
+            <img v-if="mobileCommunityStore.currentCommunity?.avatarUrl" :src="mobileCommunityStore.currentCommunity.avatarUrl" :alt="mobileCommunityStore.currentCommunity?.name" class="w-full h-full object-cover" />
+            <img v-else src="/images/icons/myco-seed-logo.svg" alt="MycoSeed" class="w-5 h-5" />
           </div>
           <span class="font-medium text-text-title text-base flex-1 text-left">
             {{ mobileCurrentCommunityName || '选择社区' }}
@@ -42,14 +43,18 @@
               <div 
                 v-for="community in mobileCommunities" 
                 :key="community.id"
-                class="p-3 rounded-xl cursor-pointer hover:bg-input-bg transition-all"
+                class="p-3 rounded-xl cursor-pointer hover:bg-input-bg transition-all flex items-center gap-3"
                 :class="{ 'bg-primary/10': community.id === mobileCommunityStore.currentCommunityId }"
                 @click="selectMobileCommunity(community.id)"
               >
-                <div class="font-bold text-sm text-text-title">{{ community.name }}</div>
-                <div class="text-xs text-text-body mt-1">{{ community.description }}</div>
-                <div class="text-xs text-text-placeholder mt-1">
-                  {{ community.pointName || '积分' }}: {{ community.totalPoints }}
+                <div class="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 bg-input-bg">
+                  <img v-if="community.avatarUrl" :src="community.avatarUrl" :alt="community.name" class="w-full h-full object-cover" />
+                  <img v-else src="/images/icons/myco-seed-logo.svg" alt="" class="w-full h-full object-contain p-1" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="font-bold text-sm text-text-title">{{ community.name }}</div>
+                  <div class="text-xs text-text-body mt-0.5 line-clamp-1">{{ community.description }}</div>
+                  <div class="text-xs text-text-placeholder mt-0.5">{{ community.pointName || '积分' }}</div>
                 </div>
               </div>
             </div>
