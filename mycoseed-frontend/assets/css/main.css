@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #00B3B3;
+  --accent: #2D8CFF;
+  --background: #F7F7F9;
+  --foreground: #1A1A1A;
+  --card: #FFFFFF;
+  --input-bg: #F5F7FA;
+  --text-title: #1A1A1A;
+  --text-body: #666666;
+  --text-placeholder: #999999;
+  --border: #F0F0F0;
+  --muted: #F0F0F0;
+  --muted-foreground: #666666;
+  --destructive: #ef4444;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --info: #3b82f6;
+}
+
+/* 基础样式重置 */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'PingFang SC', sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  color: var(--text-title);
+  line-height: 1.4;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+
+/* 容器样式 */
+.container-size {
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+}
+
+/* Custom Scrollbar - 浅色柔和 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F0F0F0;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b3b3b3;
+}

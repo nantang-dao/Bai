@@ -1,0 +1,28 @@
+{
+  "name": "activity-frontend",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development nuxt dev --host 0.0.0.0 --port 3003",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@types/d3": "^7.4.3",
+    "d3": "^7.9.0",
+    "nuxt": "^3.15.3",
+    "vue": "^3.5.22",
+    "vue-boring-avatars": "^1.4.0",
+    "yarn": "^1.22.22"
+  },
+  "devDependencies": {
+    "@nuxt/icon": "^1.9.3",
+    "@nuxt/ui": "^2.21.0",
+    "@pinia/nuxt": "^0.5.5",
+    "@types/node": "^25.5.0",
+    "cross-env": "^10.1.0",
+    "pinia": "^2.3.0"
+  }
+}
