@@ -18,7 +18,7 @@
           <div class="font-medium text-text-title text-base truncate">
             {{ mobileCurrentCommunityName || '未选择社区' }}
           </div>
-          <NuxtLink to="/communities" class="text-sm text-primary font-medium">
+          <NuxtLink :to="communitiesPathWithFrom" class="text-sm text-primary font-medium">
             切换社区 &gt;
           </NuxtLink>
         </div>
@@ -53,15 +53,23 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useCommunityStore } from '~/stores/community'
 import { useUserStore } from '~/stores/user'
 
+const route = useRoute()
 const mobileCommunityStore = useCommunityStore()
 const mobileUserStore = useUserStore()
 const currentPage = ref('hub')
 
 const mobileCurrentCommunityName = computed(() => {
   return mobileCommunityStore.currentCommunity?.name || null
+})
+
+/** 前往社区广场时带上当前路径，便于选完社区后返回（如从任务页来的则回任务页） */
+const communitiesPathWithFrom = computed(() => {
+  const from = route.fullPath && route.fullPath !== '/communities' ? encodeURIComponent(route.fullPath) : ''
+  return from ? `/communities?from=${from}` : '/communities'
 })
 
 onMounted(async () => {

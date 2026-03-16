@@ -77,6 +77,10 @@
                   </NuxtLink>
                 </template>
                 <div class="space-y-4 text-center">
+                  <!-- 积分/南塘豆行：算法未定，先隐藏 -->
+                  <div class="hidden text-sm text-text-body">
+                    {{ community?.pointName || '积分' }}: <span class="text-primary">{{ community?.totalPoints ?? 0 }}</span>
+                  </div>
                   <div class="w-full min-h-24 rounded-2xl border border-border p-4 text-left">
                     <div class="text-sm text-text-body whitespace-pre-wrap font-mono">{{ community?.markdownIntro || '暂无介绍' }}</div>
                   </div>
@@ -348,6 +352,7 @@ import { useCommunityStore } from '~/stores/community'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
+import { useApi } from '~/composables/useApi'
 import { getCommunityById, getCommunityMembers, getCommunityAnnouncements, getCommunities, DEFAULT_COMMUNITY_UUID, type Community, type Announcement } from '~/utils/api'
 import type { Post, Comment, Like } from '~/utils/api'
 
@@ -366,7 +371,8 @@ const activeTab = ref('COMMUNITY')
 
 // 背景图轮播：取社区背景图（最多 3 张）
 const bannerImages = computed(() => {
-  const list = community.value?.backgroundImages?.filter(u => (u || '').trim()) || []
+  const raw = (community.value as Community | null)?.backgroundImages
+  const list = Array.isArray(raw) ? raw.filter((u: string) => (u || '').trim()) : []
   return list.slice(0, 3)
 })
 const currentBannerIndex = ref(0)
@@ -451,12 +457,12 @@ async function loadPosts(reset = false) {
     // 使用 requestIdleCallback 或 setTimeout 延迟加载，优先显示内容
     if (typeof window !== 'undefined') {
       setTimeout(() => {
-        Promise.all(newPosts.slice(0, 5).map(post => ensurePostLikesAndComments(post.id)))
+        Promise.all(newPosts.slice(0, 5).map((post: Post) => ensurePostLikesAndComments(post.id)))
       }, 100)
       // 剩余帖子在用户滚动时再加载
       if (newPosts.length > 5) {
         setTimeout(() => {
-          Promise.all(newPosts.slice(5).map(post => ensurePostLikesAndComments(post.id)))
+          Promise.all(newPosts.slice(5).map((post: Post) => ensurePostLikesAndComments(post.id)))
         }, 500)
       }
     }
