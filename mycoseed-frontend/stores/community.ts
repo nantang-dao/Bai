@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { getCommunities, getCommunityById, type Community } from '~/utils/api'
+import { AUTH_TOKEN_KEY, getCookie, getCommunities, getCommunityById, type Community } from '~/utils/api'
 
 const STORAGE_KEY = 'mycoseed_current_community_id'
 
@@ -39,19 +39,24 @@ export const useCommunityStore = defineStore('community', {
     async initialize() {
       this.loadFromStorage()
       if (this.currentCommunityId) {
+        // 未登录/无 token 时不要清空本地选择，等用户完成登录后再自动恢复详情
+        if (!getCookie(AUTH_TOKEN_KEY)) {
+          this.currentCommunity = null
+          return
+        }
         try {
           this.currentCommunity = await getCommunityById(this.currentCommunityId)
           return
         } catch (error) {
           console.error('Failed to load stored community:', error)
-          this.currentCommunityId = null
-          if (typeof window !== 'undefined') localStorage.removeItem(STORAGE_KEY)
+          // 这里不清空 currentCommunityId / localStorage，避免每次登录都要重新选择社区
+          this.currentCommunity = null
         }
       }
       // 不再自动设置默认社区，用户需要手动选择
     },
     
-    /** 用于 Header 下拉：当前用户已加入的社区 */
+    /** 用于获取当前用户已加入的社区 */
     async getAllCommunities(): Promise<Community[]> {
       try {
         return await getCommunities({ mine: true })

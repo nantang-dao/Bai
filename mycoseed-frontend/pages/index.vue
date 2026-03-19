@@ -9,42 +9,26 @@
 
     <!-- 社区面板内容 -->
     <div v-else>
-      <!-- Village Header / Banner -->
-      <div 
-        class="relative h-48 md:h-64 w-full overflow-hidden rounded-3xl shadow-soft cursor-pointer hover:opacity-95 transition-opacity bg-gradient-to-br from-primary to-accent"
-        @click="isIntroExpanded = !isIntroExpanded"
-      >
-        <div class="absolute top-4 left-1/2 -translate-x-1/2 font-bold text-white text-2xl md:text-4xl text-center drop-shadow-md">
-          {{ community?.name || '正在加载...' }}
+      <!-- 社区卡片：背景图轮播 + 底部名称与简介 -->
+      <div class="rounded-3xl shadow-soft overflow-hidden bg-card border border-border">
+        <div class="relative h-48 md:h-64 w-full overflow-hidden">
+          <!-- 背景图轮播（最多三张自动切换） -->
+          <template v-if="bannerImages.length">
+            <div
+              v-for="(url, i) in bannerImages"
+              :key="url"
+              class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000"
+              :style="{ backgroundImage: `url(${url})` }"
+              :class="currentBannerIndex === i ? 'opacity-100 z-10' : 'opacity-0 z-0'"
+            />
+          </template>
+          <div v-else class="absolute inset-0 bg-gradient-to-br from-primary to-accent" />
         </div>
-        <!-- 展开/收起箭头 -->
-        <div 
-          class="absolute bottom-2 left-1/2 -translate-x-1/2 text-white transition-all duration-300 hover:scale-110"
-          :class="{ 'rotate-180': isIntroExpanded }"
-        >
-          <svg class="w-6 h-6 md:w-8 md:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path>
-          </svg>
+        <div class="px-4 py-3 border-t border-border bg-card">
+          <h2 class="font-bold text-text-title text-lg truncate">{{ community?.name || '正在加载...' }}</h2>
+          <p class="text-sm text-text-placeholder truncate mt-0.5">{{ community?.description || '菌丝网络中的一个和平村庄。' }}</p>
         </div>
       </div>
-
-      <!-- Community Intro Card -->
-      <Transition name="intro-slide">
-        <div v-show="isIntroExpanded" class="bg-card rounded-3xl shadow-soft p-6 pb-8 overflow-hidden border border-border relative">
-          <NuxtLink
-            v-if="isCommunityAdmin && community?.id"
-            :to="`/community/${community.id}/edit`"
-            class="absolute top-4 right-4 w-8 h-8 rounded-xl flex items-center justify-center text-text-body hover:bg-input-bg"
-            title="编辑简介"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
-          </NuxtLink>
-          <div class="prose text-lg max-w-none text-text-body">
-            <h3 class="text-base font-bold text-text-title border-b border-border pb-2 mb-4">欢迎来到 {{ community?.name }}</h3>
-            <div class="whitespace-pre-wrap">{{ community?.markdownIntro || '正在加载...' }}</div>
-          </div>
-        </div>
-      </Transition>
 
       <!-- Village Content Grid -->
       <div class="space-y-6">
@@ -87,31 +71,24 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <PixelCard>
                 <template #header>
-                  <span>市政厅 (TOWN HALL)</span>
+                  <span>关于我们</span>
                   <NuxtLink v-if="isCommunityAdmin && community?.id" :to="`/community/${community.id}/edit`" class="inline-flex items-center justify-center w-7 h-7 rounded-lg ml-2 text-text-body hover:bg-input-bg" title="编辑">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                   </NuxtLink>
                 </template>
                 <div class="space-y-4 text-center">
-                  <div class="w-full h-24 bg-input-bg rounded-2xl flex items-center justify-center border border-dashed border-border relative overflow-hidden">
-                    <div class="absolute inset-0 flex items-center justify-center text-6xl opacity-20">🏰</div>
+                  <!-- 积分/南塘豆行：算法未定，先隐藏 -->
+                  <div class="hidden text-sm text-text-body">
+                    {{ community?.pointName || '积分' }}: <span class="text-primary">{{ community?.totalPoints ?? 0 }}</span>
                   </div>
-                  
-                  <div class="grid grid-cols-2 gap-2 text-left text-base bg-input-bg rounded-2xl p-3 border border-border">
-                     <div class="text-text-body">{{ community?.pointName || '总积分' }}:</div>
-                     <div class="text-right font-bold text-primary">{{ community?.totalPoints || 0 }}</div>
-                     <div class="text-text-body">成员:</div>
-                     <div class="text-right font-bold text-text-title">{{ community?.memberCount || 0 }}</div>
+                  <div class="w-full min-h-24 rounded-2xl border border-border p-4 text-left">
+                    <div class="text-sm text-text-body whitespace-pre-wrap font-mono">{{ community?.markdownIntro || '暂无介绍' }}</div>
                   </div>
-
-                  <p class="text-sm text-text-body text-left">
-                    {{ community?.description || '菌丝网络中的一个和平村庄。' }}
-                  </p>
                 </div>
               </PixelCard>
 
               <PixelCard>
-                <template #header>村民 (VILLAGERS)</template>
+                <template #header>成员 ({{ community?.memberCount || 0 }})</template>
                 <div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
                   <button
                     v-for="member in members.slice(0, 12)"
@@ -375,6 +352,7 @@ import { useCommunityStore } from '~/stores/community'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
+import { useApi } from '~/composables/useApi'
 import { getCommunityById, getCommunityMembers, getCommunityAnnouncements, getCommunities, DEFAULT_COMMUNITY_UUID, type Community, type Announcement } from '~/utils/api'
 import type { Post, Comment, Like } from '~/utils/api'
 
@@ -389,14 +367,20 @@ const route = useRoute()
 const userStore = useUserStore()
 const communityStore = useCommunityStore()
 const api = useApi()
-const activeTab = ref('INTRO')
+const activeTab = ref('COMMUNITY')
 
-// 简介卡片展开/收起状态
-const isIntroExpanded = ref(false)
+// 背景图轮播：取社区背景图（最多 3 张）
+const bannerImages = computed(() => {
+  const raw = (community.value as Community | null)?.backgroundImages
+  const list = Array.isArray(raw) ? raw.filter((u: string) => (u || '').trim()) : []
+  return list.slice(0, 3)
+})
+const currentBannerIndex = ref(0)
+let bannerTimer: ReturnType<typeof setInterval> | null = null
 
 const tabs = [
-  { id: 'INTRO', label: '简介' },
-  { id: 'COMMUNITY', label: '社区圈' }
+  { id: 'COMMUNITY', label: '社区圈' },
+  { id: 'INTRO', label: '简介' }
 ]
 
 // Data
@@ -473,12 +457,12 @@ async function loadPosts(reset = false) {
     // 使用 requestIdleCallback 或 setTimeout 延迟加载，优先显示内容
     if (typeof window !== 'undefined') {
       setTimeout(() => {
-        Promise.all(newPosts.slice(0, 5).map(post => ensurePostLikesAndComments(post.id)))
+        Promise.all(newPosts.slice(0, 5).map((post: Post) => ensurePostLikesAndComments(post.id)))
       }, 100)
       // 剩余帖子在用户滚动时再加载
       if (newPosts.length > 5) {
         setTimeout(() => {
-          Promise.all(newPosts.slice(5).map(post => ensurePostLikesAndComments(post.id)))
+          Promise.all(newPosts.slice(5).map((post: Post) => ensurePostLikesAndComments(post.id)))
         }, 500)
       }
     }
@@ -788,6 +772,24 @@ watch(
   }
 )
 
+// 背景图轮播：多张时每 4 秒切换
+watch(
+  () => bannerImages.value.length,
+  (len) => {
+    if (bannerTimer) {
+      clearInterval(bannerTimer)
+      bannerTimer = null
+    }
+    currentBannerIndex.value = 0
+    if (len > 1) {
+      bannerTimer = setInterval(() => {
+        currentBannerIndex.value = (currentBannerIndex.value + 1) % len
+      }, 4000)
+    }
+  },
+  { immediate: true }
+)
+
 onMounted(async () => {
   // 监听键盘事件（用于图片预览）
   window.addEventListener('keydown', handleKeydown)
@@ -819,49 +821,16 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  // 清理键盘事件监听
-  window.removeEventListener('keydown', handleKeydown)
-  // 清理图片预览 URL
-  if (previewImage.value) {
-    previewImage.value = null
+  if (bannerTimer) {
+    clearInterval(bannerTimer)
+    bannerTimer = null
   }
+  window.removeEventListener('keydown', handleKeydown)
+  if (previewImage.value) previewImage.value = null
 })
 </script>
 
 <style scoped>
-/* 简介卡片展开/收起动画 */
-.intro-slide-enter-active {
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-}
-
-.intro-slide-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-}
-
-.intro-slide-enter-from {
-  max-height: 0;
-  opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-bottom-width: 0;
-}
-
-.intro-slide-leave-to {
-  max-height: 0;
-  opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-bottom-width: 0;
-}
-
-.intro-slide-enter-to,
-.intro-slide-leave-from {
-  max-height: 2000px;
-  opacity: 1;
-}
-
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s;

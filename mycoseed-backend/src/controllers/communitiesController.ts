@@ -5,6 +5,14 @@ import { getMemberRole } from '../middleware/communityAdmin'
 
 function toCommunity(row: any) {
     if (!row) return null
+    let backgroundImages: string[] = []
+    if (row.background_images) {
+        try {
+            backgroundImages = Array.isArray(row.background_images)
+                ? row.background_images.filter((u: any) => typeof u === 'string' && u.trim()).slice(0, 3)
+                : []
+        } catch (_) {}
+    }
     return {
         id: row.id,
         name: row.name,
@@ -15,6 +23,7 @@ function toCommunity(row: any) {
         pointName: row.point_name || '积分',
         superAdminId: row.super_admin_id,
         avatarUrl: row.avatar_url || null,
+        backgroundImages,
         memberCount: row.member_count ?? 0,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
@@ -146,6 +155,12 @@ export const update = async (req: AuthRequest, res: Response) => {
         if (req.body.pointName !== undefined) updatePayload.point_name = req.body.pointName
         if (req.body.avatarUrl !== undefined) updatePayload.avatar_url = req.body.avatarUrl
         if (req.body.avatar_url !== undefined) updatePayload.avatar_url = req.body.avatar_url
+        if (req.body.backgroundImages !== undefined) {
+            const arr = Array.isArray(req.body.backgroundImages)
+                ? req.body.backgroundImages.filter((u: any) => typeof u === 'string' && String(u).trim()).slice(0, 3)
+                : []
+            updatePayload.background_images = arr
+        }
         if (Object.keys(updatePayload).length === 0) return res.json(toCommunity((await supabase.from('communities').select('*').eq('id', id).single()).data))
         const { data, error } = await supabase.from('communities').update(updatePayload).eq('id', id).select().single()
         if (error) throw error

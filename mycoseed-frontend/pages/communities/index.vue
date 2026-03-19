@@ -48,17 +48,17 @@
             <div class="flex-1 min-w-0">
               <h2 class="font-bold text-text-title">{{ c.name }}</h2>
               <p class="text-sm text-text-body mt-1 line-clamp-2">{{ c.description || '暂无简介' }}</p>
-              <p class="text-xs text-text-placeholder mt-2">{{ c.pointName || '积分' }} · {{ c.memberCount }} 人</p>
+              <p class="text-xs text-text-placeholder mt-2">{{ c.memberCount }} 人</p>
             </div>
             <div class="flex flex-col gap-2 shrink-0">
               <template v-if="joinedIds.has(c.id)">
-                <NuxtLink
-                  :to="'/'"
-                  class="px-3 py-1.5 rounded-xl bg-primary text-white text-sm text-center"
-                  @click="communityStore.setCurrentCommunity(c.id)"
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-xl bg-primary text-white text-sm text-center w-full"
+                  @click="enterCommunity(c.id)"
                 >
                   进入
-                </NuxtLink>
+                </button>
                 <button
                   type="button"
                   class="px-3 py-1.5 rounded-xl border border-border text-text-body text-sm"
@@ -178,15 +178,6 @@
                 class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body"
               />
             </div>
-            <div>
-              <label class="block text-sm font-medium text-text-title mb-1">社区头像（可选）</label>
-              <input
-                v-model="createForm.avatarUrl"
-                type="url"
-                placeholder="图片 URL，留空则使用默认头像"
-                class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body text-sm"
-              />
-            </div>
             <div class="flex items-center gap-2">
               <input id="createIsPublic" v-model="createForm.isPublic" type="checkbox" class="rounded" />
               <label for="createIsPublic" class="text-sm text-text-body">公开社区（未勾选则为私有，需邀请码加入）</label>
@@ -251,12 +242,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useCommunityStore } from '~/stores/community'
 import { useUserStore } from '~/stores/user'
 import { getCommunities, joinCommunity, leaveCommunity, joinCommunityByInviteCode, createCommunity, getAllUsers, getApiBaseUrl, type Community, type UserListItem } from '~/utils/api'
 
 definePageMeta({ layout: 'default' })
 
+const route = useRoute()
+const router = useRouter()
 const communityStore = useCommunityStore()
 const userStore = useUserStore()
 const searchQ = ref('')
@@ -279,7 +273,6 @@ const createForm = ref({
   pointName: '积分',
   isPublic: true,
   superAdminId: '',
-  avatarUrl: '',
 })
 const superAdminSearch = ref('')
 const superAdminSearchResults = ref<UserListItem[]>([])
@@ -344,6 +337,14 @@ async function leave(communityId: string) {
   } catch (e: any) {
     alert(e.message || '退出失败')
   }
+}
+
+/** 进入已加入的社区：切换当前社区并跳转到来源页（若从任务/公告等来）或首页 */
+async function enterCommunity(communityId: string) {
+  await communityStore.setCurrentCommunity(communityId)
+  const from = route.query.from as string | undefined
+  const target = from && from.startsWith('/') && from !== '/communities' ? from : '/'
+  await router.push(target)
 }
 
 async function joinByInviteCode() {
@@ -418,10 +419,9 @@ async function doCreateCommunity() {
       pointName: createForm.value.pointName.trim() || '积分',
       isPublic: createForm.value.isPublic,
       superAdminId: selectedSuperAdmin.value?.id || createForm.value.superAdminId.trim() || undefined,
-      avatarUrl: createForm.value.avatarUrl.trim() || undefined,
     }, baseUrl)
     showCreateModal.value = false
-    createForm.value = { name: '', slug: '', description: '', markdownIntro: '', pointName: '积分', isPublic: true, superAdminId: '', avatarUrl: '' }
+    createForm.value = { name: '', slug: '', description: '', markdownIntro: '', pointName: '积分', isPublic: true, superAdminId: '' }
     clearSuperAdmin()
     await fetchPublic()
     await fetchMine()

@@ -1402,6 +1402,7 @@ export interface Community {
   isPublic?: boolean             // 是否公开
   superAdminId?: string | null   // 总管理员 user_id
   avatarUrl?: string | null      // 社区头像 URL
+  backgroundImages?: string[]    // 背景图 URL 数组，最多 3 张
   myRole?: 'member' | 'sub_admin' | 'super_admin'  // 当前用户在该社区的角色（仅 getById 返回）
 }
 
@@ -1595,7 +1596,7 @@ export async function createPost (
 ): Promise<Post> {
   const url = baseUrl ?? getApiBaseUrl()
   const communityId = params.communityId
-  if (!communityId) throw new Error('请先选择社区再发帖')
+  if (!communityId) throw new Error('请先通过社区广场或左上角选择社区再发帖')
   const body: Record<string, unknown> = {
     communityId,
     content: params.content,
@@ -1936,18 +1937,21 @@ export const getCommunityById = async (
     throw new Error(err.message || '获取社区详情失败')
   }
   const c = await res.json()
+  const bg = c.backgroundImages ?? c.background_images
+  const backgroundImages = Array.isArray(bg) ? bg.filter((u: any) => typeof u === 'string').slice(0, 3) : []
   return {
     id: c.id,
     name: c.name,
     description: c.description || '',
     memberCount: c.memberCount ?? 0,
-    totalPoints: 0,
+    totalPoints: c.totalPoints ?? 0,
     pointName: c.pointName || '积分',
     markdownIntro: c.markdownIntro,
     slug: c.slug,
     isPublic: c.isPublic,
     superAdminId: c.superAdminId,
     avatarUrl: c.avatarUrl ?? c.avatar_url ?? null,
+    backgroundImages,
     myRole: c.myRole,
     createdAt: c.createdAt || '',
   }

@@ -5,146 +5,56 @@
       <!-- 翻转卡片容器 -->
       <div 
         class="flip-card-container"
-        :class="{ 'is-flipped': isFlipped && !isEditing }"
-        @click="!isEditing && toggleFlip()"
+        :class="{ 'is-flipped': isFlipped }"
+        @click="toggleFlip()"
       >
         <div class="flip-card-inner">
           <!-- 卡片正面 -->
           <div class="flip-card-face flip-card-front bg-white border border-border rounded-2xl shadow-soft p-6 pb-8 relative">
-            <!-- 编辑按钮（仅「我的」页面显示）- 隐藏显示，保留逻辑供后续设置界面使用 -->
-            <div v-if="false && isMyProfile" class="absolute top-4 right-4 z-20">
-              <button
-                @click.stop="isEditing = !isEditing"
-                class="w-10 h-10 bg-gray-100 border border-border rounded-2xl flex items-center justify-center hover:bg-gray-200 transition-colors"
-              >
-                <span v-if="!isEditing" class="text-xl">✏️</span>
-                <span v-else class="text-xl">❌</span>
-              </button>
-            </div>
             <div class="flex flex-col items-center gap-4">
-
-        <!-- 头像与等级 -->
+        <!-- 头像 -->
         <div class="relative">
-          <div v-if="!isEditing" class="relative">
-            <!-- 优先使用 avatar URL,如果没有则使用 pixelavatar -->
-            <PixelAvatar 
+          <PixelAvatar
             v-if="member?.avatar"
             :src="member.avatar"
             size="xl"
-            />
-            <PixelAvatar
+          />
+          <PixelAvatar
             v-else
-            :seed="member?.name || member?.avatarSeed || 'user'" size="xl" />
-            <div class="absolute -bottom-2 -right-2 bg-black text-white text-xs font-bold px-2 py-1 border-2 border-white">
-              LV. {{ memberLevel }}
-            </div>
-          </div>
-          <div v-else class="relative">
-            <PixelAvatar
-              v-if="editingForm.avatar"
-              :src="editingForm.avatar"
-              size="xl"
-            />
-            <PixelAvatar 
-            v-else
-            :seed="editingForm.name || 'user'" size="xl" />
-            <button
-              @click="changeAvatar"
-              class="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xs font-bold hover:bg-black/70 transition-colors"
-            >
-              更换头像
-            </button>
-          </div>
+            :seed="member?.name || member?.avatarSeed || 'user'"
+            size="xl"
+          />
         </div>
 
         <!-- 姓名与简介 -->
         <div class="text-center w-full max-w-xs">
-          <div v-if="!isEditing">
-            <h1 class="font-bold text-2xl mb-1">{{ member?.name }}</h1>
-            <!-- 简介显示 -->
-            <div v-if="member?.bio" class="text-sm text-gray-600  mt-2 px-4 max-w-xs mx-auto">
-              {{ member.bio }}
-            </div>
-            <!-- 添加点击提示 -->
-            <div class="text-xs text-gray-400 mt-3 px-4">
-              点击卡片查看数字身份
-            </div>
+          <h1 class="font-bold text-2xl mb-1">{{ member?.name }}</h1>
+          <div v-if="member?.bio" class="text-sm text-gray-600 mt-2 px-4 max-w-xs mx-auto">
+            {{ member.bio }}
           </div>
-          <div v-else class="space-y-3">
-            <div>
-              <label class="block font-bold text-xs uppercase mb-1 text-black text-left">名字</label>
-              <input
-                v-model="editingForm.name"
-                type="text"
-                class="w-full h-10 px-3 bg-white border border-border rounded-2xl shadow-soft-sm  text-base focus:outline-none focus:shadow-soft focus:-translate-y-1 transition-all"
-                placeholder="输入名字"
-              />
-            </div>
-            <!-- 简介编辑 -->
-            <div>
-              <label class="block font-bold text-xs uppercase mb-1 text-black text-left">简介</label>
-              <textarea
-                v-model="editingForm.bio"
-                rows="3"
-                class="w-full px-3 py-2 bg-white border border-border rounded-2xl shadow-soft-sm  text-base focus:outline-none focus:shadow-soft focus:-translate-y-1 transition-all resize-none"
-                placeholder="输入简介"
-              />
-            </div>
+          <div class="text-xs text-gray-400 mt-3 px-4">
+            点击卡片查看数字身份
           </div>
         </div>
-
-        <!-- 编辑模式下的保存/取消按钮 -->
-        <div v-if="isEditing" class="flex gap-4 mt-2 w-full max-w-xs">
-          <PixelButton block variant="success" @click="saveProfile">保存</PixelButton>
-          <PixelButton block variant="secondary" @click="cancelEdit">取消</PixelButton>
-        </div>
-
-        <!-- 非编辑模式下的操作按钮（已移除，发布任务按钮移到任务tab） -->
             </div>
           </div>
 
-          <!-- 卡片背面 -->
-          <div class="flip-card-face flip-card-back bg-white border border-border rounded-2xl shadow-soft p-6 pb-8 relative">
+          <!-- 卡片背面：整面阻止点击冒泡，避免误触翻转；需点击「返回」才翻回正面 -->
+          <div class="flip-card-face flip-card-back bg-white border border-border rounded-2xl shadow-soft p-6 pb-8 relative" @click.stop>
             <div class="flex flex-col gap-4">
-              <!-- 钱包地址和链选择按钮（左上方）+ 发送按钮（右上角） -->
-              <div class="flex items-center justify-between gap-3">
-                <div class="flex items-center gap-3 flex-1">
-                  <!-- Chain Switch Button -->
-                  <button 
-                    @click.stop="showChainSelector = true"
-                    class="w-10 h-10 bg-destructive border border-border rounded-2xl flex items-center justify-center text-white font-bold text-sm shadow-soft hover:scale-105 transition-transform"
-                  >
-                    {{ currentChain.shortName }}
-                  </button>
-                  
-                  <!-- Address Display -->
-                  <div class="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border border-border rounded-2xl shadow-soft-sm flex-1">
-                    <PixelAvatar :seed="walletAddress || 'user'" size="sm" />
-                    <span class=" text-lg">{{ truncatedAddress }}</span>
-                    <button 
-                      @click.stop="copyAddress"
-                      class="text-gray-400 hover:text-black transition-colors cursor-pointer"
-                      title="复制地址"
-                    >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-                
-                <!-- 发送按钮（右上角） -->
-                <PixelButton 
-                  @click.stop="showSendModal = true"
-                  variant="primary" 
-                  size="sm"
-                  class="flex-shrink-0"
+              <!-- 钱包地址（含链标识） -->
+              <div class="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border border-border rounded-2xl shadow-soft-sm w-full min-w-0">
+                <PixelAvatar :seed="walletAddress || 'user'" size="sm" :fallback-text="currentChain.shortName" class="flex-shrink-0" />
+                <span class="text-base truncate flex-1">{{ truncatedAddress }}</span>
+                <button 
+                  @click.stop="copyAddress"
+                  class="text-gray-400 hover:text-black transition-colors cursor-pointer flex-shrink-0"
+                  title="复制地址"
                 >
-                  <div class="flex items-center gap-1">
-                    <span class="text-base">📤</span>
-                    <span>转账</span>
-                  </div>
-                </PixelButton>
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
               </div>
 
               <!-- 二维码 -->
@@ -170,208 +80,15 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- 返回正面 -->
+                <button type="button" @click.stop="toggleFlip" class="text-xs text-gray-400 hover:text-black mt-2">
+                  返回
+                </button>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Send Modal -->
-    <div v-if="showSendModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div class="w-full max-w-md">
-        <PixelCard>
-          <template #header>
-            <div class="flex justify-between items-center">
-              <span>发送资产</span>
-              <button @click="closeSendModal" class="hover:text-red-500">✕</button>
-            </div>
-          </template>
-          
-          <div class="space-y-4 py-4">
-            <div>
-              <label class="block font-bold text-xs mb-2">接收方 (地址 / 手机号)</label>
-              <div class="flex gap-2">
-                <input 
-                  v-model="sendForm.recipient" 
-                  type="text" 
-                  placeholder="0x... or 138..." 
-                  class="flex-1 p-3  text-xl border border-border rounded-2xl shadow-soft-sm focus:outline-none focus:translate-y-1 focus:shadow-none transition-all"
-                >
-                <button 
-                  @click="openScanner" 
-                  class="px-4 py-3 bg-white border border-border rounded-2xl shadow-soft-sm hover:bg-gray-100 transition-colors font-bold text-xs"
-                  title="扫描二维码"
-                >
-                  📷
-                </button>
-                <button 
-                  @click="showContacts = true" 
-                  class="px-4 py-3 bg-white border border-border rounded-2xl shadow-soft-sm hover:bg-gray-100 transition-colors font-bold text-xs"
-                  title="通讯录"
-                >
-                  📇
-                </button>
-              </div>
-            </div>
-            <div>
-              <label class="block font-bold text-xs mb-2">金额</label>
-              <input 
-                v-model="sendForm.amount" 
-                type="number" 
-                step="0.000001"
-                placeholder="0.00" 
-                class="w-full p-3  text-xl border border-border rounded-2xl shadow-soft-sm focus:outline-none focus:translate-y-1 focus:shadow-none transition-all"
-              >
-            </div>
-            <div>
-              <label class="block font-bold text-xs mb-2">备注信息</label>
-              <input 
-                v-model="sendForm.note" 
-                type="text" 
-                placeholder="可选，添加备注信息..." 
-                class="w-full p-3  text-lg border border-border rounded-2xl shadow-soft-sm focus:outline-none focus:translate-y-1 focus:shadow-none transition-all"
-              >
-            </div>
-          </div>
-
-          <template #footer>
-            <div class="flex gap-4 w-full">
-              <PixelButton block variant="secondary" @click="closeSendModal">取消</PixelButton>
-              <PixelButton block variant="success" @click="handleSend">确认发送</PixelButton>
-            </div>
-          </template>
-        </PixelCard>
-      </div>
-    </div>
-
-    <!-- Contacts Modal -->
-    <div v-if="showContacts" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div class="w-full max-w-md">
-        <PixelCard>
-          <template #header>
-            <div class="flex justify-between items-center">
-              <span>通讯录</span>
-              <button @click="showContacts = false" class="hover:text-red-500">✕</button>
-            </div>
-          </template>
-          
-          <div class="space-y-2 py-4 max-h-96 overflow-y-auto">
-            <div 
-              v-for="contact in savedContacts" 
-              :key="contact.id"
-              @click="selectContact(contact)"
-              class="flex items-center justify-between p-3 border border-border rounded-2xl/10 hover:bg-gray-50 hover:border-black cursor-pointer transition-all"
-            >
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-gray-200 border border-border rounded-2xl flex items-center justify-center text-lg shadow-soft-sm">
-                  {{ contact.icon }}
-                </div>
-                <div>
-                  <div class="font-bold text-xs">{{ contact.name }}</div>
-                  <div class=" text-sm text-gray-600">{{ contact.address }}</div>
-                </div>
-              </div>
-            </div>
-            <div v-if="savedContacts.length === 0" class="text-center py-8 text-gray-400 ">
-              暂无保存的地址
-            </div>
-          </div>
-
-          
-          <template #footer>
-            <PixelButton block variant="secondary" @click="showContacts = false">关闭</PixelButton>
-          </template>
-        </PixelCard>
-      </div>
-    </div>
-
-    <!-- Scanner Modal -->
-    <div v-if="showScanner" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div class="w-full max-w-md">
-        <PixelCard>
-          <template #header>
-            <div class="flex justify-between items-center">
-              <span>扫描二维码</span>
-              <button @click="closeScanner" class="hover:text-red-500">✕</button>
-            </div>
-          </template>
-          
-          <div class="py-6">
-            <div class="w-full h-64 bg-black/10 border-4 border-dashed border-black flex items-center justify-center mb-4">
-              <div class="text-center">
-                <div class="text-4xl mb-2">📷</div>
-                <div class="font-bold text-xs text-gray-500">请允许访问摄像头权限</div>
-                <div class=" text-sm text-gray-400 mt-2">或手动输入地址</div>
-              </div>
-            </div>
-            <div class="space-y-2">
-              <label class="block font-bold text-xs">手动输入二维码内容</label>
-              <input 
-                v-model="scannedAddress" 
-                type="text" 
-                placeholder="粘贴二维码内容..." 
-                class="w-full p-3  text-lg border border-border rounded-2xl shadow-soft-sm focus:outline-none"
-                @keyup.enter="applyScannedAddress"
-              >
-            </div>
-          </div>
-
-          <template #footer>
-            <div class="flex gap-4 w-full">
-              <PixelButton block variant="secondary" @click="closeScanner">取消</PixelButton>
-              <PixelButton block variant="primary" @click="applyScannedAddress">确认</PixelButton>
-            </div>
-          </template>
-        </PixelCard>
-      </div>
-    </div>
-
-    <!-- Chain Selector Modal -->
-    <div v-if="showChainSelector" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div class="w-full max-w-sm">
-        <PixelCard>
-          <template #header>
-            <div class="flex justify-between items-center">
-              <span>选择网络</span>
-              <button @click="showChainSelector = false" class="hover:text-red-500">✕</button>
-            </div>
-          </template>
-          
-          <div class="space-y-2 py-4">
-            <div 
-              v-for="chain in availableChains" 
-              :key="chain.id"
-              @click="selectChain(chain)"
-              :class="[
-                'flex items-center justify-between p-3 border-2 cursor-pointer transition-all',
-                currentChain.id === chain.id ? 'border-black bg-gray-100' : 'border-black/10 hover:bg-gray-50 hover:border-black'
-              ]"
-            >
-              <div class="flex items-center gap-3">
-                <div 
-                  :class="[
-                    'w-8 h-8 border border-border rounded-2xl flex items-center justify-center text-white font-bold text-xs shadow-soft-sm',
-                    currentChain.id === chain.id ? 'bg-destructive' : 'bg-gray-400'
-                  ]"
-                >
-                  {{ chain.shortName }}
-                </div>
-                <div>
-                  <div class="font-bold text-xs">{{ chain.name }}</div>
-                  <div class=" text-xs text-gray-500">{{ chain.nativeCurrency.symbol }}</div>
-                </div>
-              </div>
-              <div v-if="currentChain.id === chain.id" class="text-green-600 font-bold text-xs">
-                ✓
-              </div>
-            </div>
-          </div>
-
-          <template #footer>
-            <PixelButton block variant="secondary" @click="showChainSelector = false">关闭</PixelButton>
-          </template>
-        </PixelCard>
       </div>
     </div>
 
@@ -441,15 +158,6 @@
           </div>
         </div>
 
-        <!-- BADGES TAB -->
-        <div v-else-if="activeTab === 'BADGES'" class="grid grid-cols-3 gap-3">
-          <div v-for="i in 8" :key="i" class="aspect-square bg-white border border-border rounded-2xl flex flex-col items-center justify-center p-2 hover:-translate-y-1 transition-transform">
-            <span v-if="i <= 3" class="text-3xl mb-2">🌟</span>
-            <span v-else class="text-3xl mb-2 grayscale opacity-30">🔒</span>
-            <span class="font-bold text-[10px] text-center text-gray-600">{{ i <= 3 ? '已解锁' : '未解锁' }}</span>
-          </div>
-        </div>
-
       </div>
     </div>
   </div>
@@ -460,9 +168,7 @@ import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '~/stores/user'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
-import PixelButton from '~/components/pixel/PixelButton.vue'
-import PixelCard from '~/components/pixel/PixelCard.vue'
-import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, addTransaction, getApiBaseUrl, type Task, type Community } from '~/utils/api'
+import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, type Task, type Community } from '~/utils/api'
 import { getTaskRewardSymbol } from '~/utils/display'
 import { useToast } from '~/composables/useToast'
 import { useApi } from '~/composables/useApi'
@@ -475,26 +181,12 @@ const route = useRoute()
 const router = useRouter()
 const memberId = route.params.id as string  // UUID是字符串，不需要parseInt
 const activeTab = ref('HISTORY')
-const isEditing = ref(false)
 const isFlipped = ref(false)
-const newSkill = ref('')
 const userStore = useUserStore()
 const toast = useToast()
 
 // 钱包相关状态
 const walletAddress = ref('')
-const showChainSelector = ref(false)
-const showSendModal = ref(false)
-const showContacts = ref(false)
-const showScanner = ref(false)
-const scannedAddress = ref('')
-
-// 转账表单
-const sendForm = ref({
-  recipient: '',
-  amount: '',
-  note: ''
-})
 
 // 社区积分相关状态
 const userCommunity = ref<Community | null>(null)
@@ -507,41 +199,6 @@ const currentChain = ref({
     symbol: 'ETH'
   }
 })
-
-const availableChains = ref([
-  {
-    id: 10,
-    name: 'OP Mainnet',
-    shortName: 'OP',
-    nativeCurrency: {
-      symbol: 'ETH'
-    }
-  },
-  {
-    id: 1,
-    name: 'Ethereum',
-    shortName: 'ETH',
-    nativeCurrency: {
-      symbol: 'ETH'
-    }
-  },
-  {
-    id: 8453,
-    name: 'Base',
-    shortName: 'BASE',
-    nativeCurrency: {
-      symbol: 'ETH'
-    }
-  },
-  {
-    id: 42161,
-    name: 'Arbitrum One',
-    shortName: 'ARB',
-    nativeCurrency: {
-      symbol: 'ETH'
-    }
-  }
-])
 
 // 截断的钱包地址
 const truncatedAddress = computed(() => {
@@ -561,8 +218,7 @@ const isMyProfile = computed(() => {
 })
 
 const tabs = [
-  { id: 'HISTORY', label: '任务' },
-  { id: 'BADGES', label: '徽章' }
+  { id: 'HISTORY', label: '任务' }
 ]
 
 // Mock Data
@@ -573,30 +229,13 @@ const claimedTasks = ref<Task[]>([])
 const loadingTasks = ref(false)
 const taskRewardSymbols = ref<Record<number, string>>({}) // 存储每个任务对应的积分符号
 
-// 编辑表单数据
-const editingForm = ref({
-  name: '',
-  title: '',
-  bio: '',
-  avatar: '',
-  skills: [] as string[],
-  avatarSeed: ''
-})
-
-const memberLevel = computed(() => {
-  if (!member.value) return 1
-  return Math.floor(member.value.reputation / 100) + 1
-})
-
 const navigateTo = (path: string) => {
   router.push(path)
 }
 
 // 翻转卡片切换
 const toggleFlip = () => {
-  if (!isEditing.value) {
-    isFlipped.value = !isFlipped.value
-  }
+  isFlipped.value = !isFlipped.value
 }
 
 // 复制地址
@@ -635,97 +274,6 @@ const copyAddress = async () => {
     console.error('复制失败:', err)
     toast.add({ title: `请手动复制: ${text}`, color: 'red' })
   }
-}
-
-// 选择链
-const selectChain = (chain: any) => {
-  currentChain.value = chain
-  showChainSelector.value = false
-  toast.add({ title: `已切换到 ${chain.name}`, color: 'green' })
-}
-
-// 转账相关函数
-const openScanner = () => {
-  showScanner.value = true
-}
-
-const closeScanner = () => {
-  showScanner.value = false
-  scannedAddress.value = ''
-}
-
-const applyScannedAddress = () => {
-  if (scannedAddress.value) {
-    sendForm.value.recipient = scannedAddress.value
-    closeScanner()
-  }
-}
-
-const savedContacts = ref([
-  { id: 1, name: 'Mario', address: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e', icon: '🍄' },
-  { id: 2, name: 'Luigi', address: '0x9bb3a8c5d4e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b', icon: '🟢' },
-  { id: 3, name: 'Peach', address: '0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1', icon: '👑' },
-])
-
-const selectContact = (contact: any) => {
-  sendForm.value.recipient = contact.address
-  showContacts.value = false
-}
-
-const closeSendModal = () => {
-  showSendModal.value = false
-  sendForm.value = {
-    recipient: '',
-    amount: '',
-    note: ''
-  }
-}
-
-const handleSend = async () => {
-  if (!sendForm.value.recipient || !sendForm.value.amount) {
-    toast.add({ title: '请填写接收方和金额', color: 'red' })
-    return
-  }
-
-  // 确保用户信息已加载
-  const user = await userStore.getUser()
-  if (!user || !user.id) {
-    toast.add({ title: '用户信息获取失败', color: 'red' })
-    return
-  }
-
-  // 创建新交易记录
-  const now = new Date()
-  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-  
-  // 获取当前用户的社区积分符号
-  let currency = '积分'
-  if (userCommunity.value && userCommunity.value.pointName) {
-    if (userCommunity.value.pointName === '零废弃积分') {
-      currency = 'ZWP'
-    } else if (userCommunity.value.pointName === '南塘豆') {
-      currency = 'NTD'
-    }
-  }
-  
-  const newTransaction = {
-    id: 0,
-    type: 'out' as const,
-    title: sendForm.value.note || '转账',
-    date: dateStr,
-    amount: parseFloat(sendForm.value.amount),
-    currency: currency
-  }
-
-  try {
-    await addTransaction(user.id, newTransaction)
-    toast.add({ title: '转账成功', color: 'green' })
-  } catch (error) {
-    console.error('保存交易记录失败:', error)
-    toast.add({ title: '保存交易记录失败', color: 'red' })
-  }
-
-  closeSendModal()
 }
 
 // 社区积分相关函数
@@ -772,134 +320,6 @@ const loadUserCommunity = async () => {
     console.error('Failed to load user community:', error)
   }
 }
-
-// 进入编辑模式
-const startEdit = () => {
-  if (member.value) {
-    editingForm.value = {
-      name: member.value.name || '',
-      bio: member.value.bio || '',
-      avatar: member.value.avatar || '',
-      avatarSeed: member.value.name || 'user'
-    }
-  }
-  isEditing.value = true
-  // 确保进入编辑模式时不翻转卡片
-  isFlipped.value = false
-}
-
-// 取消编辑
-const cancelEdit = () => {
-  isEditing.value = false
-  isFlipped.value = false  // 确保不翻转卡片
-}
-
-// 保存编辑
-const saveProfile = async () => {
-  if (!member.value) return
-  
-  try {
-    // 获取 API 工具
-    const { updateUserProfile, getMe } = useApi()
-    
-    // 获取当前用户信息
-    const user = userStore.user
-    if (!user?.id) {
-      toast.add({
-        title: '错误',
-        description: '用户信息获取失败',
-        color: 'red'
-      })
-      return
-    }
-    
-    // 调用 API 保存到服务器
-    const result = await updateUserProfile(user.id, {
-      name: editingForm.value.name.trim(),
-      bio: editingForm.value.bio.trim() || undefined,
-      avatar: editingForm.value.avatar || undefined
-    })
-    
-    if (result.success) {
-      // 更新本地成员信息
-      member.value.name = editingForm.value.name
-      member.value.bio = editingForm.value.bio
-      member.value.avatar = editingForm.value.avatar
-  
-      
-      // 确保不翻转卡片
-      isFlipped.value = false
-      
-      // 显示成功提示
-      toast.add({
-        title: '保存成功',
-        description: '个人信息已更新',
-        color: 'green'
-      })
-      
-      // 退出编辑模式
-      isEditing.value = false
-      
-      // 重新获取用户信息以同步最新数据
-      const updatedUser = await getMe()
-      if (updatedUser) {
-        const userWithMetadata = {
-          ...updatedUser,
-          isProfileSetup: !!updatedUser.name,
-          userType: updatedUser.userType || 'member'
-        }
-        userStore.setUser(userWithMetadata)
-      }
-    } else {
-      toast.add({
-        title: '保存失败',
-        description: result.message || '请重试',
-        color: 'red'
-      })
-    }
-  } catch (error: any) {
-    console.error('Save profile error:', error)
-    toast.add({
-      title: '保存失败',
-      description: error.message || '请重试',
-      color: 'red'
-    })
-  }
-}
-
-// 添加技能标签
-const addSkill = () => {
-  if (newSkill.value.trim() && !editingForm.value.skills.includes(newSkill.value.trim())) {
-    editingForm.value.skills.push(newSkill.value.trim())
-    newSkill.value = ''
-  }
-}
-
-// 移除技能标签
-const removeSkill = (index: number) => {
-  editingForm.value.skills.splice(index, 1)
-}
-
-// 更换头像
-const changeAvatar = () => {
-  // 由于 PixelAvatar 是基于 seed 生成的，我们可以通过改变 seed 来改变头像
-  // 这里可以弹出一个头像选择器，或者让用户输入一个 seed 字符串
-  const newSeed = prompt('输入头像种子（可以是任意文字）:', editingForm.value.avatarSeed || editingForm.value.name)
-  if (newSeed) {
-    editingForm.value.avatarSeed = newSeed
-    // 更新 member 的 name 也会更新头像（因为 PixelAvatar 使用 name 作为 seed）
-    editingForm.value.name = newSeed
-  }
-}
-
-// 监听编辑按钮点击
-watch(() => isEditing.value, (newVal) => {
-  if (newVal) {
-    startEdit()
-  } else {
-    cancelEdit()
-  }
-})
 
 // 加载领取的任务列表
 const loadClaimedTasks = async () => {

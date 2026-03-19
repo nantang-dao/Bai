@@ -10,14 +10,14 @@
       class="w-full h-full object-cover"
       @error="onImgError"
     />
-    <!-- 无头像或加载失败时：显示首字圆形占位，保持统一的头像圆框样式 -->
+    <!-- 无头像或加载失败时：显示 fallbackText（如链名）或首字圆形占位 -->
     <div
       v-else
       class="w-full h-full flex items-center justify-center rounded-full text-white font-bold select-none"
       :class="initialSizeClass"
       :style="{ backgroundColor: initialBgColor }"
     >
-      {{ displayInitial }}
+      {{ fallbackText || displayInitial }}
     </div>
   </div>
 </template>
@@ -33,6 +33,11 @@ const props = defineProps({
   seed: {
     type: String,
     default: 'user'
+  },
+  /** 可选：占位时显示的文字（如链名 OP/ETH），不传则显示 seed 首字 */
+  fallbackText: {
+    type: String,
+    default: ''
   },
   size: {
     type: String,

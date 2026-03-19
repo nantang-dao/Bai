@@ -35,6 +35,7 @@
 <script setup lang="ts">
 const router = useRouter()
 const userStore = useUserStore()
+const communityStore = useCommunityStore()
 
 const getMyProfilePath = () => {
   const user = userStore.user
@@ -44,12 +45,21 @@ const getMyProfilePath = () => {
   return '/member/1'
 }
 
-const navItems = computed(() => [
-  { label: '社区广场', path: '/communities', icon: '🗺️' },
-  { label: '任务', path: '/tasks', icon: '📋' },
-  { label: '活动', path: '/activities-feed', icon: '📅' },
-  { label: '我的', path: getMyProfilePath(), icon: '👤' }
-])
+// 第一个入口：社区（当前所选社区首页），未选时仍进入首页由页面引导去社区广场
+const communityPath = computed(() => '/')
+
+// 是否在底部导航中显示「活动」入口（隐藏时仅不展示，相关页面与路由仍保留）
+const showActivitiesNav = false
+
+const navItems = computed(() => {
+  const items = [
+    { label: '社区', path: communityPath.value, icon: '🏠' },
+    { label: '任务', path: '/tasks', icon: '📋' },
+    { label: '活动', path: '/activities-feed', icon: '📅' },
+    { label: '我的', path: getMyProfilePath(), icon: '👤' }
+  ]
+  return showActivitiesNav ? items : items.filter(item => item.path !== '/activities-feed')
+})
 
 const navigateTo = (path: string) => {
   try {

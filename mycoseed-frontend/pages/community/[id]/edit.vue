@@ -9,9 +9,66 @@
     </header>
     <div class="max-w-2xl mx-auto px-4 py-6 space-y-4">
       <div v-if="error" class="text-red-600 text-sm">{{ error }}</div>
+      <!-- 社区头像：点击上传 -->
       <div class="space-y-2">
         <label class="text-sm font-medium text-text-title">社区头像（可选）</label>
-        <input v-model="form.avatarUrl" type="url" class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body text-sm" placeholder="图片 URL，留空则使用默认" />
+        <div class="flex items-center gap-4">
+          <div class="w-20 h-20 rounded-xl overflow-hidden border border-border bg-input-bg flex-shrink-0">
+            <img v-if="avatarPreview" :src="avatarPreview" alt="头像预览" class="w-full h-full object-cover" />
+            <div v-else class="w-full h-full flex items-center justify-center text-2xl">🏘️</div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <input ref="avatarInputRef" type="file" accept="image/*" class="hidden" @change="onAvatarFileChange" />
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-xl border border-border text-text-body text-sm hover:bg-input-bg"
+              :disabled="avatarUploading"
+              @click="avatarInputRef?.click()"
+            >
+              {{ avatarUploading ? '上传中...' : '选择头像' }}
+            </button>
+            <button
+              v-if="form.avatarUrl"
+              type="button"
+              class="px-3 py-1.5 rounded-xl border border-border text-text-body text-sm hover:bg-input-bg"
+              @click="clearAvatar"
+            >
+              清除
+            </button>
+          </div>
+        </div>
+        <p v-if="avatarUploadError" class="text-red-500 text-xs">{{ avatarUploadError }}</p>
+      </div>
+      <!-- 背景图（最多三张）：点击上传 -->
+      <div class="space-y-2">
+        <label class="text-sm font-medium text-text-title">背景图（最多三张）</label>
+        <div class="grid grid-cols-3 gap-2">
+          <div v-for="(url, idx) in form.backgroundImages" :key="idx" class="space-y-1">
+            <div class="aspect-video rounded-xl border border-border bg-input-bg overflow-hidden">
+              <img v-if="url" :src="url" :alt="`背景图 ${idx + 1}`" class="w-full h-full object-cover" />
+              <div v-else class="w-full h-full flex items-center justify-center text-lg text-text-placeholder">图 {{ idx + 1 }}</div>
+            </div>
+            <input :ref="(el) => setBgInputRef(el, idx)" type="file" accept="image/*" class="hidden" @change="(e) => onBgFileChange(e, idx)" />
+            <div class="flex gap-1">
+              <button
+                type="button"
+                class="flex-1 px-2 py-1 rounded-lg border border-border text-text-body text-xs hover:bg-input-bg"
+                :disabled="bgUploading[idx]"
+                @click="triggerBgInput(idx)"
+              >
+                {{ bgUploading[idx] ? '上传中' : '上传' }}
+              </button>
+              <button
+                v-if="url"
+                type="button"
+                class="px-2 py-1 rounded-lg border border-border text-text-body text-xs hover:bg-input-bg"
+                @click="form.backgroundImages[idx] = ''"
+              >
+                清除
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="space-y-2">
         <label class="text-sm font-medium text-text-title">社区名称</label>
@@ -46,9 +103,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCommunityById, updateCommunity, getApiBaseUrl, type Community } from '~/utils/api'
+import { useFileUpload } from '~/composables/useFileUpload'
+import { useApi } from '~/composables/useApi'
 
 definePageMeta({ layout: 'default' })
 
@@ -58,7 +117,70 @@ const id = route.params.id as string
 const community = ref<Community | null>(null)
 const error = ref('')
 const saving = ref(false)
-const form = reactive({ name: '', description: '', markdownIntro: '', pointName: '积分', isPublic: true, avatarUrl: '' })
+const form = reactive({ name: '', description: '', markdownIntro: '', pointName: '积分', isPublic: true, avatarUrl: '', backgroundImages: ['', '', ''] as string[] })
+
+// 头像上传
+const avatarInputRef = ref<HTMLInputElement | null>(null)
+const { uploading: avatarUploading, previewUrl: avatarPreviewUrl, error: uploadError, uploadFile: uploadAvatarFile, clearPreview: clearAvatarPreview } = useFileUpload()
+const avatarUploadError = ref<string | null>(null)
+const avatarPreview = computed(() => form.avatarUrl || avatarPreviewUrl.value)
+
+async function onAvatarFileChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  avatarUploadError.value = null
+  const url = await uploadAvatarFile(file)
+  if (url) form.avatarUrl = url
+  else avatarUploadError.value = uploadError?.value ?? '上传失败'
+  target.value = ''
+}
+
+function clearAvatar() {
+  form.avatarUrl = ''
+  clearAvatarPreview()
+  avatarUploadError.value = null
+  avatarInputRef.value && (avatarInputRef.value.value = '')
+}
+
+// 背景图上传（三张）
+const bgInputRefs = ref<(HTMLInputElement | null)[]>([])
+const bgUploading = ref([false, false, false])
+const api = useApi()
+
+function setBgInputRef(el: any, idx: number) {
+  if (el) bgInputRefs.value[idx] = el as HTMLInputElement
+}
+
+function triggerBgInput(idx: number) {
+  bgInputRefs.value[idx]?.click()
+}
+
+async function onBgFileChange(e: Event, idx: number) {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    error.value = '请选择图片文件'
+    target.value = ''
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    error.value = '图片大小不能超过5MB'
+    target.value = ''
+    return
+  }
+  bgUploading.value[idx] = true
+  try {
+    const result = await api.uploadAvatar(file)
+    form.backgroundImages[idx] = result.url
+  } catch (err: any) {
+    error.value = err.message || '上传失败'
+  } finally {
+    bgUploading.value[idx] = false
+    target.value = ''
+  }
+}
 
 onMounted(async () => {
   try {
@@ -70,6 +192,8 @@ onMounted(async () => {
       form.pointName = community.value.pointName || '积分'
       form.isPublic = community.value.isPublic !== false
       form.avatarUrl = community.value.avatarUrl || ''
+      const bg = community.value.backgroundImages || []
+      form.backgroundImages = [bg[0] || '', bg[1] || '', bg[2] || '']
     }
   } catch (e: any) {
     error.value = e.message || '加载失败'
@@ -91,6 +215,7 @@ async function save() {
       pointName: form.pointName,
       isPublic: form.isPublic,
       avatarUrl: form.avatarUrl || undefined,
+      backgroundImages: form.backgroundImages.filter(u => (u || '').trim()).slice(0, 3),
     }, getApiBaseUrl())
     await getCommunityById(id).then(c => { if (c) community.value = c })
     router.push('/')

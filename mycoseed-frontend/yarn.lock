@@ -285,10 +285,10 @@
   resolved "https://registry.npmjs.org/@epic-web/invariant/-/invariant-1.0.0.tgz"
   integrity sha512-lrTPqgvfFQtR/eY/qkIzp98OGdNJu0m5ji3q/nJI8v3SXkRKEnWiOxMmbvcSoAIzv/cGiuvRy57k4suKQSAdwA==
 
-"@esbuild/darwin-x64@0.25.11":
+"@esbuild/darwin-arm64@0.25.11":
   version "0.25.11"
-  resolved "https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.25.11.tgz"
-  integrity sha512-+hfp3yfBalNEpTGp9loYgbknjR695HkqtY3d3/JjSRUyPg/xd6q+mQqIb5qdywnDxRZykIHs3axEqU6l1+oWEQ==
+  resolved "https://registry.npmmirror.com/@esbuild/darwin-arm64/-/darwin-arm64-0.25.11.tgz"
+  integrity sha512-VekY0PBCukppoQrycFxUqkCojnTQhdec0vevUL/EDOCnXd9LKWqD/bHwMPzigIJXPhC59Vd1WFIL57SKs2mg4w==
 
 "@headlessui/tailwindcss@^0.2.2":
   version "0.2.2"
@@ -770,30 +770,30 @@
     ufo "^1.5.4"
     unctx "^2.4.1"
 
-"@oxc-minify/binding-darwin-x64@0.94.0":
+"@oxc-minify/binding-darwin-arm64@0.94.0":
   version "0.94.0"
-  resolved "https://registry.npmjs.org/@oxc-minify/binding-darwin-x64/-/binding-darwin-x64-0.94.0.tgz"
-  integrity sha512-1gJeYcQf0Mmnu9Gxld2dLJGXTm9EzOQKRAjCVT2xGciKrNeekkJntDb+NdzxcSNPTjchkvbDwY6lCGZbcJx2lg==
+  resolved "https://registry.npmmirror.com/@oxc-minify/binding-darwin-arm64/-/binding-darwin-arm64-0.94.0.tgz"
+  integrity sha512-T0k3pG/izIutpl8cQl9Xeb0TikBILGd3rglCgRhhG5G5xsk/AAAp/qsSdzBm/8yMXksfRWqE0teh7XDWKmzOXw==
 
-"@oxc-parser/binding-darwin-x64@0.94.0":
+"@oxc-parser/binding-darwin-arm64@0.94.0":
   version "0.94.0"
-  resolved "https://registry.npmjs.org/@oxc-parser/binding-darwin-x64/-/binding-darwin-x64-0.94.0.tgz"
-  integrity sha512-Ek1fh8dw6b+/hzLo5jjPuxkshRxekjtTfhfWZ4RehMYiApT8Rj4k+7kcQ+zV1ZaF+1+yLgNqNja2RMRqx3MHzQ==
+  resolved "https://registry.npmmirror.com/@oxc-parser/binding-darwin-arm64/-/binding-darwin-arm64-0.94.0.tgz"
+  integrity sha512-uYyeMH9vMfb0JAdm6ZwHTgcTv53030elQKMnUbux9K5rxOCWbHUyeVACEv86V+E/Ft6RtkvWDIqUY4sYZRmcuQ==
 
 "@oxc-project/types@^0.94.0":
   version "0.94.0"
   resolved "https://registry.npmmirror.com/@oxc-project/types/-/types-0.94.0.tgz"
   integrity sha512-+UgQT/4o59cZfH6Cp7G0hwmqEQ0wE+AdIwhikdwnhWI9Dp8CgSY081+Q3O67/wq3VJu8mgUEB93J9EHHn70fOw==
 
-"@oxc-transform/binding-darwin-x64@0.94.0":
+"@oxc-transform/binding-darwin-arm64@0.94.0":
   version "0.94.0"
-  resolved "https://registry.npmjs.org/@oxc-transform/binding-darwin-x64/-/binding-darwin-x64-0.94.0.tgz"
-  integrity sha512-GADv5xcClQpYj5d6GLdPF6Qz/3OSn0d/LKhDklpW/5S42RQsGxI+83iXF1e61KITd4yp4VAvjEiuDM52zb4xYQ==
+  resolved "https://registry.npmmirror.com/@oxc-transform/binding-darwin-arm64/-/binding-darwin-arm64-0.94.0.tgz"
+  integrity sha512-HbnmwC1pZ9M/nXqA36TpwF7vcXk+PgLMxDvvza5C9CCivfi3MUfqCvFMvRI0snlVm2PK2GAwWJjBtng1fR8LJw==
 
-"@parcel/watcher-darwin-x64@2.5.1":
+"@parcel/watcher-darwin-arm64@2.5.1":
   version "2.5.1"
-  resolved "https://registry.npmjs.org/@parcel/watcher-darwin-x64/-/watcher-darwin-x64-2.5.1.tgz"
-  integrity sha512-1ZXDthrnNmwv10A0/3AJNZ9JGlzrF82i3gNQcWOzd7nJ8aj+ILyW1MTxVk35Db0u91oD5Nlk9MBiujMlwmeXZg==
+  resolved "https://registry.npmmirror.com/@parcel/watcher-darwin-arm64/-/watcher-darwin-arm64-2.5.1.tgz"
+  integrity sha512-eAzPv5osDmZyBhou8PoF4i6RQXAfeKL9tjb3QzYuccXFMQU0ruIc/POh30ePnaOyD1UXdlKguHBmsTs53tVoPw==
 
 "@parcel/watcher-wasm@^2.4.1":
   version "2.5.1"
@@ -953,10 +953,10 @@
     estree-walker "^2.0.2"
     picomatch "^4.0.2"
 
-"@rollup/rollup-darwin-x64@4.52.4":
+"@rollup/rollup-darwin-arm64@4.52.4":
   version "4.52.4"
-  resolved "https://registry.npmjs.org/@rollup/rollup-darwin-x64/-/rollup-darwin-x64-4.52.4.tgz"
-  integrity sha512-hZgP05pResAkRJxL1b+7yxCnXPGsXU0fG9Yfd6dUaoGk+FhdPKCJ5L1Sumyxn8kvw8Qi5PvQ8ulenUbRjzeCTw==
+  resolved "https://registry.npmmirror.com/@rollup/rollup-darwin-arm64/-/rollup-darwin-arm64-4.52.4.tgz"
+  integrity sha512-QRWSW+bVccAvZF6cbNZBJwAehmvG9NwfWHwMy4GbWi/BQIA/laTIktebT2ipVjNncqE6GLPxOok5hsECgAxGZg==
 
 "@sec-ant/readable-stream@^0.4.1":
   version "0.4.1"
@@ -1245,6 +1245,13 @@
   version "7946.0.16"
   resolved "https://registry.npmjs.org/@types/geojson/-/geojson-7946.0.16.tgz"
   integrity sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==
+
+"@types/node@^18.0.0 || ^20.0.0 || >=22.0.0", "@types/node@^20.19.0 || >=22.12.0", "@types/node@^25.5.0":
+  version "25.5.0"
+  resolved "https://registry.npmjs.org/@types/node/-/node-25.5.0.tgz"
+  integrity sha512-jp2P3tQMSxWugkCUKLRPVUpGaL5MVFwF8RDuSRztfwgN1wmqJeMSbKlnEtQqU8UrhTmzEmZdu2I6v2dpp7XIxw==
+  dependencies:
+    undici-types "~7.18.0"
 
 "@types/parse-path@^7.0.0":
   version "7.1.0"
@@ -5694,6 +5701,11 @@ unctx@^2.4.1:
     estree-walker "^3.0.3"
     magic-string "^0.30.17"
     unplugin "^2.1.0"
+
+undici-types@~7.18.0:
+  version "7.18.2"
+  resolved "https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz"
+  integrity sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==
 
 undici@^7.16.0:
   version "7.16.0"

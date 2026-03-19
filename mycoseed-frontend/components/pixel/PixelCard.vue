@@ -7,7 +7,7 @@
     ]"
   >
     <div class="relative">
-      <div v-if="$slots.header" class="mb-4 border-b border-border pb-3 text-base font-bold text-text-title">
+      <div v-if="$slots.header" class="mb-4 border-b border-border pb-3 text-base font-bold text-text-title flex items-center flex-wrap gap-2">
         <slot name="header" />
       </div>
       
