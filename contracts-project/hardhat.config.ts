@@ -7,6 +7,14 @@ export default defineConfig({
   plugins: [hardhatEthers, hardhatVerify],
   solidity: {
     version: "0.8.28",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200,
+      },
+      // Needed to avoid "stack too deep" in complex functions.
+      viaIR: true,
+    },
   },
   networks: {
     sepolia: {

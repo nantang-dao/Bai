@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+/// @notice Legacy remark logic contract (deprecated).
+/// This file preserves the original V1 implementation for reference only.
+/// Do NOT deploy for new environments.
 contract LogicV1 {
     address public owner;
     mapping(bytes32 => string) public senderRemarks;
@@ -44,5 +47,5 @@ contract LogicV1 {
         bytes32 taskIdHash = keccak256(abi.encodePacked(taskId));
         return (senderRemarks[taskIdHash], receiverRemarks[taskIdHash], remarkTimestamps[taskIdHash]);
     }
-
 }
+
