@@ -771,8 +771,14 @@ export const getMyTasks = async (baseUrl: string): Promise<Task[]> => {
  * @param taskId 任务 ID (UUID string)
  * @param proof 凭证数据
  * @param baseUrl API 基础 URL
+ * @param receiverRemark 可选：任务感想（上链备注，最多32字）
  */
-export const submitProof = async (taskId: string, proof: ProofData, baseUrl: string): Promise<{ success: boolean; message: string }> => {
+export const submitProof = async (
+  taskId: string,
+  proof: ProofData,
+  baseUrl: string,
+  receiverRemark?: string
+): Promise<{ success: boolean; message: string }> => {
   try {
     const response = await fetch(`${baseUrl}/api/tasks/${taskId}/submit`, {
       method: 'PATCH',
@@ -782,6 +788,7 @@ export const submitProof = async (taskId: string, proof: ProofData, baseUrl: str
       },
       body: JSON.stringify({
         proof: proof, // 直接传递对象，后端会序列化
+        receiver_remark: receiverRemark?.trim().slice(0, 32) || undefined,
       }),
     })
 
@@ -2631,23 +2638,44 @@ export const parseFragment = (fragment: string): Record<string, string> => {
  * 构造跳转到Semi-app转账页面的链接
  * @param receiverAddress 接收方钱包地址（参与者的钱包地址）
  * @param amount 转账金额（字符串格式，如 "100"）
- * @param tokenAddress 代币合约地址（可选，默认NT代币）
- * @param chainId 链ID（可选，默认10-Optimism）
+ * @param opts 可选参数：链/代币/跳转基址及备注信息
  * @returns Semi-app转账页面URL
  */
 export function buildSemiTransferUrl(
   receiverAddress: string,
   amount: string,
-  tokenAddress: string = '0x7563cb33148cD2b929ed85e69F697be13b515Bd0', // NT代币
-  chainId: number = 10 //Optimism
+  opts?: {
+    semiAppUrl: string
+    tokenAddress?: string
+    chainId?: number
+    /** backward compat: old param name used by semi */
+    task_id?: string
+    /** scheme A: task_info_id UUID */
+    pool_uuid?: string
+    /** scheme A: task row UUID */
+    task_uuid?: string
+    memo?: string
+    receiver_remark?: string
+    metadata?: string
+  }
 ): string {
-  const semiAppBaseUrl = 'https://www.semi.im'
+  const semiAppBaseUrl = (opts?.semiAppUrl || '').replace(/\/+$/, '')
+  const tokenAddress = opts?.tokenAddress || '0x7563cb33148cD2b929ed85e69F697be13b515Bd0' // NT代币
+  const chainId = opts?.chainId ?? 10 // Optimism
+
   const params = new URLSearchParams({
     chain_id: chainId.toString(),
     token_address: tokenAddress,
     to: receiverAddress,
     amount: amount,
   })
+
+  if (opts?.task_id) params.set('task_id', opts.task_id)
+  if (opts?.pool_uuid) params.set('pool_uuid', opts.pool_uuid)
+  if (opts?.task_uuid) params.set('task_uuid', opts.task_uuid)
+  if (opts?.memo) params.set('memo', opts.memo.trim().slice(0, 32))
+  if (opts?.receiver_remark) params.set('receiver_remark', opts.receiver_remark.trim().slice(0, 32))
+  if (opts?.metadata) params.set('metadata', opts.metadata)
 
   return `${semiAppBaseUrl}/transfer?${params.toString()}`
 }

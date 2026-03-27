@@ -52,6 +52,20 @@
               <p class=" text-base text-text-title">{{ task.submissionInstructions || '请按照任务要求完成并提交相关凭证。' }}</p>
             </div>
 
+            <!-- 任务感想（上链备注，最多32字，可修改） -->
+            <div class="pt-4 border-t border-border">
+              <label class="block font-bold text-xs uppercase text-text-title mb-2">
+                任务感想（会随交易记录一起上链，最多32字，可修改）
+              </label>
+              <input
+                v-model="receiverRemark"
+                :maxlength="32"
+                class="w-full px-4 py-3 bg-input-bg border border-border rounded-2xl shadow-soft text-base text-text-title focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                placeholder="写一句感想吧"
+              />
+              <p class="text-xs text-text-placeholder mt-1">{{ receiverRemark.length }} / 32</p>
+            </div>
+
             <!-- 文件上传 -->
             <div v-if="requiresFileUpload" class="pt-4 border-t border-border">
               <h3 class="font-bold text-xs uppercase text-text-title mb-4">上传文件</h3>
@@ -273,6 +287,7 @@ const selectedFiles = ref<{
   additional: []
 })
 const submissionDescription = ref('')
+const receiverRemark = ref('')
 const isSubmitting = ref(false)
 const dragOver = ref(false)
 const taskRewardSymbol = ref('积分') // 任务奖励的积分符号
@@ -343,6 +358,24 @@ const loadTask = async () => {
     loading.value = false
   }
 }
+
+// 默认生成「任务感想」（不带 task_id，短时间格式），用户可编辑覆盖
+watch(
+  () => task.value?.title,
+  (title) => {
+    if (!title) return
+    if (receiverRemark.value.trim()) return
+
+    const now = new Date()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mi = String(now.getMinutes()).padStart(2, '0')
+    const shortTime = `${mm}${dd}-${hh}:${mi}`
+    receiverRemark.value = `完成任务：《${title}》${shortTime}`.slice(0, 32)
+  },
+  { immediate: true }
+)
 
 // 判断是否需要文件上传
 const requiresFileUpload = computed(() => {
@@ -742,7 +775,7 @@ const submitForm = async () => {
       }
     }
     
-    const result = await submitProof(taskId, proofData, baseUrl)
+    const result = await submitProof(taskId, proofData, baseUrl, receiverRemark.value)
     
     if (result.success) {
       toast.add({

@@ -762,6 +762,8 @@ const loadTask = async () => {
     // 转换API数据为页面需要的格式
     task.value = {
       id: taskData.id,
+      // scheme A: task_info_id 作为 pool_uuid（semi 侧派生 uint256 poolId）
+      taskInfoId: (taskData as any).taskInfoId || (taskData as any).taskInfo?.id,
       title: taskData.title,
       description: taskData.description,
       reward: taskData.reward,
@@ -848,6 +850,7 @@ const loadTask = async () => {
             files: files,
             gpsLocation: gpsLocation,
             status: p.status || (p.claimedAt ? (p.submittedAt ? 'submitted' : 'claimed') : 'unclaimed'),
+            receiverRemark: (p.receiver_remark || p.receiverRemark || '').trim().slice(0, 32),
             reward: p.reward || taskData.reward, // 优先使用每个参与者的实际奖励，如果没有则回退到任务基础奖励
             transferredAt: p.transferredAt // ✅ 新增：从后端数据中读取转账状态
           }
@@ -982,6 +985,7 @@ const loadTask = async () => {
         files: files,
         gpsLocation: gpsLocation,
         status: taskData.status || 'submitted',
+        receiverRemark: ((taskData as any).receiverRemark || (taskData as any).receiver_remark || '').trim().slice(0, 32),
         reward: taskData.reward,
         transferredAt: taskData.transferredAt // ✅ 新增：从后端数据中读取转账状态
       }]
@@ -1190,19 +1194,47 @@ const handleTransferToSemi = async () => {
 
   isTransferring.value = true
   
+  // 先同步打开空白页，避免异步后 window.open 被拦截
+  const newWindow = window.open('about:blank', '_blank')
+  if (!newWindow) {
+    console.error('浏览器阻止了弹窗')
+    toast.add({
+      title: '无法打开转账页面',
+      description: '浏览器阻止了弹窗，请允许弹窗后重试',
+      color: 'orange'
+    })
+    isTransferring.value = false
+    return
+  }
+
   try {
+    // 给空白页一个轻提示，减少“白屏感”
+    newWindow.document.title = '正在跳转…'
+    newWindow.document.body.innerHTML = `
+      <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; color: #111;">
+        <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">正在跳转到 Semi…</div>
+        <div style="font-size: 13px; color: #555;">请稍候，如果没有自动跳转请返回重试。</div>
+      </div>
+    `
+  } catch (e) {
+    // 某些浏览器策略下可能不允许操作新窗口 document，忽略即可
+  }
+
+  try {
+    const config = useRuntimeConfig()
+    const semiAppUrl = config.public.semiAppUrl as string
     const baseUrl = getApiBaseUrl()
     const { claimerId, reward, creatorId } = transferData.value
     
     console.log('=== 开始处理转账跳转 ===')
     console.log('claimerId:', claimerId, 'reward:', reward, 'creatorId:', creatorId)
 
-    // 获取创建者的钱包地址（发送方）
-    const creatorAddress = await getWalletAddressByUserId(creatorId, baseUrl)
+    // 并行获取创建者/参与者钱包地址（更快，也更不容易被弹窗策略影响）
+    const [creatorAddress, claimerAddress] = await Promise.all([
+      getWalletAddressByUserId(creatorId, baseUrl),
+      getWalletAddressByUserId(claimerId, baseUrl),
+    ])
     console.log('创建者钱包地址:', creatorAddress)
-
-    // 获取参与者的钱包地址（接受方）
-    const claimerAddress = await getWalletAddressByUserId(claimerId, baseUrl)
     console.log('参与者钱包地址:', claimerAddress)
 
     // 检查钱包地址
@@ -1213,6 +1245,7 @@ const handleTransferToSemi = async () => {
         description: '创建者未绑定钱包，无法转账',
         color: 'orange'
       })
+      try { newWindow.close() } catch (e) {}
       return
     }
     
@@ -1223,33 +1256,55 @@ const handleTransferToSemi = async () => {
         description: '参与者未绑定钱包，无法转账',
         color: 'orange'
       })
+      try { newWindow.close() } catch (e) {}
       return
     }
+
+    // 生成默认 memo（公开上链，最多 32 字，可修改）
+    const now = new Date()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mi = String(now.getMinutes()).padStart(2, '0')
+    const shortTime = `${mm}${dd}-${hh}:${mi}`
+    const defaultMemo = `任务：《${task.value.title || ''}》${shortTime}`.slice(0, 32)
+    // 不再弹窗；直接带默认 memo 到 semi，再由用户在 semi 页面修改
+    const memo = defaultMemo.trim().slice(0, 32)
+
+    const targetTaskId = currentSubmission.value?.taskId || taskId
+    const receiverRemark = (currentSubmission.value as any)?.receiverRemark?.trim().slice(0, 32) || ''
+    const poolUuid = ((task.value as any)?.taskInfoId || '').toString()
 
     // 构造并跳转到semi转账页面
     const transferUrl = buildSemiTransferUrl(
       claimerAddress, // 接收方：参与者的钱包地址
       reward.toString(), // 转账金额
+      {
+        semiAppUrl,
+        // scheme A: semi 用 pool_uuid/task_uuid 来派生 uint256 poolId/taskId
+        pool_uuid: poolUuid || undefined,
+        task_uuid: targetTaskId,
+        // backward compat: 保留旧参数（不依赖，但不破坏旧逻辑）
+        task_id: targetTaskId,
+        memo,
+        receiver_remark: receiverRemark,
+      }
     )
     console.log('转账URL:', transferUrl)
     
-    // 在新窗口打开semi转账页面
-    const newWindow = window.open(transferUrl, '_blank')
-    if (!newWindow) {
-      console.error('浏览器阻止了弹窗')
-      toast.add({
-        title: '无法打开转账页面',
-        description: '浏览器阻止了弹窗，请允许弹窗后重试',
-        color: 'orange'
-      })
-    } else {
-      console.log('✅ 已打开转账页面')
-      toast.add({
-        title: '已打开转账页面',
-        description: '请在 Semi 页面完成转账后，返回标记为已转账',
-        color: 'green'
-      })
+    // 使用已打开的窗口跳转到 semi
+    try {
+      newWindow.location.href = transferUrl
+    } catch (e) {
+      // 兜底：如果被浏览器限制，尝试直接打开
+      window.open(transferUrl, '_blank')
     }
+    console.log('✅ 已打开转账页面')
+    toast.add({
+      title: '已打开转账页面',
+      description: '请在 Semi 页面完成转账后，返回标记为已转账',
+      color: 'green'
+    })
   } catch (error) {
     console.error('获取钱包地址失败：', error)
     toast.add({
@@ -1257,6 +1312,7 @@ const handleTransferToSemi = async () => {
       description: '获取钱包地址失败，请稍后重试',
       color: 'orange'
     })
+    try { newWindow.close() } catch (e) {}
   } finally {
     isTransferring.value = false
   }

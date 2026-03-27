@@ -1523,17 +1523,45 @@ const handleTransferToSemi = async () => {
 
   isTransferring.value = true
   
+  // 先同步打开空白页，避免异步后 window.open 被拦截
+  const newWindow = window.open('about:blank', '_blank')
+  if (!newWindow) {
+    console.error('浏览器阻止了弹窗')
+    toast.add({
+      title: '无法打开转账页面',
+      description: '浏览器阻止了弹窗，请允许弹窗后重试',
+      color: 'orange'
+    })
+    isTransferring.value = false
+    return
+  }
+  
   try {
+    // 给空白页一个轻提示，减少“白屏感”
+    newWindow.document.title = '正在跳转…'
+    newWindow.document.body.innerHTML = `
+      <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; color: #111;">
+        <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">正在跳转到 Semi…</div>
+        <div style="font-size: 13px; color: #555;">请稍候，如果没有自动跳转请返回重试。</div>
+      </div>
+    `
+  } catch (e) {
+    // 某些浏览器策略下可能不允许操作新窗口 document，忽略即可
+  }
+  
+  try {
+    const config = useRuntimeConfig()
+    const semiAppUrl = config.public.semiAppUrl as string
     const baseUrl = getApiBaseUrl()
     const creatorId = task.value.creatorId
     const claimerId = task.value.claimerId
     const reward = task.value.reward
     
-    // 获取创建者的钱包地址（发送方）
-    const creatorAddress = await getWalletAddressByUserId(creatorId, baseUrl)
-    
-    // 获取参与者的钱包地址（接受方）
-    const claimerAddress = await getWalletAddressByUserId(claimerId, baseUrl)
+    // 并行获取创建者/参与者钱包地址（更快，也更不容易被弹窗策略影响）
+    const [creatorAddress, claimerAddress] = await Promise.all([
+      getWalletAddressByUserId(creatorId, baseUrl),
+      getWalletAddressByUserId(claimerId, baseUrl),
+    ])
     
     // 检查钱包地址
     if (!creatorAddress) {
@@ -1542,6 +1570,7 @@ const handleTransferToSemi = async () => {
         description: '创建者未绑定钱包，无法转账',
         color: 'orange'
       })
+      try { newWindow.close() } catch (e) {}
       return
     }
     
@@ -1551,30 +1580,54 @@ const handleTransferToSemi = async () => {
         description: '参与者未绑定钱包，无法转账',
         color: 'orange'
       })
+      try { newWindow.close() } catch (e) {}
       return
     }
+
+    // 生成默认 memo（公开上链，最多 32 字，可修改）
+    const now = new Date()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mi = String(now.getMinutes()).padStart(2, '0')
+    const shortTime = `${mm}${dd}-${hh}:${mi}`
+    const defaultMemo = `任务：《${task.value.title || ''}》${shortTime}`.slice(0, 32)
+    // 不再弹窗；直接带默认 memo 到 semi，再由用户在 semi 页面修改
+    const memo = defaultMemo.trim().slice(0, 32)
+
+    const targetTaskId = task.value.id
+    const receiverRemark = ((task.value as any)?.receiverRemark ?? '').trim().slice(0, 32)
+    const poolUuid = ((task.value as any)?.taskInfoId || (task.value as any)?.taskInfo?.id || '').toString()
 
     // 构造并跳转到semi转账页面
     const transferUrl = buildSemiTransferUrl(
       claimerAddress,
       reward.toString(),
+      {
+        semiAppUrl,
+        // scheme A: semi 用 pool_uuid/task_uuid 来派生 uint256 poolId/taskId
+        pool_uuid: poolUuid || undefined,
+        task_uuid: targetTaskId,
+        // backward compat
+        task_id: targetTaskId,
+        memo,
+        receiver_remark: receiverRemark,
+      }
     )
     
-    // 在新窗口打开semi转账页面
-    const newWindow = window.open(transferUrl, '_blank')
-    if (!newWindow) {
-      toast.add({
-        title: '无法打开转账页面',
-        description: '浏览器阻止了弹窗，请允许弹窗后重试',
-        color: 'orange'
-      })
-    } else {
-      toast.add({
-        title: '已打开转账页面',
-        description: '请在 Semi 页面完成转账后，点击"标记为已转账"',
-        color: 'green'
-      })
+    // 使用已打开的窗口跳转到 semi
+    try {
+      newWindow.location.href = transferUrl
+    } catch (e) {
+      // 兜底：如果被浏览器限制，尝试直接打开
+      window.open(transferUrl, '_blank')
     }
+    
+    toast.add({
+      title: '已打开转账页面',
+      description: '请在 Semi 页面完成转账后，点击"标记为已转账"',
+      color: 'green'
+    })
   } catch (error) {
     console.error('获取钱包地址失败：', error)
     toast.add({
@@ -1582,6 +1635,7 @@ const handleTransferToSemi = async () => {
       description: '获取钱包地址失败，请稍后重试',
       color: 'orange'
     })
+    try { newWindow.close() } catch (e) {}
   } finally {
     isTransferring.value = false
   }
