@@ -76,6 +76,7 @@ export interface Task{
     // 状态相关（每个参与者独立）
     status: TaskStatus
     proof?: string               // 该参与者的凭证
+    receiverRemark?: string      // 接包者备注（随交易上链/记录，来自 task_proofs.receiver_remark）
     rejectReason?: string
     rejectOption?: 'resubmit' | 'reclaim' | 'rejected'
     discount?: number

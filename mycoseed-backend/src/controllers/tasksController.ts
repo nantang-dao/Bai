@@ -325,6 +325,7 @@ const mapDbTaskToTask = (
   
   // 从 task_proofs 获取凭证和审核信息
   const proof = taskProof?.proof || dbTask.proof
+  const receiverRemark = taskProof?.receiver_remark || (dbTask as any).receiver_remark
   const rejectReason = taskProof?.reject_reason || dbTask.reject_reason
   const rejectOption = taskProof?.reject_option || dbTask.reject_option
   const discount = taskProof?.discount ? parseFloat(taskProof.discount) : (dbTask.discount ? parseFloat(dbTask.discount) : undefined)
@@ -372,6 +373,7 @@ const mapDbTaskToTask = (
     // 状态相关（每个参与者独立）
     status: dbTask.status as TaskStatus,
     proof: proof,
+    receiverRemark: receiverRemark || undefined,
     rejectReason: rejectReason,
     rejectOption: rejectOption || undefined,
     discount: discount,
@@ -465,13 +467,14 @@ const getTaskFromDb = async (taskId: string): Promise<TaskDataWithRelations> => 
     let taskProof = null
     const { data: proofData, error: proofError } = await supabase
       .from('task_proofs')
-      .select('proof, reject_reason, reject_option, discount, discount_reason')
+      .select('proof, receiver_remark, reject_reason, reject_option, discount, discount_reason')
       .eq('task_id', taskId)
       .single()
     
     if (!proofError && proofData) {
       taskProof = proofData
       taskDataWithRelations.proof = proofData.proof
+      ;(taskDataWithRelations as any).receiver_remark = (proofData as any).receiver_remark
       taskDataWithRelations.reject_reason = proofData.reject_reason
       taskDataWithRelations.reject_option = proofData.reject_option
       taskDataWithRelations.discount = proofData.discount
@@ -908,6 +911,23 @@ export const getTaskById = async (req: Request, res: Response) => {
               }, {} as Record<string, any>)
             }
           }
+
+          // 获取所有任务行的接包者备注（receiver_remark）
+          // 该字段在提交凭证时写入 task_proofs.receiver_remark，用于审核通过后跳转 semi 时带入上链
+          let receiverRemarksMap: Record<string, string> = {}
+          if (taskIds.length > 0) {
+            const { data: proofsData } = await supabase
+              .from('task_proofs')
+              .select('task_id, receiver_remark')
+              .in('task_id', taskIds)
+
+            if (proofsData) {
+              receiverRemarksMap = proofsData.reduce((acc, p: any) => {
+                if (p?.task_id) acc[p.task_id] = p.receiver_remark || ''
+                return acc
+              }, {} as Record<string, string>)
+            }
+          }
           
           // 获取指定用户信息（用于显示未领取的指定用户名称）
           let assignedUsersMap: Record<string, { id: string; name: string }> = {}
@@ -955,6 +975,7 @@ export const getTaskById = async (req: Request, res: Response) => {
               claimerId: t.claimer_id || undefined,
               claimedAt: claimedAt || '',
               submittedAt: submittedAt || undefined,
+              receiver_remark: receiverRemarksMap[t.id] || undefined,
               status: t.status,
               participantIndex: t.participant_index || 1,
               transferredAt: formatLocalDateTime(t.transferred_at) || undefined
@@ -1472,7 +1493,7 @@ export const submitProof = async (req: AuthRequest, res: Response) =>
     try
     {
         const { id } = req.params
-        const { proof } = req.body
+        const { proof, receiver_remark } = req.body
         const user = req.user
 
         if (!user) {
@@ -1606,6 +1627,7 @@ export const submitProof = async (req: AuthRequest, res: Response) =>
             .upsert({
                 task_id: id,
                 proof: proofString,
+                receiver_remark: typeof receiver_remark === 'string' ? receiver_remark.trim().slice(0, 32) : null,
                 updated_at: now
             }, {
                 onConflict: 'task_id'
