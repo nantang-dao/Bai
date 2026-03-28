@@ -1,76 +1,150 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --primary: #00B3B3;
-  --accent: #2D8CFF;
-  --background: #F7F7F9;
-  --foreground: #1A1A1A;
-  --card: #FFFFFF;
-  --input-bg: #F5F7FA;
-  --text-title: #1A1A1A;
-  --text-body: #666666;
-  --text-placeholder: #999999;
-  --border: #F0F0F0;
-  --muted: #F0F0F0;
-  --muted-foreground: #666666;
-  --destructive: #ef4444;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --info: #3b82f6;
+@layer base {
+  :root {
+    /* Color tokens — cold-neutral axis, background aligned to #F8F8FC */
+    --background: #F8F8FC;
+    --surface: #FFFFFF;
+    --surface-raised: #F2F2F7;
+    --border: #E4E4EA;
+    --border-subtle: #EDEDF3;
+    --text-primary: #0C0C14;
+    --text-secondary: #6B6B7E;
+    --text-tertiary: #9898AF;
+
+    /* Accent — full interaction chain */
+    --accent: #0066FF;
+    --accent-hover: #0052CC;
+    --accent-active: #003DB3;
+    --accent-muted: #E5EEFF;
+    --accent-foreground: #FFFFFF;
+
+    /* Semantic */
+    --success: #00875A;
+    --success-muted: #E3F5EE;
+    --warning: #B45309;
+    --warning-muted: #FEF3C7;
+    --destructive: #C41C1C;
+    --destructive-muted: #FEE2E2;
+
+    /* Easing — project-specific curves */
+    --ease-snap: cubic-bezier(0.2, 0, 0, 1);     /* button press/release */
+    --ease-glide: cubic-bezier(0.16, 1, 0.3, 1); /* list slide-in, card hover */
+  }
+
+  @media (prefers-color-scheme: dark) {
+    /* Dark mode tokens — reserved for future Sprint */
+    :root {}
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--text-primary);
+    font-family: 'Geist', 'Inter', 'Noto Sans SC', sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Complete 6-level type scale */
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+  }
+
+  h1 { font-size: 1.75rem; }
+  h2 { font-size: 1.375rem; }
+  h3 { font-size: 1.125rem; }
+  h4 { font-size: 1rem; }
+  h5 { font-size: 0.875rem; }
+
+  /* h6 functions as section label — uppercase, tracked, muted */
+  h6 {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+  }
 }
 
-/* 基础样式重置 */
-* {
-  box-sizing: border-box;
+@layer utilities {
+  /* Base transition — intentionally NOT eased; callers choose --ease-snap or --ease-glide */
+  .transition-base {
+    transition: all 0.18s var(--ease-snap);
+  }
+
+  /* Button press — fast engagement, elastic release */
+  .transition-snap {
+    transition: all 0.14s var(--ease-snap);
+  }
+
+  /* List reveal, card hover — organic deceleration */
+  .transition-glide {
+    transition: all 0.36s var(--ease-glide);
+  }
+
+  /*
+   * surface-elevated: primary elevation primitive for Light Mode.
+   * Uses inset border gradient instead of backdrop-blur — blur has zero effect
+   * on a near-white background and adds GPU cost for nothing.
+   */
+  .surface-elevated {
+    background: #FFFFFF;
+    box-shadow:
+      inset 0 0 0 1px rgba(12, 12, 20, 0.06),
+      0 1px 3px rgba(12, 12, 20, 0.05);
+  }
+
+  .surface-elevated-hover {
+    box-shadow:
+      inset 0 0 0 1px rgba(12, 12, 20, 0.10),
+      0 4px 14px rgba(12, 12, 20, 0.09);
+  }
+
+  /*
+   * surface-glass: reserved for contexts where the component sits over
+   * a non-white surface (e.g. image overlays, colored hero sections).
+   * Do NOT use on white/near-white backgrounds — blur is invisible there.
+   */
+  .surface-glass {
+    backdrop-filter: blur(14px);
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'PingFang SC', sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  font-weight: 700;
-  color: var(--text-title);
-  line-height: 1.4;
-}
-
-h1 {
-  font-size: 1.5rem;
-}
-
-/* 容器样式 */
-.container-size {
-  width: 100%;
-  max-width: 480px;
-  max-height: 80vh;
-}
-
-/* Custom Scrollbar - 浅色柔和 */
+/* Scrollbar — minimal, token-matched */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #F0F0F0;
-  border-radius: 4px;
+  background: var(--surface-raised);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #ccc;
-  border-radius: 4px;
+  background: var(--border);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #b3b3b3;
+  background: var(--text-tertiary);
 }

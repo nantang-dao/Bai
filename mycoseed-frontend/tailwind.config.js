@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
     "./components/**/*.{js,vue,ts}",
     "./layouts/**/*.vue",
@@ -11,53 +11,73 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primary: {
-          DEFAULT: '#00B3B3',
-          foreground: '#ffffff'
-        },
+        // Background — #F8F8FC: cold-neutral base, aligns with blue-tinted text palette
+        background: '#F8F8FC',
+        surface: '#FFFFFF',
+        'surface-raised': '#F2F2F7',
+        border: '#E4E4EA',
+        'border-subtle': '#EDEDF3',
+
+        // Typography — cold-neutral axis, no warm drift
+        'text-primary': '#0C0C14',
+        'text-secondary': '#6B6B7E',
+        'text-tertiary': '#9898AF',
+
+        // Accent — full interactive state chain
         accent: {
-          DEFAULT: '#2D8CFF',
-          foreground: '#ffffff'
+          DEFAULT: '#0066FF',
+          hover: '#0052CC',
+          active: '#003DB3',
+          muted: '#E5EEFF',
+          foreground: '#FFFFFF'
         },
-        background: '#F7F7F9',
-        foreground: '#1A1A1A',
-        card: {
-          DEFAULT: '#FFFFFF',
-          foreground: '#1A1A1A'
-        },
-        'input-bg': '#F5F7FA',
-        'text-title': '#1A1A1A',
-        'text-body': '#666666',
-        'text-placeholder': '#999999',
-        border: '#F0F0F0',
-        muted: {
-          DEFAULT: '#F0F0F0',
-          foreground: '#666666'
-        },
-        destructive: {
-          DEFAULT: '#ef4444',
-          foreground: '#ffffff'
-        },
+
+        // Semantic states — DEFAULT + foreground + muted
         success: {
-          DEFAULT: '#10b981',
-          foreground: '#ffffff'
+          DEFAULT: '#00875A',
+          foreground: '#FFFFFF',
+          muted: '#E3F5EE'
         },
         warning: {
-          DEFAULT: '#f59e0b',
-          foreground: '#ffffff'
+          DEFAULT: '#B45309',
+          foreground: '#FFFFFF',
+          muted: '#FEF3C7'
         },
-        info: {
-          DEFAULT: '#3b82f6',
-          foreground: '#ffffff'
+        destructive: {
+          DEFAULT: '#C41C1C',
+          foreground: '#FFFFFF',
+          muted: '#FEE2E2'
         }
       },
+
       fontFamily: {
-        sans: ['-apple-system', 'BlinkMacSystemFont', 'Inter', 'PingFang SC', 'sans-serif']
+        mono: ['Geist Mono', 'JetBrains Mono', 'monospace'],
+        sans: ['Geist', 'Inter', 'Noto Sans SC', 'sans-serif']
       },
+
       boxShadow: {
-        'soft': '0 4px 20px -4px rgba(0, 0, 0, 0.08), 0 2px 8px -2px rgba(0, 0, 0, 0.04)',
-        'soft-lg': '0 12px 40px -8px rgba(0, 0, 0, 0.12), 0 4px 16px -4px rgba(0, 0, 0, 0.06)',
-        'primary': '0 10px 30px -10px rgba(0, 179, 179, 0.3)'
+        // Depth hierarchy: resting → hovered → floating
+        card: '0 1px 3px rgba(12, 12, 20, 0.05), 0 1px 2px rgba(12, 12, 20, 0.03)',
+        'card-hover': '0 4px 14px rgba(12, 12, 20, 0.09), 0 2px 5px rgba(12, 12, 20, 0.05)',
+        float: '0 10px 28px rgba(12, 12, 20, 0.11), 0 4px 10px rgba(12, 12, 20, 0.06)'
+      },
+
+      // tech-* prefix avoids silently overriding Tailwind defaults
+      borderRadius: {
+        'tech-xs': '4px',
+        'tech-sm': '6px',
+        'tech-md': '8px',
+        'tech-lg': '12px',
+        'tech-xl': '16px',
+        'tech-2xl': '20px'
+      },
+
+      // Expose project easing curves as Tailwind transitionTimingFunction values
+      transitionTimingFunction: {
+        // snap: instant engagement, deliberate release — for button press/release
+        snap: 'cubic-bezier(0.2, 0, 0, 1)',
+        // glide: gentle entry, organic deceleration — for list reveals, card hover
+        glide: 'cubic-bezier(0.16, 1, 0.3, 1)'
       }
     }
   },
