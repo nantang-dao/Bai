@@ -1,52 +1,71 @@
 <template>
-  <header class="h-16 md:h-20 border-b border-border bg-card sticky top-0 z-50 flex-shrink-0">
+  <header class="h-14 border-b border-border bg-white/90 backdrop-blur-md sticky top-0 z-50 flex-shrink-0">
     <div class="w-full md:max-w-7xl md:mx-auto px-2 md:px-4 h-full flex items-center justify-between">
-      <!-- Community Switcher（点击展开下拉，选择后不跳转，留在当前页） -->
+
+      <!-- Community Switcher -->
       <div class="relative flex items-center gap-3" ref="switcherRef">
-        <div class="w-12 h-12 rounded-2xl flex items-center justify-center shadow-soft transition-transform overflow-hidden bg-primary flex-shrink-0">
-          <img v-if="communityStore.currentCommunity?.avatarUrl" :src="communityStore.currentCommunity.avatarUrl" :alt="communityStore.currentCommunity?.name" class="w-full h-full object-cover" />
-          <TechAvatar v-else-if="communityStore.currentCommunity?.name" :seed="communityStore.currentCommunity.name" size="md" class="!w-12 !h-12 !rounded-2xl" />
-          <img v-else src="/images/icons/myco-seed-logo.svg" alt="MycoSeed" class="w-8 h-8" />
+        <div class="w-10 h-10 rounded-tech-md flex items-center justify-center overflow-hidden bg-surface-raised flex-shrink-0">
+          <img
+            v-if="communityStore.currentCommunity?.avatarUrl"
+            :src="communityStore.currentCommunity.avatarUrl"
+            :alt="communityStore.currentCommunity?.name"
+            class="w-full h-full object-cover"
+          />
+          <TechAvatar
+            v-else-if="communityStore.currentCommunity?.name"
+            :seed="communityStore.currentCommunity.name"
+            size="sm"
+          />
+          <img v-else src="/images/icons/myco-seed-logo.svg" alt="MycoSeed" class="w-6 h-6" />
         </div>
+
         <button
           type="button"
           class="hidden md:flex text-left leading-tight flex-col items-start gap-0 min-w-0"
           @click="toggleCommunityDropdown"
         >
-          <h1 class="font-bold text-text-title text-sm md:text-base truncate max-w-[180px]">
+          <h1 class="font-semibold text-text-primary text-sm truncate max-w-[180px]">
             {{ currentCommunityName || '未选择社区' }}
           </h1>
-          <span class="text-sm text-primary font-medium hover:underline">切换社区 &gt;</span>
+          <span class="text-[11px] text-accent font-mono hover:underline">切换社区 →</span>
         </button>
-        <NuxtLink to="/communities" class="md:hidden text-sm text-primary font-medium hover:underline shrink-0">
-          切换社区 &gt;
+
+        <NuxtLink to="/communities" class="md:hidden text-[11px] text-accent font-mono hover:underline shrink-0">
+          切换社区 →
         </NuxtLink>
+
+        <!-- Community dropdown -->
         <Transition name="dropdown">
           <div
             v-if="showCommunityDropdown"
-            class="absolute left-0 top-full mt-1 z-50 min-w-[200px] max-h-64 overflow-y-auto bg-card border border-border rounded-xl shadow-lg py-1"
+            class="absolute left-0 top-full mt-1 z-50 min-w-[200px] max-h-64 overflow-y-auto
+                   bg-white border border-border rounded-tech-md shadow-float py-1"
           >
-            <div v-if="myCommunitiesLoading" class="px-4 py-3 text-sm text-text-placeholder">加载中...</div>
+            <div v-if="myCommunitiesLoading" class="px-4 py-3 text-xs font-mono text-text-tertiary">加载中...</div>
             <template v-else-if="myCommunities.length">
               <button
                 v-for="c in myCommunities"
                 :key="c.id"
                 type="button"
-                class="w-full px-4 py-2.5 text-left text-sm hover:bg-input-bg flex items-center gap-2"
-                :class="{ 'bg-input-bg': communityStore.currentCommunityId === c.id }"
+                class="w-full px-4 py-2.5 text-left text-sm hover:bg-surface-raised flex items-center gap-2 transition-base"
+                :class="{ 'bg-surface-raised': communityStore.currentCommunityId === c.id }"
                 @click="selectCommunity(c.id)"
               >
-                <div class="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-input-bg">
+                <div class="w-7 h-7 rounded-tech-sm overflow-hidden flex-shrink-0 bg-surface-raised">
                   <img v-if="c.avatarUrl" :src="c.avatarUrl" :alt="c.name" class="w-full h-full object-cover" />
-                  <TechAvatar v-else :seed="c.name" size="sm" class="!w-8 !h-8 !rounded-lg" />
+                  <TechAvatar v-else :seed="c.name" size="xs" />
                 </div>
-                <span class="truncate font-medium text-text-title">{{ c.name }}</span>
+                <span class="truncate font-medium text-text-primary text-sm">{{ c.name }}</span>
               </button>
             </template>
-            <div v-else class="px-4 py-3 text-sm text-text-placeholder">暂无已加入社区</div>
-            <div class="border-t border-border mt-1 pt-1">
-              <NuxtLink :to="communitiesPathWithFrom" class="block px-4 py-2.5 text-sm text-primary font-medium hover:bg-input-bg" @click="showCommunityDropdown = false">
-                前往社区广场
+            <div v-else class="px-4 py-3 text-xs font-mono text-text-tertiary">暂无已加入社区</div>
+            <div class="border-t border-border-subtle mt-1 pt-1">
+              <NuxtLink
+                :to="communitiesPathWithFrom"
+                class="block px-4 py-2.5 text-sm text-accent font-mono hover:bg-surface-raised transition-base"
+                @click="showCommunityDropdown = false"
+              >
+                前往社区广场 →
               </NuxtLink>
             </div>
           </div>
@@ -54,37 +73,44 @@
       </div>
 
       <!-- Navigation -->
-      <nav class="flex items-center gap-4">
-        <TechButton variant="warning" size="sm" @click="navigateTo('tasks')">🛒 商城</TechButton>
+      <nav class="flex items-center gap-3">
+        <!-- 商城 — text only, secondary variant, no emoji -->
+        <TechButton variant="secondary" size="sm" @click="navigateTo('tasks')">商城</TechButton>
 
         <div class="flex items-center gap-2">
-          <div 
+          <div
             v-if="userStore.isAuthenticated"
-            class="cursor-pointer hover:scale-105 transition-transform"
+            class="cursor-pointer hover:scale-105 transition-base"
             @click="navigateTo('profile')"
             title="个人主页"
           >
-            <TechAvatar 
-              v-if="userStore.user?.avatar" 
-              :src="userStore.user.avatar" 
-              size="md" 
+            <TechAvatar
+              v-if="userStore.user?.avatar"
+              :src="userStore.user.avatar"
+              size="sm"
             />
-            <TechAvatar 
-              v-else 
-              :seed="userStore.user?.name || userStore.user?.id || 'user'" 
-              size="md" 
+            <TechAvatar
+              v-else
+              :seed="userStore.user?.name || userStore.user?.id || 'user'"
+              size="sm"
             />
           </div>
-          
+
+          <!-- Settings — SVG gear, no emoji -->
           <NuxtLink
             v-if="userStore.isAuthenticated"
             to="/settings"
-            class="w-10 h-10 flex items-center justify-center rounded-xl bg-primary text-white font-medium text-sm transition-all hover:scale-105 flex-shrink-0 shadow-soft"
+            class="w-8 h-8 flex items-center justify-center rounded-tech-md
+                   border border-border text-text-secondary
+                   hover:bg-surface-raised transition-base flex-shrink-0"
             title="设置"
           >
-            ⚙️
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
           </NuxtLink>
-          
+
           <TechButton
             v-else
             variant="primary"
@@ -95,7 +121,6 @@
           </TechButton>
         </div>
       </nav>
-      
     </div>
   </header>
 </template>
@@ -103,32 +128,17 @@
 <style scoped>
 .dropdown-enter-active,
 .dropdown-leave-active {
-  transition: all 0.2s ease;
+  transition: all 0.18s var(--ease-snap);
 }
 
 .dropdown-enter-from {
   opacity: 0;
-  transform: translateY(-10px);
+  transform: translateY(-6px);
 }
 
 .dropdown-leave-to {
   opacity: 0;
-  transform: translateY(-10px);
-}
-
-.modal-enter-active,
-.modal-leave-active {
-  transition: all 0.3s ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-
-.modal-enter-from > div,
-.modal-leave-to > div {
-  transform: scale(0.9);
+  transform: translateY(-6px);
 }
 </style>
 
@@ -186,10 +196,8 @@ async function loadMyCommunities() {
 async function selectCommunity(id: string) {
   await communityStore.setCurrentCommunity(id)
   showCommunityDropdown.value = false
-  // 不跳转，留在当前页；任务/公告等页会通过 watch currentCommunityId 自动刷新
 }
 
-// 点击外部关闭下拉
 function onDocumentClick(e: MouseEvent) {
   if (showCommunityDropdown.value && switcherRef.value && !switcherRef.value.contains(e.target as Node)) {
     showCommunityDropdown.value = false
@@ -228,5 +236,4 @@ const navigateTo = (page: string) => {
     emit('navigate', page)
   }
 }
-
 </script>

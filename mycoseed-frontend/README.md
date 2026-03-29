@@ -24,11 +24,11 @@ MycoSeed 是一个受超级马里奥启发的 8-bit 像素风格 Web3 应用，�
 
 ## 📦 安装
 
-确保已安装 Node.js (推荐 v18+) 和 Yarn。
+确保已安装 Node.js（推荐 v18+）与 npm。
 
 ```bash
 # 安装依赖
-yarn install
+npm install
 ```
 
 ## 🚀 开发
@@ -36,7 +36,7 @@ yarn install
 启动开发服务器（默认端口 3003）：
 
 ```bash
-yarn dev
+npm run dev
 ```
 
 访问 `http://localhost:3003` 查看应用。
@@ -85,13 +85,13 @@ activity-frontend/
 构建生产版本：
 
 ```bash
-yarn build
+npm run build
 ```
 
 预览生产构建：
 
 ```bash
-yarn preview
+npm run preview
 ```
 
 ## 📚 相关文档

@@ -14,8 +14,7 @@
     "d3": "^7.9.0",
     "nuxt": "^3.15.3",
     "vue": "^3.5.22",
-    "vue-boring-avatars": "^1.4.0",
-    "yarn": "^1.22.22"
+    "vue-boring-avatars": "^1.4.0"
   },
   "devDependencies": {
     "@nuxt/icon": "^1.9.3",
