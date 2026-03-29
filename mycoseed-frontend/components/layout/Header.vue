@@ -5,7 +5,7 @@
       <div class="relative flex items-center gap-3" ref="switcherRef">
         <div class="w-12 h-12 rounded-2xl flex items-center justify-center shadow-soft transition-transform overflow-hidden bg-primary flex-shrink-0">
           <img v-if="communityStore.currentCommunity?.avatarUrl" :src="communityStore.currentCommunity.avatarUrl" :alt="communityStore.currentCommunity?.name" class="w-full h-full object-cover" />
-          <PixelAvatar v-else-if="communityStore.currentCommunity?.name" :seed="communityStore.currentCommunity.name" size="md" class="!w-12 !h-12 !rounded-2xl" />
+          <TechAvatar v-else-if="communityStore.currentCommunity?.name" :seed="communityStore.currentCommunity.name" size="md" class="!w-12 !h-12 !rounded-2xl" />
           <img v-else src="/images/icons/myco-seed-logo.svg" alt="MycoSeed" class="w-8 h-8" />
         </div>
         <button
@@ -38,7 +38,7 @@
               >
                 <div class="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-input-bg">
                   <img v-if="c.avatarUrl" :src="c.avatarUrl" :alt="c.name" class="w-full h-full object-cover" />
-                  <PixelAvatar v-else :seed="c.name" size="sm" class="!w-8 !h-8 !rounded-lg" />
+                  <TechAvatar v-else :seed="c.name" size="sm" class="!w-8 !h-8 !rounded-lg" />
                 </div>
                 <span class="truncate font-medium text-text-title">{{ c.name }}</span>
               </button>
@@ -55,7 +55,7 @@
 
       <!-- Navigation -->
       <nav class="flex items-center gap-4">
-        <PixelButton variant="warning" size="sm" @click="navigateTo('tasks')">🛒 商城</PixelButton>
+        <TechButton variant="warning" size="sm" @click="navigateTo('tasks')">🛒 商城</TechButton>
 
         <div class="flex items-center gap-2">
           <div 
@@ -64,12 +64,12 @@
             @click="navigateTo('profile')"
             title="个人主页"
           >
-            <PixelAvatar 
+            <TechAvatar 
               v-if="userStore.user?.avatar" 
               :src="userStore.user.avatar" 
               size="md" 
             />
-            <PixelAvatar 
+            <TechAvatar 
               v-else 
               :seed="userStore.user?.name || userStore.user?.id || 'user'" 
               size="md" 
@@ -85,14 +85,14 @@
             ⚙️
           </NuxtLink>
           
-          <PixelButton
+          <TechButton
             v-else
             variant="primary"
             size="sm"
             @click="router.push('/auth/login')"
           >
             登录
-          </PixelButton>
+          </TechButton>
         </div>
       </nav>
       

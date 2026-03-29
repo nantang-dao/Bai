@@ -55,7 +55,7 @@
           <div v-if="activeTab === 'INTRO'" class="space-y-6">
             <!-- Town Hall (Governance & Members) -->
             <!-- 公告 -->
-            <PixelCard v-if="announcements.length > 0" class="mb-6">
+            <TechCard v-if="announcements.length > 0" class="mb-6">
               <template #header>
                 <span>公告</span>
                 <NuxtLink v-if="isCommunityAdmin && community?.id" :to="`/community/${community.id}/manage`" class="text-sm ml-2">管理</NuxtLink>
@@ -67,9 +67,9 @@
                   <span class="text-text-placeholder">{{ a.content ? ' · ' + (a.content.slice(0, 60) + (a.content.length > 60 ? '…' : '')) : '' }}</span>
                 </li>
               </ul>
-            </PixelCard>
+            </TechCard>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <PixelCard>
+              <TechCard>
                 <template #header>
                   <span>关于我们</span>
                   <NuxtLink v-if="isCommunityAdmin && community?.id" :to="`/community/${community.id}/edit`" class="inline-flex items-center justify-center w-7 h-7 rounded-lg ml-2 text-text-body hover:bg-input-bg" title="编辑">
@@ -85,9 +85,9 @@
                     <div class="text-sm text-text-body whitespace-pre-wrap font-mono">{{ community?.markdownIntro || '暂无介绍' }}</div>
                   </div>
                 </div>
-              </PixelCard>
+              </TechCard>
 
-              <PixelCard>
+              <TechCard>
                 <template #header>成员 ({{ community?.memberCount || 0 }})</template>
                 <div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
                   <button
@@ -98,14 +98,14 @@
                     @click="navigateTo(`/member/${member.id}`)"
                   >
                     <div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-border">
-                      <PixelAvatar
+                      <TechAvatar
                         v-if="member.avatar"
                         :src="member.avatar"
                         :seed="member.name || member.id"
                         size="md"
                         class="!w-12 !h-12"
                       />
-                      <PixelAvatar
+                      <TechAvatar
                         v-else
                         :seed="member.name || member.id"
                         size="md"
@@ -120,7 +120,7 @@
                 <div v-if="members.length > 12" class="text-sm text-text-placeholder mt-2 text-center">
                   还有 {{ members.length - 12 }} 位成员...
                 </div>
-              </PixelCard>
+              </TechCard>
             </div>
           </div>
 
@@ -134,7 +134,7 @@
             <div v-else class="space-y-4">
               <div class="flex items-center justify-between border-b-2 border-black pb-2">
                 <h3 class="font-bold text-sm uppercase">社区动态（帖子）</h3>
-                <PixelButton v-if="userStore.user" @click="navigateTo('/post/create')">发动态</PixelButton>
+                <TechButton v-if="userStore.user" @click="navigateTo('/post/create')">发动态</TechButton>
               </div>
               <p class="text-sm text-text-placeholder mt-1">长按可打赏</p>
 
@@ -146,14 +146,14 @@
                 暂无动态，来发一条吧
               </div>
               <div v-else class="grid gap-4">
-                <PixelCard
+                <TechCard
                   v-for="post in posts"
                   :key="post.id"
                 >
                   <template #header>
                     <div class="flex justify-between items-center">
                       <div class="flex items-center gap-2">
-                        <PixelAvatar
+                        <TechAvatar
                           v-if="post.author?.avatar"
                           :src="post.author?.avatar"
                           :seed="post.author?.name || post.authorId"
@@ -275,13 +275,13 @@
                       </button>
                     </div>
                   </template>
-                </PixelCard>
+                </TechCard>
               </div>
 
               <div v-if="postsHasMore && !postsLoading" class="flex justify-center pt-4">
-                <PixelButton size="sm" variant="secondary" @click="loadPosts()">
+                <TechButton size="sm" variant="secondary" @click="loadPosts()">
                   加载更多
-                </PixelButton>
+                </TechButton>
               </div>
 
               <!-- 图片预览层 -->

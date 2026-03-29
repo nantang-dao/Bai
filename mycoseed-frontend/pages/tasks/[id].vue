@@ -3,13 +3,13 @@
     <div class="container mx-auto px-4 md:px-6 max-w-7xl">
       <!-- 返回按钮 -->
       <div class="mb-6">
-        <PixelButton
+        <TechButton
           @click="navigateTo('/tasks')"
           variant="secondary"
           size="sm"
         >
           ← 返回市集
-        </PixelButton>
+        </TechButton>
       </div>
 
       <!-- Loading State -->
@@ -20,7 +20,7 @@
       <!-- 任务详情 -->
       <div v-else class="space-y-4 md:space-y-6">
         <!-- 任务介绍 -->
-        <PixelCard>
+        <TechCard>
           <template #header>
             任务介绍
           </template>
@@ -151,10 +151,10 @@
               </p>
             </div>
           </div>
-        </PixelCard>
+        </TechCard>
 
         <!-- 多人任务：参与者切换栏（所有人可见，可查看并切换各参与者的提交内容） -->
-        <PixelCard 
+        <TechCard 
           v-if="task.participantLimit && task.participantLimit > 1 && task.participantsList && task.participantsList.length > 0"
           class="mb-4"
         >
@@ -182,10 +182,10 @@
               <span v-else-if="participant.claimedAt" class="ml-1">📋</span>
             </button>
           </div>
-        </PixelCard>
+        </TechCard>
 
         <!-- 提交凭证（所有人可见；有人领取即显示本区块，当前参与者的凭证与审核者所见一致） -->
-        <PixelCard 
+        <TechCard 
           v-if="task.claimerId && (task.status === 'claimed' || task.status === 'unsubmit' || task.status === 'submitted' || task.status === 'under_review' || task.status === 'completed' || task.status === 'rejected')"
           class="mb-4"
         >
@@ -253,10 +253,10 @@
               暂无提交内容，等待提交
             </div>
           </div>
-        </PixelCard>
+        </TechCard>
 
         <!-- 任务进度 -->
-        <PixelCard v-if="task.updates && task.updates.length > 0">
+        <TechCard v-if="task.updates && task.updates.length > 0">
           <template #header>
             任务进度
           </template>
@@ -301,17 +301,17 @@
               </div>
             </div>
           </div>
-        </PixelCard>
+        </TechCard>
         
         <!-- 操作按钮 -->
-        <PixelCard>
+        <TechCard>
           <template #header>
             操作
           </template>
           <div class="space-y-3">
             <!-- 未领取状态 - 显示领取按钮或满员提示 -->
             <!-- 对于多人任务，即使当前行已领取，如果还有其他未领取的位置，也应该显示领取按钮 -->
-            <PixelButton
+            <TechButton
               v-if="canClaim"
               @click="handleClaimTask"
               variant="primary"
@@ -320,7 +320,7 @@
               :disabled="loading || !canClaim"
             >
               {{ loading ? '领取中...' : '领取任务' }}
-            </PixelButton>
+            </TechButton>
             
             <!-- 领取错误提示 -->
             <div
@@ -395,7 +395,7 @@
             </div>
             
             <!-- 已领取状态（新状态）- 只有领取者可以提交 -->
-            <PixelButton
+            <TechButton
               v-if="task.status === 'claimed' && isClaimer"
               @click="submitTask"
               variant="success"
@@ -403,10 +403,10 @@
               :block="true"
             >
               提交任务
-            </PixelButton>
+            </TechButton>
             
             <!-- 已领取但未提交状态（新状态）- 只有领取者可以提交 -->
-            <PixelButton
+            <TechButton
               v-if="task.status === 'unsubmit' && isClaimer"
               @click="submitTask"
               variant="success"
@@ -415,7 +415,7 @@
               :disabled="isTaskSubmissionOverdue"
             >
               {{ isTaskSubmissionOverdue ? '已截止' : '提交任务' }}
-            </PixelButton>
+            </TechButton>
             
             <!-- 已领取但非领取者查看 - 显示提示 -->
             <div
@@ -429,7 +429,7 @@
             
             
             <!-- 已提交状态（新状态） -->
-            <PixelButton
+            <TechButton
               v-if="task.status === 'submitted' && canReview"
               @click="reviewTask"
               variant="warning"
@@ -437,9 +437,9 @@
               :block="true"
             >
               审核任务
-            </PixelButton>
+            </TechButton>
             
-            <PixelButton
+            <TechButton
               v-if="task.status === 'submitted' && !canReview"
               variant="secondary"
               size="lg"
@@ -447,10 +447,10 @@
               :disabled="true"
             >
               等待审核
-            </PixelButton>
+            </TechButton>
             
             <!-- 待审核状态 -->
-            <PixelButton
+            <TechButton
               v-if="task.status === 'under_review' && canReview"
               @click="reviewTask"
               variant="warning"
@@ -458,9 +458,9 @@
               :block="true"
             >
               审核任务
-            </PixelButton>
+            </TechButton>
             
-            <PixelButton
+            <TechButton
               v-if="task.status === 'under_review' && !canReview"
               variant="secondary"
               size="lg"
@@ -468,13 +468,13 @@
               :disabled="true"
             >
               审核中
-            </PixelButton>
+            </TechButton>
             
             <!-- 已完成状态 - 审核者可以看到转账按钮 -->
             <template v-if="task.status === 'completed' && canReview">
               <!-- 未转账：显示转账按钮和标记按钮 -->
               <template v-if="!task.transferredAt">
-            <PixelButton
+            <TechButton
                   @click="handleTransferToSemi"
                   variant="primary"
                   size="lg"
@@ -483,8 +483,8 @@
                   class="mb-3"
                 >
                   {{ isTransferring ? '处理中...' : '跳转到Semi转账' }}
-                </PixelButton>
-                <PixelButton
+                </TechButton>
+                <TechButton
                   @click="handleMarkTransferCompleted"
                   variant="secondary"
                   size="lg"
@@ -492,7 +492,7 @@
                   :disabled="isMarkingTransfer"
                 >
                   {{ isMarkingTransfer ? '标记中...' : '标记为已转账' }}
-                </PixelButton>
+                </TechButton>
               </template>
               <!-- 已转账：显示状态标记 -->
               <div v-else class="text-center py-4">
@@ -504,7 +504,7 @@
                     转账时间：{{ formatDate(task.transferredAt) }}
                   </p>
                 </div>
-                <PixelButton
+                <TechButton
                   @click="handleUnmarkTransfer"
                   variant="secondary"
                   size="lg"
@@ -512,11 +512,11 @@
                   :disabled="isMarkingTransfer"
                 >
                   {{ isMarkingTransfer ? '处理中...' : '取消转账标记' }}
-                </PixelButton>
+                </TechButton>
               </div>
             </template>
             <!-- 已完成状态 - 非审核者 -->
-            <PixelButton
+            <TechButton
               v-else-if="task.status === 'completed'"
               variant="secondary"
               size="lg"
@@ -524,10 +524,10 @@
               :disabled="true"
             >
               已完成
-            </PixelButton>
+            </TechButton>
             
             <!-- 已驳回状态 -->
-            <PixelButton
+            <TechButton
               v-if="task.status === 'rejected'"
               variant="secondary"
               size="lg"
@@ -535,9 +535,9 @@
               :disabled="true"
             >
               已驳回
-            </PixelButton>
+            </TechButton>
           </div>
-        </PixelCard>
+        </TechCard>
       </div>
     </div>
 

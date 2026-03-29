@@ -3,13 +3,13 @@
     <div class="container mx-auto px-4 md:px-6 max-w-4xl">
       <!-- 返回按钮 -->
       <div class="mb-6">
-        <PixelButton
+        <TechButton
           @click="navigateTo(`/tasks/${taskId}`)"
           variant="secondary"
           size="sm"
         >
           ← 返回任务详情
-        </PixelButton>
+        </TechButton>
       </div>
 
       <!-- Loading State -->
@@ -19,7 +19,7 @@
 
       <!-- 提交表单 -->
       <div v-else>
-        <PixelCard>
+        <TechCard>
           <template #header>
             提交任务
           </template>
@@ -104,13 +104,13 @@
                         <div class=" text-sm text-text-title font-medium">{{ selectedFiles.main.name }}</div>
                         <div class=" text-xs text-text-title/60">({{ formatFileSize(selectedFiles.main.size) }})</div>
                       </div>
-                      <PixelButton
+                      <TechButton
                         @click="removeFile('main')"
                         variant="danger"
                         size="sm"
                       >
                         移除
-                      </PixelButton>
+                      </TechButton>
                     </div>
                   </div>
                 </div>
@@ -149,13 +149,13 @@
                           <div class=" text-sm text-text-title font-medium">{{ file.name }}</div>
                           <div class=" text-xs text-text-title/60">({{ formatFileSize(file.size) }})</div>
                         </div>
-                        <PixelButton
+                        <TechButton
                           @click="removeFile('additional', index)"
                           variant="danger"
                           size="sm"
                         >
                           移除
-                        </PixelButton>
+                        </TechButton>
                       </div>
                     </div>
                   </div>
@@ -169,7 +169,7 @@
               <div class="space-y-3">
                 <div v-if="!gpsLocation.latitude" class="p-4 bg-card border border-border rounded-2xl shadow-soft">
                   <p class=" text-base text-text-title mb-3">请获取您当前的位置信息</p>
-                  <PixelButton
+                  <TechButton
                     @click="getGPSLocation"
                     :disabled="isGettingLocation"
                     variant="primary"
@@ -177,7 +177,7 @@
                     class="w-full"
                   >
                     {{ isGettingLocation ? '获取位置中...' : '📍 获取位置' }}
-                  </PixelButton>
+                  </TechButton>
                   <p v-if="locationError" class="mt-2  text-sm text-destructive">
                     {{ locationError }}
                   </p>
@@ -192,7 +192,7 @@
                     <div>经度: {{ gpsLocation.longitude?.toFixed(6) }}</div>
                     <div v-if="gpsLocation.accuracy">精度: ±{{ Math.round(gpsLocation.accuracy) }}米</div>
                   </div>
-                  <PixelButton
+                  <TechButton
                     @click="getGPSLocation"
                     :disabled="isGettingLocation"
                     variant="secondary"
@@ -200,7 +200,7 @@
                     class="mt-3"
                   >
                     {{ isGettingLocation ? '重新获取中...' : '重新获取位置' }}
-                  </PixelButton>
+                  </TechButton>
                 </div>
               </div>
             </div>
@@ -229,15 +229,15 @@
 
             <!-- 提交按钮 -->
             <div class="flex gap-4 pt-6 border-t border-border">
-              <PixelButton
+              <TechButton
                 @click="navigateTo(`/tasks/${taskId}`)"
                 variant="secondary"
                 size="lg"
                 :block="false"
               >
                 取消
-              </PixelButton>
-              <PixelButton
+              </TechButton>
+              <TechButton
                 type="submit"
                 variant="primary"
                 size="lg"
@@ -245,10 +245,10 @@
                 :disabled="!canSubmit || isSubmitting"
               >
                 {{ isSubmitting ? '提交中...' : '提交任务' }}
-              </PixelButton>
+              </TechButton>
             </div>
           </form>
-        </PixelCard>
+        </TechCard>
       </div>
     </div>
   </div>

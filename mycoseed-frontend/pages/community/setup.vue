@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen pb-24">
     <div class="w-full max-w-2xl mx-auto px-4 py-8">
-      <PixelCard>
+      <TechCard>
         <template #header>
           <div class="text-center text-xl font-bold text-primary">设置社区信息</div>
         </template>
@@ -27,22 +27,22 @@
                 />
               </div>
               <div class="flex gap-2">
-                <PixelButton
+                <TechButton
                   variant="secondary"
                   size="sm"
                   @click="fileInput?.click()"
                   :disabled="uploading"
                 >
                   {{ uploading ? '上传中...' : '选择头像' }}
-                </PixelButton>
-                <PixelButton
+                </TechButton>
+                <TechButton
                   v-if="previewUrl"
                   variant="secondary"
                   size="sm"
                   @click="clearPreview"
                 >
                   清除
-                </PixelButton>
+                </TechButton>
               </div>
               <div v-if="uploadError" class="text-red-500 text-sm ">
                 {{ uploadError }}
@@ -80,7 +80,7 @@
           </div>
 
           <!-- 保存按钮 -->
-          <PixelButton
+          <TechButton
             variant="primary"
             block
             size="lg"
@@ -88,9 +88,9 @@
             @click="onSubmit"
           >
             {{ loading ? '保存中...' : '保存并继续' }}
-          </PixelButton>
+          </TechButton>
         </div>
-      </PixelCard>
+      </TechCard>
     </div>
   </div>
 </template>

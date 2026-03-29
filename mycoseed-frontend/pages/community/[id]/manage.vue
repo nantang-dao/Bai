@@ -109,7 +109,7 @@
             <ul class="space-y-2">
               <li v-for="m in members" :key="m.userId" class="flex items-center justify-between py-2 border-b border-border last:border-0">
                 <div class="flex items-center gap-2">
-                  <PixelAvatar :seed="m.avatar || m.name || m.userId" size="sm" />
+                  <TechAvatar :seed="m.avatar || m.name || m.userId" size="sm" />
                   <span class="text-text-body">{{ m.name || m.userId }}</span>
                   <span class="text-xs text-text-placeholder">({{ roleLabel(m.role) }})</span>
                 </div>

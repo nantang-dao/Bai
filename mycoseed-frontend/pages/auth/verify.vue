@@ -1,6 +1,6 @@
 <template>
   <div class="w-full max-w-md">
-    <PixelCard>
+    <TechCard>
       <template #header>
         <div class="text-center text-xl font-bold text-primary">验证码</div>
       </template>
@@ -47,7 +47,7 @@
           </button>
         </div>
 
-        <PixelButton 
+        <TechButton 
           variant="primary" 
           block 
           size="lg"
@@ -55,17 +55,17 @@
           @click="onSubmit"
         >
           {{ loading ? '验证中...' : '验证' }}
-        </PixelButton>
+        </TechButton>
 
-        <PixelButton 
+        <TechButton 
           variant="secondary" 
           block 
           @click="router.push('/auth/login')"
         >
           返回登录
-        </PixelButton>
+        </TechButton>
       </div>
-    </PixelCard>
+    </TechCard>
   </div>
 </template>
 

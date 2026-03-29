@@ -3,7 +3,7 @@
     <div class="container mx-auto px-6">
       <!-- 创建任务按钮 -->
       <div v-if="isAuthenticated" class="mb-6 flex justify-end gap-2">
-        <PixelButton
+        <TechButton
           variant="primary"
           @click="navigateTo('/tasks/create')"
         >
@@ -11,7 +11,7 @@
             <span class="text-base">🎯</span>
             <span>创建任务</span>
           </span>
-        </PixelButton>
+        </TechButton>
       </div>
 
       <!-- 操作栏 -->
@@ -46,7 +46,7 @@
       <!-- 内容列表 -->
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <!-- 任务卡片 -->
-        <PixelCard
+        <TechCard
           v-for="item in filteredItems"
           :key="`task-${item.id}`"
           hover
@@ -58,13 +58,13 @@
               <!-- 左侧：头像 + 名字在上，发布时间在下 -->
               <div class="flex items-start gap-2 min-w-0 flex-1">
                 <div class="flex-shrink-0">
-                  <PixelAvatar
+                  <TechAvatar
                     v-if="item.creatorAvatar"
                     :src="item.creatorAvatar"
                     size="sm"
                     class="rounded-full"
                   />
-                  <PixelAvatar
+                  <TechAvatar
                     v-else
                     :seed="item.creator || '系统'"
                     size="sm"
@@ -121,7 +121,7 @@
               </div>
             </div>
           </template>
-        </PixelCard>
+        </TechCard>
       </div>
     </div>
   </div>

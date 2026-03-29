@@ -43,7 +43,7 @@
           <div class="flex justify-between items-start gap-2">
             <div class="w-14 h-14 rounded-2xl overflow-hidden flex-shrink-0 bg-input-bg">
               <img v-if="c.avatarUrl" :src="c.avatarUrl" :alt="c.name" class="w-full h-full object-cover" />
-              <PixelAvatar v-else :seed="c.name" size="md" class="!w-14 !h-14 !rounded-2xl" />
+              <TechAvatar v-else :seed="c.name" size="md" class="!w-14 !h-14 !rounded-2xl" />
             </div>
             <div class="flex-1 min-w-0">
               <h2 class="font-bold text-text-title">{{ c.name }}</h2>

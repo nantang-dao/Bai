@@ -1,6 +1,6 @@
 <template>
   <div class="w-full max-w-md mx-auto">
-    <PixelCard>
+    <TechCard>
       <template #header>
         <div class="text-center text-2xl font-bold text-primary">登录</div>
       </template>
@@ -10,22 +10,22 @@
           使用 Semi 账号登录/注册
         </div>
 
-        <PixelButton 
+        <TechButton 
           variant="primary" 
           block 
           size="lg"
           @click="handleOAuth2Login"
         >
           使用 Semi 登录
-        </PixelButton>
+        </TechButton>
 
-        <PixelButton 
+        <TechButton 
           variant="secondary" 
           block 
           @click="router.push('/')"
         >
           返回地图
-        </PixelButton>
+        </TechButton>
       </div>
 
       <template #footer>
@@ -33,7 +33,7 @@
           由 AA 驱动的 Web3 登录
         </div>
       </template>
-    </PixelCard>
+    </TechCard>
   </div>
 </template>
 

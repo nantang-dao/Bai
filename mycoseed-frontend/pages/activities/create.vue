@@ -8,7 +8,7 @@
       </div>
 
       <!-- 活动创建表单 -->
-      <PixelCard>
+      <TechCard>
         <div class="space-y-4 md:space-y-6">
           <!-- 基本信息 -->
           <div class="space-y-4">
@@ -148,13 +148,13 @@
                   class="flex-1 h-10 px-3 bg-input-bg border border-border rounded-2xl shadow-soft  text-base focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card transition-all"
                   placeholder="输入标签后按回车"
                 />
-                <PixelButton
+                <TechButton
                   @click="addTag"
                   variant="secondary"
                   size="sm"
                 >
                   添加
-                </PixelButton>
+                </TechButton>
               </div>
             </div>
           </div>
@@ -162,20 +162,20 @@
           <!-- 底部固定操作栏占位符，防止内容被遮挡 -->
           <div class="h-20 md:h-16"></div>
         </div>
-      </PixelCard>
+      </TechCard>
     </div>
 
     <!-- 底部固定操作栏 -->
     <div class="fixed bottom-16 left-0 right-0 p-4 bg-input-bg border-t-2 border-black z-[60] flex gap-3 shadow-[0_-4px_0_rgba(0,0,0,0.05)] md:bottom-0 md:border-t-2" style="padding-bottom: calc(1rem + env(safe-area-inset-bottom));">
-      <PixelButton 
+      <TechButton 
         @click="navigateTo('/tasks')"
         variant="secondary"
         size="lg"
         class="w-24"
       >
         取消
-      </PixelButton>
-      <PixelButton 
+      </TechButton>
+      <TechButton 
         @click="publishActivity"
         :disabled="!canPublish || isPublishing"
         variant="success"
@@ -185,7 +185,7 @@
         <span v-if="isPublishing" class="animate-spin">⚙️</span>
         <span v-else>📅</span>
         {{ isPublishing ? '发布中...' : '发布活动' }}
-      </PixelButton>
+      </TechButton>
     </div>
   </div>
 </template>

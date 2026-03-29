@@ -105,7 +105,7 @@
    * on a near-white background and adds GPU cost for nothing.
    */
   .surface-elevated {
-    background: #FFFFFF;
+    background: var(--surface);
     box-shadow:
       inset 0 0 0 1px rgba(12, 12, 20, 0.06),
       0 1px 3px rgba(12, 12, 20, 0.05);

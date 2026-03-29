@@ -6,7 +6,7 @@
         <div class="w-24 md:w-32 h-1 bg-border mx-auto border border-border rounded-2xl"></div>
       </div>
 
-      <PixelCard>
+      <TechCard>
         <div class="space-y-4 md:space-y-6">
           <div>
             <label class="block font-bold text-xs uppercase mb-2 text-text-title">内容 *</label>
@@ -52,20 +52,20 @@
           <p v-if="error" class="text-red-600 text-sm">{{ error }}</p>
 
           <div class="flex gap-3 pt-4">
-            <PixelButton
+            <TechButton
               variant="primary"
               :disabled="loading || !content.trim()"
               class="flex-1"
               @click="publish"
             >
               {{ loading ? '发布中...' : '发布' }}
-            </PixelButton>
-            <PixelButton variant="secondary" @click="goBack">
+            </TechButton>
+            <TechButton variant="secondary" @click="goBack">
               取消
-            </PixelButton>
+            </TechButton>
           </div>
         </div>
-      </PixelCard>
+      </TechCard>
     </div>
   </div>
 </template>

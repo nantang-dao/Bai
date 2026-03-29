@@ -1,6 +1,6 @@
 <template>
     <div class="w-full max-w-md mx-auto">
-        <PixelCard>
+        <TechCard>
             <template #header>
                 <div class="text-center text-xl font-bold text-primary">登录中...</div>
             </template>
@@ -13,7 +13,7 @@
                     {{ error }}
                 </div>
             </div>
-        </PixelCard>
+        </TechCard>
     </div>
 </template>
 

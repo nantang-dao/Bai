@@ -3,13 +3,13 @@
     <div class="container mx-auto px-4 md:px-6 max-w-4xl">
       <!-- 返回按钮 -->
       <div class="mb-6">
-        <PixelButton
+        <TechButton
           @click="navigateTo(`/tasks/${taskId}`)"
           variant="secondary"
           size="sm"
         >
           ← 返回任务详情
-        </PixelButton>
+        </TechButton>
       </div>
 
       <!-- Loading State -->
@@ -19,7 +19,7 @@
 
       <!-- 审核表单 -->
       <div v-else>
-        <PixelCard>
+        <TechCard>
           <template #header>
             审核任务
           </template>
@@ -97,22 +97,22 @@
                         </div> -->
                     <!-- 操作按钮 -->
                         <div class="flex gap-2">
-                          <PixelButton
+                          <TechButton
                             @click="previewFile(file)"
                             variant="secondary"
                             size="sm"
                         :block="true"
                           >
                             预览
-                          </PixelButton>
-                          <PixelButton
+                          </TechButton>
+                          <TechButton
                             @click="downloadFile(file)"
                         variant="primary"
                             size="sm"
                         :block="true"
                           >
                             下载
-                          </PixelButton>
+                          </TechButton>
                   </div>
                 </div>
               </div>
@@ -203,15 +203,15 @@
 
             <!-- 提交按钮 -->
             <div v-if="canReview && (!currentSubmission || currentSubmission.status !== 'completed')" class="flex gap-4 pt-6 border-t border-border">
-              <PixelButton
+              <TechButton
                 @click="navigateTo(`/tasks/${taskId}`)"
                 variant="secondary"
                 size="lg"
                 :block="false"
               >
                 取消
-              </PixelButton>
-              <PixelButton
+              </TechButton>
+              <TechButton
                 type="submit"
                 variant="primary"
                 size="lg"
@@ -219,7 +219,7 @@
                 :disabled="!canSubmit || isSubmitting"
               >
                 {{ isSubmitting ? '提交中...' : '提交审核' }}
-              </PixelButton>
+              </TechButton>
             </div>
             
             <!-- 审核成功后的转账按钮 -->
@@ -241,7 +241,7 @@
               </div>
               <!-- 如果未转账，显示转账按钮和标记按钮 -->
               <template v-if="!(currentSubmission as any).transferredAt">
-                <PixelButton
+                <TechButton
                   @click="handleTransferToSemi"
                   variant="primary"
                   size="lg"
@@ -250,8 +250,8 @@
                   class="mb-3"
                 >
                   {{ isTransferring ? '处理中...' : '跳转到Semi转账' }}
-                </PixelButton>
-                <PixelButton
+                </TechButton>
+                <TechButton
                   @click="handleMarkTransferCompleted"
                   variant="secondary"
                   size="lg"
@@ -259,10 +259,10 @@
                   :disabled="isMarkingTransfer"
                 >
                   {{ isMarkingTransfer ? '标记中...' : '标记为已转账' }}
-                </PixelButton>
+                </TechButton>
               </template>
               <!-- 如果已转账，显示已完成转账按钮（可点击取消标记） -->
-              <PixelButton
+              <TechButton
                 v-else
                 @click="handleUnmarkTransfer"
                 variant="success"
@@ -271,22 +271,22 @@
                 :disabled="isMarkingTransfer"
               >
                 {{ isMarkingTransfer ? '处理中...' : '已完成转账' }}
-              </PixelButton>
+              </TechButton>
             </div>
             
             <!-- 只读模式返回按钮 -->
             <div v-else class="flex gap-4 pt-6 border-t border-border">
-              <PixelButton
+              <TechButton
                 @click="navigateTo(`/tasks/${taskId}`)"
                 variant="secondary"
                 size="lg"
                 :block="true"
               >
                 返回任务详情
-              </PixelButton>
+              </TechButton>
             </div>
           </form>
-        </PixelCard>
+        </TechCard>
       </div>
     </div>
 
@@ -372,15 +372,15 @@
           </div>
 
           <div class="flex gap-4">
-            <PixelButton
+            <TechButton
               @click="showRejectModal = false"
               variant="secondary"
               size="lg"
               :block="false"
             >
               取消
-            </PixelButton>
-            <PixelButton
+            </TechButton>
+            <TechButton
               @click="confirmReject"
               variant="danger"
               size="lg"
@@ -388,7 +388,7 @@
               :disabled="!rejectOption || !reviewResult.comments.trim() || isSubmitting"
             >
               {{ isSubmitting ? '提交中...' : '确认拒绝' }}
-            </PixelButton>
+            </TechButton>
           </div>
         </div>
       </div>

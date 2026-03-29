@@ -2,7 +2,7 @@
   <div class="space-y-6 pb-24">
     <!-- 发起活动按钮 -->
     <div v-if="isAuthenticated" class="flex justify-end gap-2">
-      <PixelButton
+      <TechButton
         variant="primary"
         @click="navigateTo('/activities/create')"
       >
@@ -10,7 +10,7 @@
           <span class="text-base">📅</span>
           <span>发起活动（当前页面尚在开发中）</span>
         </span>
-      </PixelButton>
+      </TechButton>
     </div>
 
     <!-- 页面标题 -->
@@ -25,7 +25,7 @@
     </div>
     
     <div v-else class="grid gap-4">
-      <PixelCard 
+      <TechCard 
         v-for="event in sortedEvents" 
         :key="event.id"
         hover
@@ -64,16 +64,16 @@
             </div>
           </div>
           <div class="flex flex-col justify-center flex-shrink-0">
-            <PixelButton 
+            <TechButton 
               size="sm" 
               variant="success"
               @click.stop="navigateTo(`/activities/${event.id}`)"
             >
               查看详情
-            </PixelButton>
+            </TechButton>
           </div>
         </div>
-      </PixelCard>
+      </TechCard>
     </div>
   </div>
 </template>

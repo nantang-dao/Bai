@@ -14,12 +14,12 @@
             <div class="flex flex-col items-center gap-4">
         <!-- 头像 -->
         <div class="relative">
-          <PixelAvatar
+          <TechAvatar
             v-if="member?.avatar"
             :src="member.avatar"
             size="xl"
           />
-          <PixelAvatar
+          <TechAvatar
             v-else
             :seed="member?.name || member?.avatarSeed || 'user'"
             size="xl"
@@ -44,7 +44,7 @@
             <div class="flex flex-col gap-4">
               <!-- 钱包地址（含链标识） -->
               <div class="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border border-border rounded-2xl shadow-soft-sm w-full min-w-0">
-                <PixelAvatar :seed="walletAddress || 'user'" size="sm" :fallback-text="currentChain.shortName" class="flex-shrink-0" />
+                <TechAvatar :seed="walletAddress || 'user'" size="sm" :fallback-text="currentChain.shortName" class="flex-shrink-0" />
                 <span class="text-base truncate flex-1">{{ truncatedAddress }}</span>
                 <button 
                   @click.stop="copyAddress"

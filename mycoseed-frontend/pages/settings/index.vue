@@ -16,12 +16,12 @@
 
     <!-- 用户信息区 -->
     <div class="px-4 pt-6 pb-4 flex flex-col items-center">
-      <PixelAvatar
+      <TechAvatar
         v-if="user?.avatar"
         :src="user.avatar"
         size="xl"
       />
-      <PixelAvatar
+      <TechAvatar
         v-else
         :seed="user?.name || user?.id || 'user'"
         size="xl"
@@ -181,12 +181,12 @@
                 @change="onProfileAvatarChange"
               />
               <div class="flex gap-2 mt-2">
-                <PixelButton variant="secondary" size="sm" :disabled="profileUploading" @click="profileAvatarInput?.click()">
+                <TechButton variant="secondary" size="sm" :disabled="profileUploading" @click="profileAvatarInput?.click()">
                   {{ profileUploading ? '上传中...' : '更换头像' }}
-                </PixelButton>
-                <PixelButton v-if="profilePreviewUrl || profileForm.avatar" variant="secondary" size="sm" @click="clearProfileAvatar">
+                </TechButton>
+                <TechButton v-if="profilePreviewUrl || profileForm.avatar" variant="secondary" size="sm" @click="clearProfileAvatar">
                   清除
-                </PixelButton>
+                </TechButton>
               </div>
               <p v-if="profileUploadError" class="text-destructive text-xs mt-1">{{ profileUploadError }}</p>
             </div>
@@ -227,10 +227,10 @@
             <p v-if="profileError" class="text-destructive text-sm mb-3">{{ profileError }}</p>
 
             <div class="flex gap-3">
-              <PixelButton variant="secondary" block @click="closeProfileModal" :disabled="profileSaving">取消</PixelButton>
-              <PixelButton variant="primary" block @click="saveProfile" :disabled="profileSaving || !profileForm.name?.trim() || profileUploading">
+              <TechButton variant="secondary" block @click="closeProfileModal" :disabled="profileSaving">取消</TechButton>
+              <TechButton variant="primary" block @click="saveProfile" :disabled="profileSaving || !profileForm.name?.trim() || profileUploading">
                 {{ profileSaving ? '保存中...' : '确认' }}
-              </PixelButton>
+              </TechButton>
             </div>
           </div>
         </div>
@@ -248,8 +248,8 @@
           <h3 class="text-xl font-bold text-text-title mb-4">确认登出</h3>
           <p class="text-text-body mb-6">确定要登出吗？登出后需要重新登录。</p>
           <div class="flex gap-3">
-            <PixelButton variant="primary" block @click="confirmLogout">确认登出</PixelButton>
-            <PixelButton variant="secondary" block @click="showLogoutModal = false">取消</PixelButton>
+            <TechButton variant="primary" block @click="confirmLogout">确认登出</TechButton>
+            <TechButton variant="secondary" block @click="showLogoutModal = false">取消</TechButton>
           </div>
         </div>
       </div>
