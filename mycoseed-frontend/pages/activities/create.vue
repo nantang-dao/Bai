@@ -193,8 +193,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import PixelCard from '~/components/pixel/PixelCard.vue'
-import PixelButton from '~/components/pixel/PixelButton.vue'
 import { createActivity, type CreateActivityParams } from '~/utils/api'
 import { useToast } from '~/composables/useToast'
 

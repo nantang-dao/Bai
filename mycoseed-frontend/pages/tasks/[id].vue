@@ -574,8 +574,6 @@
 import { getTaskById, claimTask, getApiBaseUrl, markTransferCompleted, unmarkTransferCompleted, buildSemiTransferUrl, getWalletAddressByUserId } from '~/utils/api'
 import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
-import PixelCard from '~/components/pixel/PixelCard.vue'
-import PixelButton from '~/components/pixel/PixelButton.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import { parseBeijingTime, getCurrentBeijingDate, formatBeijingTime } from '~/utils/time'
 

@@ -9,7 +9,6 @@
       block ? 'w-full' : ''
     ]"
     :disabled="disabled"
-    @click="$emit('click', $event)"
   >
     <slot />
   </button>
@@ -23,7 +22,7 @@ const props = defineProps({
     type: String,
     default: 'primary',
     validator: (v: string) =>
-      ['primary', 'secondary', 'ghost', 'success', 'warning', 'danger', 'destructive'].includes(v)
+      ['primary', 'secondary', 'ghost', 'success', 'warning', 'destructive'].includes(v)
   },
   size: {
     type: String,
@@ -33,8 +32,6 @@ const props = defineProps({
   block: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false }
 })
-
-defineEmits(['click'])
 
 const variantClasses = computed(() => {
   const map: Record<string, string> = {
@@ -48,8 +45,6 @@ const variantClasses = computed(() => {
       'bg-success text-success-foreground hover:opacity-90 active:opacity-95',
     warning:
       'bg-warning text-warning-foreground hover:opacity-90 active:opacity-95',
-    danger:
-      'bg-destructive text-destructive-foreground hover:opacity-90 active:opacity-95',
     destructive:
       'bg-destructive text-destructive-foreground hover:opacity-90 active:opacity-95'
   }

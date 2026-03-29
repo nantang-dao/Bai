@@ -371,8 +371,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import PixelCard from '~/components/pixel/PixelCard.vue'
-import PixelButton from '~/components/pixel/PixelButton.vue'
 import { createTask, getApiBaseUrl, getCookie, AUTH_TOKEN_KEY, getCommunityMembers } from '~/utils/api'
 import { useToast } from '~/composables/useToast'
 import { getCurrentBeijingTime } from '~/utils/time'

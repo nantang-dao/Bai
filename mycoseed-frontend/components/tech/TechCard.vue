@@ -1,7 +1,8 @@
 <template>
   <div
     :class="[
-      'surface-elevated rounded-tech-lg',
+      isElevated ? 'surface-elevated' : '',
+      'rounded-tech-lg',
       hover ? 'transition-glide hover:-translate-y-[2px] hover:shadow-card-hover cursor-pointer' : '',
       variantClasses,
       paddingClass
@@ -32,9 +33,12 @@ const props = defineProps({
   }
 })
 
+// ghost bypasses surface-elevated entirely to avoid !important priority conflicts
+const isElevated = computed(() => props.variant !== 'ghost')
+
 const variantClasses = computed(() => {
   if (props.variant === 'raised') return 'shadow-card'
-  if (props.variant === 'ghost') return '!bg-transparent !shadow-none border border-border-subtle'
+  if (props.variant === 'ghost') return 'bg-transparent shadow-none border border-dashed border-border-subtle'
   return ''
 })
 

@@ -106,7 +106,7 @@
                       </div>
                       <TechButton
                         @click="removeFile('main')"
-                        variant="danger"
+                        variant="destructive"
                         size="sm"
                       >
                         移除
@@ -151,7 +151,7 @@
                         </div>
                         <TechButton
                           @click="removeFile('additional', index)"
-                          variant="danger"
+                          variant="destructive"
                           size="sm"
                         >
                           移除
@@ -257,8 +257,6 @@
 <script setup lang="ts">
 import { getTaskById, getApiBaseUrl, submitProof, uploadProofFile, type ProofData } from '~/utils/api'
 import { useToast } from '~/composables/useToast'
-import PixelCard from '~/components/pixel/PixelCard.vue'
-import PixelButton from '~/components/pixel/PixelButton.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import type { Task } from '~/utils/api'
 import { formatBeijingTime, parseBeijingTime } from '~/utils/time'

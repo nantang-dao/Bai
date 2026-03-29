@@ -135,8 +135,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import PixelButton from '~/components/pixel/PixelButton.vue'
-import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { useCommunityStore } from '~/stores/community'
 import { useUserStore } from '~/stores/user'
 import type { Community } from '~/utils/api'

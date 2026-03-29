@@ -382,7 +382,7 @@
             </TechButton>
             <TechButton
               @click="confirmReject"
-              variant="danger"
+              variant="destructive"
               size="lg"
               :block="false"
               :disabled="!rejectOption || !reviewResult.comments.trim() || isSubmitting"
@@ -427,8 +427,6 @@
 import { getTaskById, approveTask, rejectTask, getApiBaseUrl, buildSemiTransferUrl, getWalletAddressByUserId, markTransferCompleted } from '~/utils/api'
 import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
-import PixelCard from '~/components/pixel/PixelCard.vue'
-import PixelButton from '~/components/pixel/PixelButton.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import type { Task } from '~/utils/api'
 import { formatBeijingTime, parseBeijingTime } from '~/utils/time'

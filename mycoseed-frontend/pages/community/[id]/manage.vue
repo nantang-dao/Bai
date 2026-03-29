@@ -133,7 +133,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '~/stores/user'
-import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import {
   getCommunityById,
   getCommunityMembers,

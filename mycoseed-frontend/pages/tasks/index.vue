@@ -130,9 +130,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import PixelCard from '~/components/pixel/PixelCard.vue'
-import PixelButton from '~/components/pixel/PixelButton.vue'
-import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { useUserStore } from '~/stores/user'
 import { useCommunityStore } from '~/stores/community'
 import { getAllTasks, getApiBaseUrl, type Task } from '~/utils/api'

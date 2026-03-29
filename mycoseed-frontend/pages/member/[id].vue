@@ -167,7 +167,6 @@
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '~/stores/user'
-import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, type Task, type Community } from '~/utils/api'
 import { getTaskRewardSymbol } from '~/utils/display'
 import { useToast } from '~/composables/useToast'

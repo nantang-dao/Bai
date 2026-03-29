@@ -101,8 +101,6 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '~/stores/user'
 import { updateCommunityProfile, getMe, getApiBaseUrl } from '~/utils/api'
 import { useFileUpload } from '~/composables/useFileUpload'
-import PixelCard from '~/components/pixel/PixelCard.vue'
-import PixelButton from '~/components/pixel/PixelButton.vue'
 
 definePageMeta({
   layout: 'default'

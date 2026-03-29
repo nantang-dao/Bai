@@ -73,8 +73,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import PixelCard from '~/components/pixel/PixelCard.vue'
-import PixelButton from '~/components/pixel/PixelButton.vue'
 import { useUserStore } from '~/stores/user'
 import { useCommunityStore } from '~/stores/community'
 import { getMemberById, DEFAULT_COMMUNITY_UUID } from '~/utils/api'
