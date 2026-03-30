@@ -1,16 +1,20 @@
 <template>
   <div class="space-y-8">
     <!-- 如果没有选择社区，显示提示 -->
-    <div v-if="!communityStore.currentCommunityId" class="text-center py-12 bg-card rounded-3xl shadow-soft p-6">
-      <p class="text-lg text-text-body mb-4">请先选择或加入一个社区</p>
-      <p class="text-sm text-text-placeholder mb-4">点击底部「社区广场」浏览并加入社区，或点击顶部切换已加入的社区</p>
-      <NuxtLink to="/communities" class="text-primary font-medium">前往社区广场</NuxtLink>
+    <div v-if="!communityStore.currentCommunityId" class="text-center py-12">
+      <TechCard class="border border-dashed border-border rounded-xl">
+        <div class="text-center">
+          <p class="font-mono text-text-tertiary text-sm mb-4">请先选择或加入一个社区</p>
+          <p class="font-mono text-text-tertiary text-xs mb-4">点击底部「社区广场」浏览并加入社区，或点击顶部切换已加入的社区</p>
+          <NuxtLink to="/communities" class="text-accent font-medium font-mono text-sm">前往社区广场</NuxtLink>
+        </div>
+      </TechCard>
     </div>
 
     <!-- 社区面板内容 -->
     <div v-else>
       <!-- 社区卡片：背景图轮播 + 底部名称与简介 -->
-      <div class="rounded-3xl shadow-soft overflow-hidden bg-card border border-border">
+      <div class="rounded-xl overflow-hidden surface-elevated">
         <div class="relative h-48 md:h-64 w-full overflow-hidden">
           <!-- 背景图轮播（最多三张自动切换） -->
           <template v-if="bannerImages.length">
@@ -22,11 +26,12 @@
               :class="currentBannerIndex === i ? 'opacity-100 z-10' : 'opacity-0 z-0'"
             />
           </template>
-          <div v-else class="absolute inset-0 bg-gradient-to-br from-primary to-accent" />
+          <div v-else class="absolute inset-0 bg-gradient-to-br from-accent to-accent-muted" />
         </div>
-        <div class="px-4 py-3 border-t border-border bg-card">
-          <h2 class="font-bold text-text-title text-lg truncate">{{ community?.name || '正在加载...' }}</h2>
-          <p class="text-sm text-text-placeholder truncate mt-0.5">{{ community?.description || '菌丝网络中的一个和平村庄。' }}</p>
+        <div class="px-5 py-3 border-t border-border bg-white/90 backdrop-blur-sm">
+          <h2 class="font-semibold text-text-primary text-sm truncate">{{ community?.name || '正在加载...' }}</h2>
+          <p class="font-mono text-xs text-text-tertiary truncate mt-0.5">{{ community?.memberCount || 0 }} members</p>
+          <p class="text-xs text-text-secondary truncate mt-1">{{ community?.description || '菌丝网络中的一个和平村庄。' }}</p>
         </div>
       </div>
 
@@ -37,14 +42,14 @@
         <div class="space-y-6">
           
           <!-- Tab Navigation -->
-          <div class="flex border-b border-border gap-2">
+          <div class="flex border-b border-border gap-0">
             <button 
               v-for="tab in tabs" 
               :key="tab.id"
               @click="activeTab = tab.id"
               :class="[
-                'px-4 py-2 rounded-t-2xl text-sm font-medium transition-all -mb-px',
-                activeTab === tab.id ? 'bg-primary text-white' : 'bg-input-bg text-text-body hover:bg-muted'
+                'px-4 py-2.5 text-sm font-medium transition-base',
+                activeTab === tab.id ? 'text-text-primary border-b-2 border-accent -mb-px' : 'text-text-secondary hover:text-text-primary'
               ]"
             >
               {{ tab.label }}
@@ -53,51 +58,61 @@
 
           <!-- INTRO TAB -->
           <div v-if="activeTab === 'INTRO'" class="space-y-6">
-            <!-- Town Hall (Governance & Members) -->
             <!-- 公告 -->
             <TechCard v-if="announcements.length > 0" class="mb-6">
               <template #header>
-                <span>公告</span>
-                <NuxtLink v-if="isCommunityAdmin && community?.id" :to="`/community/${community.id}/manage`" class="text-sm ml-2">管理</NuxtLink>
+                <span class="font-mono text-xs text-text-tertiary uppercase tracking-widest">ANNOUNCEMENTS</span>
+                <NuxtLink v-if="isCommunityAdmin && community?.id" :to="`/community/${community.id}/manage`" class="font-mono text-xs text-accent ml-2 hover:underline">管理</NuxtLink>
               </template>
-              <ul class="space-y-2 text-left text-sm text-text-body">
-                <li v-for="a in announcements" :key="a.id" class="flex items-start gap-2">
-                  <span v-if="a.isPinned" class="text-primary shrink-0">📌</span>
-                  <span class="font-medium text-text-title">{{ a.title }}</span>
-                  <span class="text-text-placeholder">{{ a.content ? ' · ' + (a.content.slice(0, 60) + (a.content.length > 60 ? '…' : '')) : '' }}</span>
+              <ul class="space-y-2 text-left">
+                <li v-for="a in announcements" :key="a.id" class="flex items-start gap-3">
+                  <svg v-if="a.isPinned" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent shrink-0 mt-0.5">
+                    <path d="M12 2v8"/>
+                    <path d="M8 14h8"/>
+                    <path d="M9 6h6"/>
+                    <path d="M12 14v8"/>
+                  </svg>
+                  <div class="min-w-0">
+                    <span class="font-medium text-sm text-text-primary">{{ a.title }}</span>
+                    <span class="font-mono text-xs text-text-secondary block mt-0.5">{{ a.content ? a.content.slice(0, 60) + (a.content.length > 60 ? '…' : '') : '' }}</span>
+                  </div>
                 </li>
               </ul>
             </TechCard>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <TechCard>
                 <template #header>
-                  <span>关于我们</span>
-                  <NuxtLink v-if="isCommunityAdmin && community?.id" :to="`/community/${community.id}/edit`" class="inline-flex items-center justify-center w-7 h-7 rounded-lg ml-2 text-text-body hover:bg-input-bg" title="编辑">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                  <span class="font-mono text-xs text-text-tertiary uppercase tracking-widest">ABOUT US</span>
+                  <NuxtLink v-if="isCommunityAdmin && community?.id" :to="`/community/${community.id}/edit`" class="inline-flex items-center justify-center w-6 h-6 rounded-tech-sm ml-2 text-text-secondary hover:bg-surface-raised transition-base" title="编辑">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                    </svg>
                   </NuxtLink>
                 </template>
                 <div class="space-y-4 text-center">
                   <!-- 积分/南塘豆行：算法未定，先隐藏 -->
                   <div class="hidden text-sm text-text-body">
-                    {{ community?.pointName || '积分' }}: <span class="text-primary">{{ community?.totalPoints ?? 0 }}</span>
+                    {{ community?.pointName || '积分' }}: <span class="text-accent">{{ community?.totalPoints ?? 0 }}</span>
                   </div>
-                  <div class="w-full min-h-24 rounded-2xl border border-border p-4 text-left">
-                    <div class="text-sm text-text-body whitespace-pre-wrap font-mono">{{ community?.markdownIntro || '暂无介绍' }}</div>
+                  <div class="w-full min-h-24 rounded-tech-lg border border-border p-4 text-left">
+                    <div class="text-sm text-text-primary whitespace-pre-wrap font-mono">{{ community?.markdownIntro || '暂无介绍' }}</div>
                   </div>
                 </div>
               </TechCard>
 
               <TechCard>
-                <template #header>成员 ({{ community?.memberCount || 0 }})</template>
+                <template #header>
+                  <span class="font-mono text-xs text-text-tertiary uppercase tracking-widest">MEMBERS ({{ community?.memberCount || 0 }})</span>
+                </template>
                 <div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
                   <button
                     v-for="member in members.slice(0, 12)"
                     :key="member.id"
                     type="button"
-                    class="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-input-bg transition-colors text-left min-w-0"
+                    class="flex flex-col items-center gap-1.5 p-2 rounded-tech-md hover:bg-surface-raised transition-base text-left min-w-0"
                     @click="navigateTo(`/member/${member.id}`)"
                   >
-                    <div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-border">
+                    <div class="w-12 h-12 rounded-tech-md overflow-hidden flex-shrink-0">
                       <TechAvatar
                         v-if="member.avatar"
                         :src="member.avatar"
@@ -112,13 +127,16 @@
                         class="!w-12 !h-12"
                       />
                     </div>
-                    <span class="text-xs font-medium text-text-title truncate w-full text-center" :title="member.name || '未命名'">
+                    <span class="text-sm font-medium text-text-primary truncate w-full text-center" :title="member.name || '未命名'">
                       {{ member.name || '未命名' }}
+                    </span>
+                    <span v-if="member.role" class="font-mono text-[10px] text-text-tertiary bg-surface-raised px-1.5 py-0.5 rounded-sm">
+                      {{ member.role }}
                     </span>
                   </button>
                 </div>
-                <div v-if="members.length > 12" class="text-sm text-text-placeholder mt-2 text-center">
-                  还有 {{ members.length - 12 }} 位成员...
+                <div v-if="members.length > 12" class="font-mono text-xs text-text-tertiary mt-2 text-center">
+                  +{{ members.length - 12 }} more...
                 </div>
               </TechCard>
             </div>
@@ -126,51 +144,61 @@
 
           <!-- COMMUNITY TAB (社区圈) -->
           <div v-else-if="activeTab === 'COMMUNITY'" class="space-y-6">
-            <div v-if="!communityStore.currentCommunityId && !userCommunity" class="text-center py-12 bg-card rounded-3xl shadow-soft p-6">
-              <p class="text-lg text-text-body mb-2">请先选择一个社区</p>
-              <p class="text-sm text-text-placeholder">点击顶部按钮切换社区频道</p>
+            <div v-if="!communityStore.currentCommunityId && !userCommunity" class="text-center py-12">
+              <TechCard class="border border-dashed border-border rounded-xl">
+                <div class="text-center">
+                  <p class="font-mono text-text-tertiary text-sm mb-2">请先选择一个社区</p>
+                  <p class="font-mono text-text-tertiary text-xs">点击顶部按钮切换社区频道</p>
+                </div>
+              </TechCard>
             </div>
 
             <div v-else class="space-y-4">
-              <div class="flex items-center justify-between border-b-2 border-black pb-2">
-                <h3 class="font-bold text-sm uppercase">社区动态（帖子）</h3>
-                <TechButton v-if="userStore.user" @click="navigateTo('/post/create')">发动态</TechButton>
+              <div class="flex items-center justify-between">
+                <h3 class="font-mono text-xs text-text-tertiary uppercase tracking-widest">COMMUNITY FEED</h3>
+                <TechButton v-if="userStore.user" @click="navigateTo('/post/create')" size="sm">发动态</TechButton>
               </div>
-              <p class="text-sm text-text-placeholder mt-1">长按可打赏</p>
 
-              <div v-if="postsLoading && posts.length === 0" class="text-center py-8 text-gray-500">
-                加载中...
+              <div v-if="postsLoading && posts.length === 0" class="text-center py-8">
+                <p class="font-mono text-text-tertiary text-sm">加载中...</p>
               </div>
-              <p v-else-if="postsError" class="text-red-600 text-sm py-4">{{ postsError }}</p>
-              <div v-else-if="posts.length === 0" class="text-center py-8 text-gray-500">
-                暂无动态，来发一条吧
+              <p v-else-if="postsError" class="font-mono text-destructive text-sm py-4">{{ postsError }}</p>
+              <div v-else-if="posts.length === 0" class="text-center py-8">
+                <p class="font-mono text-text-tertiary text-sm">暂无动态，来发一条吧</p>
               </div>
-              <div v-else class="grid gap-4">
-                <TechCard
-                  v-for="post in posts"
+              <div v-else class="space-y-4">
+                <div
+                  v-for="(post, index) in posts"
                   :key="post.id"
+                  class="border-b border-border py-4 cursor-pointer transition-base hover:bg-surface-raised/30"
+                  @click="navigateTo(`/post/${post.id}`)"
+                  :style="{ animationDelay: `${index * 50}ms` }"
                 >
-                  <template #header>
-                    <div class="flex justify-between items-center">
-                      <div class="flex items-center gap-2">
+                  <!-- 作者 + 时间行 -->
+                  <div class="flex justify-between items-center mb-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <div class="w-8 h-8 rounded-tech-sm overflow-hidden flex-shrink-0">
                         <TechAvatar
                           v-if="post.author?.avatar"
                           :src="post.author?.avatar"
                           :seed="post.author?.name || post.authorId"
                           size="sm"
+                          class="!w-8 !h-8"
                         />
-                        <span class="text-sm font-medium">{{ post.author?.name || '用户' }}</span>
+                        <TechAvatar
+                          v-else
+                          :seed="post.author?.name || post.authorId"
+                          size="sm"
+                          class="!w-8 !h-8"
+                        />
                       </div>
-                      <span class="text-xs text-gray-500">{{ formatTimeAgo(post.createdAt) }}</span>
+                      <span class="font-medium text-sm text-text-primary truncate">{{ post.author?.name || '用户' }}</span>
                     </div>
-                  </template>
-                  <div
-                    class="cursor-default"
-                    @pointerdown="startLongPress('post', post.authorId)"
-                    @pointerup="cancelLongPress"
-                    @pointerleave="cancelLongPress"
-                  >
-                  <div class="text-gray-800 whitespace-pre-wrap">
+                    <span class="font-mono text-xs text-text-tertiary">{{ formatTimeAgo(post.createdAt) }}</span>
+                  </div>
+
+                  <!-- 内容 -->
+                  <div class="text-text-primary leading-relaxed mb-2">
                     <p
                       :class="needsTextExpand(post.content) && !isTextExpanded(post.id) ? 'line-clamp-10' : ''"
                     >
@@ -179,12 +207,14 @@
                     <button
                       v-if="needsTextExpand(post.content)"
                       type="button"
-                      class="text-primary text-sm mt-1 hover:underline"
+                      class="font-mono text-xs text-accent mt-1 hover:underline"
                       @click.stop="toggleTextExpand(post.id)"
                     >
                       {{ isTextExpanded(post.id) ? '收起' : '展开' }}
                     </button>
                   </div>
+
+                  <!-- 图片 -->
                   <div v-if="post.images?.length" :class="['mt-2', getImageGridClass(post.images)]">
                     <img
                       v-for="(url, i) in post.images"
@@ -196,94 +226,19 @@
                     />
                   </div>
 
-                  <!-- 朋友圈式：点赞名单 + 评论列表（在 footer 上方，自动加载并显示） -->
-                  <div v-if="(postLikesMap.get(post.id)?.length ?? 0) > 0 || (postCommentsMap.get(post.id)?.length ?? 0) > 0" class="mt-3 px-3 py-2 bg-gray-100 rounded-lg text-sm space-y-1.5">
-                    <div v-if="(postLikesMap.get(post.id)?.length ?? 0) > 0" class="text-gray-700">
-                      <span class="text-primary font-medium">赞 </span>
-                      {{ formatLikesNames(postLikesMap.get(post.id) ?? []) }}
-                    </div>
-                    <div
-                      v-for="c in (postCommentsMap.get(post.id) ?? [])"
-                      :key="c.id"
-                      class="text-gray-700 flex items-baseline gap-1 flex-wrap cursor-pointer rounded px-1 -mx-1 hover:bg-gray-200/60"
-                      @pointerdown="startLongPress('comment', c.authorId)"
-                      @pointerup="cancelLongPress"
-                      @pointerleave="cancelLongPress"
-                      @click.stop="onCommentClick(post.id, c, $event)"
-                    >
-                      <span v-if="c.replyTo" class="text-gray-700">
-                        <span class="font-medium">{{ c.author?.name || '用户' }}</span>
-                        回复
-                        <span class="font-medium">{{ c.replyTo.name || '用户' }}</span>：
-                        {{ c.content }}
-                      </span>
-                      <span v-else class="text-gray-700">
-                        <span class="font-medium">{{ c.author?.name || '用户' }}</span>：{{ c.content }}
-                      </span>
-                    </div>
+                  <!-- 互动统计 -->
+                  <div class="flex items-center gap-4 mt-3 font-mono text-xs text-text-tertiary">
+                    <span>👍 {{ post.likesCount || 0 }}</span>
+                    <span>💬 {{ post.commentsCount || 0 }}</span>
                   </div>
-
-                  <!-- 评论输入（仅当前帖展示） -->
-                  <div v-if="commentInputPostId === post.id" class="mt-2 flex flex-col gap-1">
-                    <span v-if="replyTarget && replyTarget.postId === post.id" class="text-xs text-gray-500">
-                      回复 {{ replyTarget.userName || '用户' }}
-                    </span>
-                    <div class="flex gap-2">
-                      <input
-                        v-model="commentInputText"
-                        type="text"
-                        class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder-gray-500"
-                        :placeholder="replyTarget?.postId === post.id ? '写回复...' : '写评论...'"
-                        @keydown.enter.prevent="submitComment(post.id)"
-                      />
-                      <button
-                        type="button"
-                        class="px-3 py-2 bg-primary text-white rounded-lg text-sm"
-                        @click="submitComment(post.id)"
-                      >
-                        发送
-                      </button>
-                    </div>
-                  </div>
-                  </div>
-
-                  <template #footer>
-                    <div class="flex items-center gap-3">
-                      <!-- 赞按钮 -->
-                      <button
-                        type="button"
-                        class="flex items-center gap-1.5 p-1.5 text-gray-500 hover:text-gray-700 rounded transition-colors"
-                        :class="post.isLiked ? 'text-red-500' : ''"
-                        aria-label="赞"
-                        @click.stop="handleLike(post)"
-                      >
-                        <svg class="w-5 h-5" :class="post.isLiked ? 'fill-current' : 'fill-none'" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path v-if="post.isLiked" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                          <path v-else stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                        </svg>
-                      </button>
-                      <!-- 评论按钮 -->
-                      <button
-                        type="button"
-                        class="p-1.5 text-gray-500 hover:text-gray-700 rounded transition-colors"
-                        aria-label="评论"
-                        @click.stop="onPopoverComment(post.id)"
-                      >
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-                        </svg>
-                      </button>
-                    </div>
-                  </template>
-                </TechCard>
+                </div>
               </div>
 
-              <div v-if="postsHasMore && !postsLoading" class="flex justify-center pt-4">
+              <div v-if="postsHasMore && !postsLoading" class="text-center mt-6">
                 <TechButton size="sm" variant="secondary" @click="loadPosts()">
                   加载更多
                 </TechButton>
               </div>
-
               <!-- 图片预览层 -->
               <Teleport to="body">
                 <Transition name="fade">
@@ -939,5 +894,21 @@ onUnmounted(() => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* 帖子列表 stagger slide-in 动效 */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+div[style*="animationDelay"] {
+  animation: slideInUp 0.3s var(--ease-glide) forwards;
 }
 </style>
