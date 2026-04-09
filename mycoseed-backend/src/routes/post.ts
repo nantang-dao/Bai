@@ -2,6 +2,7 @@ import { Router } from 'express'
 import {
     getPostById,
     deletePost,
+    withdrawPost,
     getPostComments,
     createComment,
     toggleLike,
@@ -21,6 +22,9 @@ router.get('/:postId', authenticate, getPostById)
 
 // 删除动态
 router.delete('/:postId', authenticate, deletePost)
+
+// 撤回动态（无评论时，删除并返回草稿用于重新编辑）
+router.post('/:postId/withdraw', authenticate, withdrawPost)
 
 // 获取动态评论列表
 router.get('/:postId/comments', authenticate, getPostComments)

@@ -45,6 +45,8 @@ export const useApi = () => {
     // 审核相关 API
     approveTask: (taskId: string, comments?: string) => api.approveTask(taskId, apiBaseUrl, comments),
     rejectTask: (taskId: string, reason: string, rejectOption?: 'resubmit' | 'reclaim') => api.rejectTask(taskId, reason, apiBaseUrl, rejectOption),
+    withdrawTask: (taskId: string) => api.withdrawTask(taskId, apiBaseUrl),
+    deleteTask: (taskId: string) => api.deleteTask(taskId, apiBaseUrl),
     
     // 社群相关 API（暂时返回空数据）
     getCommunities: api.getCommunities,
@@ -59,6 +61,7 @@ export const useApi = () => {
     createPost: (params: api.CreatePostParams) => api.createPost(params, apiBaseUrl),
     getPostById: (postId: string) => api.getPostById(postId, apiBaseUrl),
     deletePost: (postId: string) => api.deletePost(postId, apiBaseUrl),
+    withdrawPost: (postId: string) => api.withdrawPost(postId, apiBaseUrl),
     getPostComments: (postId: string) => api.getPostComments(postId, apiBaseUrl),
     createComment: (params: api.CreateCommentParams) => api.createComment(params, apiBaseUrl),
     deleteComment: (commentId: string) => api.deleteComment(commentId, apiBaseUrl),
@@ -68,6 +71,20 @@ export const useApi = () => {
     unpinPost: (postId: string) => api.unpinPost(postId, apiBaseUrl),
     uploadPostImage: (params: { postId: string; communityId: string | null; files: File[] }) =>
       api.uploadPostImage({ ...params, baseUrl: apiBaseUrl }),
+
+    // FAQ / 帮助
+    getFaqs: (params?: api.GetFaqsParams) => api.getFaqs(params, apiBaseUrl),
+    getFaqById: (id: string) => api.getFaqById(id, apiBaseUrl),
+
+    // 通知 / 消息
+    getNotificationSummary: (params?: { communityId?: string | null }) => api.getNotificationSummary(params, apiBaseUrl),
+    listNotifications: (params?: { communityId?: string | null; category?: api.NotificationCategory; limit?: number; offset?: number }) =>
+      api.listNotifications(params, apiBaseUrl),
+    markNotificationsRead: (body?: { ids?: string[]; category?: api.NotificationCategory; communityId?: string | null }) =>
+      api.markNotificationsRead(body, apiBaseUrl),
+    getNotificationSettings: () => api.getNotificationSettings(apiBaseUrl),
+    updateNotificationSettings: (patch: Partial<Omit<api.NotificationSettings, 'user_id'>>) =>
+      api.updateNotificationSettings(patch, apiBaseUrl),
     
     // 其他工具函数（不需要 API URL）
     AUTH_TOKEN_KEY: api.AUTH_TOKEN_KEY,

@@ -88,7 +88,10 @@
     <section class="px-4 mt-6">
       <h3 class="text-sm font-bold text-text-body mb-2">通用</h3>
       <div class="bg-card rounded-2xl shadow-soft overflow-hidden border border-border">
-        <div class="flex items-center gap-3 px-4 py-4 border-b border-border cursor-not-allowed opacity-70">
+        <NuxtLink
+          to="/settings/notifications"
+          class="flex items-center gap-3 px-4 py-4 border-b border-border active:bg-input-bg transition-colors"
+        >
           <span class="w-10 h-10 rounded-xl bg-input-bg flex items-center justify-center text-xl">🔔</span>
           <div class="flex-1 text-left">
             <div class="font-medium text-text-title">消息通知</div>
@@ -97,7 +100,7 @@
           <svg class="w-5 h-5 text-text-placeholder" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
           </svg>
-        </div>
+        </NuxtLink>
         <div class="flex items-center gap-3 px-4 py-4 border-b border-border cursor-not-allowed opacity-70">
           <span class="w-10 h-10 rounded-xl bg-input-bg flex items-center justify-center text-xl">🌙</span>
           <div class="flex-1 text-left">
@@ -126,7 +129,10 @@
     <section class="px-4 mt-6">
       <h3 class="text-sm font-bold text-text-body mb-2">其他</h3>
       <div class="bg-card rounded-2xl shadow-soft overflow-hidden border border-border">
-        <div class="flex items-center gap-3 px-4 py-4 cursor-not-allowed opacity-70">
+        <NuxtLink
+          to="/settings/help"
+          class="flex items-center gap-3 px-4 py-4 active:bg-input-bg transition-colors"
+        >
           <span class="w-10 h-10 rounded-xl bg-input-bg flex items-center justify-center text-xl">❓</span>
           <div class="flex-1 text-left">
             <div class="font-medium text-text-title">帮助与反馈</div>
@@ -135,7 +141,7 @@
           <svg class="w-5 h-5 text-text-placeholder" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
           </svg>
-        </div>
+        </NuxtLink>
       </div>
     </section>
 

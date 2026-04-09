@@ -386,6 +386,8 @@ const router = useRouter()
 const communityStore = useCommunityStore()
 const navigateTo = (path: string) => router.push(path)
 
+const TASK_DRAFT_KEY = 'mycoseed_task_withdraw_draft'
+
 // 时间输入框引用
 const startDateInput = ref<HTMLInputElement | null>(null)
 const deadlineInput = ref<HTMLInputElement | null>(null)
@@ -754,6 +756,14 @@ const loadUsers = async () => {
       email: undefined
     }))
     filteredUsers.value = allUsers.value
+
+    // 如果当前处于草稿回填的“指定用户”状态，补齐 name
+    if (assignUser.value && selectedUsers.value.length > 0) {
+      selectedUsers.value = selectedUsers.value.map(u => {
+        const found = allUsers.value.find(x => x.id === u.id)
+        return { id: u.id, name: found?.name || u.name || '未知用户' }
+      })
+    }
   } catch (error) {
     console.error('加载用户列表失败:', error)
     allUsers.value = []
@@ -836,6 +846,51 @@ onMounted(() => {
   
   // 加载用户列表
   loadUsers()
+
+  // 如果是从“撤回”进入，自动恢复草稿
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = sessionStorage.getItem(TASK_DRAFT_KEY)
+      if (raw) {
+        const draft = JSON.parse(raw || '{}') || {}
+        // 切到对应社区
+        if (draft.communityId && typeof draft.communityId === 'string') {
+          communityStore.setCurrentCommunity(draft.communityId)
+        }
+        taskForm.value.title = draft.title || ''
+        taskForm.value.objective = draft.description || ''
+        taskForm.value.reward = draft.reward != null ? String(draft.reward) : ''
+        taskForm.value.startDate = draft.startDate || ''
+        taskForm.value.deadline = draft.deadline || ''
+        taskForm.value.submitDeadline = draft.submitDeadline || ''
+        taskForm.value.participantLimit = Number(draft.participantLimit || 1)
+        taskForm.value.submissionInstructions = draft.submissionInstructions || ''
+        if (draft.proofConfig) {
+          proofConfig.value = draft.proofConfig
+        }
+
+        // 指定用户
+        const ids: string[] = Array.isArray(draft.assignedUserIds) ? draft.assignedUserIds : []
+        if (ids.length > 0) {
+          assignUser.value = true
+          // loadUsers 是异步的，这里先塞入 id；等用户列表加载后会自动显示名称
+          selectedUsers.value = ids.map((id: string) => ({ id, name: '加载中...' }))
+        }
+
+        // 用完即清，避免下次误触发
+        sessionStorage.removeItem(TASK_DRAFT_KEY)
+
+        const toast = useToast()
+        toast.add({
+          title: '已恢复草稿',
+          description: '你可以继续修改并重新发布',
+          color: 'green'
+        })
+      }
+    }
+  } catch (e) {
+    // 忽略草稿解析错误
+  }
   
   // 添加点击外部关闭下拉列表的事件监听
   if (typeof window !== 'undefined') {

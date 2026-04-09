@@ -78,3 +78,10 @@ CREATE TRIGGER update_announcements_updated_at
     BEFORE UPDATE ON announcements
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- 社区头像：创建社区时可选，社区管理员可修改
+ALTER TABLE communities
+ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
+COMMENT ON COLUMN communities.avatar_url IS '社区头像 URL，为空则前端使用默认/根据 name 生成';
+

@@ -1479,6 +1479,32 @@ export const claimTask = async (req: AuthRequest, res: Response) =>
           '领取任务'
         )
 
+        // 写入通知：有人领取了我发布的任务（task 开关）
+        try {
+            const creatorId = taskInfo?.creator_id
+            if (creatorId && creatorId !== user.id) {
+                const { data: settings } = await supabase
+                    .from('user_notification_settings')
+                    .select('task_enabled')
+                    .eq('user_id', creatorId)
+                    .maybeSingle()
+                const enabled = settings?.task_enabled !== false
+                if (enabled) {
+                    const dedupeKey = `task_claim:${taskIdToUpdate}:${user.id}`
+                    await supabase.from('notifications').upsert([{
+                        user_id: creatorId,
+                        community_id: taskInfo?.community_id || null,
+                        category: 'task',
+                        type: 'task_claim',
+                        title: '你的任务有人领取了',
+                        body: `${userName} 领取了任务「${taskInfo?.title || ''}」`,
+                        data: { taskId: taskIdToUpdate, taskInfoId: taskInfo?.id || task.task_info_id, fromUserId: user.id },
+                        dedupe_key: dedupeKey
+                    }], { onConflict: 'user_id,dedupe_key' })
+                }
+            }
+        } catch (_) {}
+
         res.json({ success: true, message: '任务领取成功！' })
     } catch (error: any)
     {
@@ -1647,6 +1673,32 @@ export const submitProof = async (req: AuthRequest, res: Response) =>
             userName,
             '提交凭证'
         )
+
+        // 写入通知：有人提交了凭证（发起者收到）
+        try {
+            const creatorId = taskInfo?.creator_id
+            if (creatorId && creatorId !== user.id) {
+                const { data: settings } = await supabase
+                    .from('user_notification_settings')
+                    .select('task_enabled')
+                    .eq('user_id', creatorId)
+                    .maybeSingle()
+                const enabled = settings?.task_enabled !== false
+                if (enabled) {
+                    const dedupeKey = `task_submit:${id}`
+                    await supabase.from('notifications').upsert([{
+                        user_id: creatorId,
+                        community_id: taskInfo?.community_id || null,
+                        category: 'task',
+                        type: 'task_submit',
+                        title: '任务凭证已提交',
+                        body: `${userName} 提交了任务「${taskInfo?.title || ''}」的凭证，等待你审核`,
+                        data: { taskId: id, taskInfoId: taskInfo?.id || task.task_info_id, fromUserId: user.id },
+                        dedupe_key: dedupeKey
+                    }], { onConflict: 'user_id,dedupe_key' })
+                }
+            }
+        } catch (_) {}
 
         res.json({ 
             success: true, 
@@ -1824,6 +1876,32 @@ export const approveTask = async (req: AuthRequest, res: Response) =>
               comments?.trim()
             )
         }
+
+        // 写入通知：我领取的任务被审核通过（领取者收到）
+        try {
+            const claimerId = tasksToApprove?.[0]?.claimer_id
+            if (claimerId) {
+                const { data: settings } = await supabase
+                    .from('user_notification_settings')
+                    .select('task_enabled')
+                    .eq('user_id', claimerId)
+                    .maybeSingle()
+                const enabled = settings?.task_enabled !== false
+                if (enabled) {
+                    const dedupeKey = `task_approved:${id}`
+                    await supabase.from('notifications').upsert([{
+                        user_id: claimerId,
+                        community_id: taskInfo?.community_id || null,
+                        category: 'task',
+                        type: 'task_approved',
+                        title: '任务已审核通过',
+                        body: `你领取的任务「${taskInfo?.title || ''}」已审核通过`,
+                        data: { taskId: id, taskInfoId: taskInfo?.id || task.task_info_id, reviewerId: user.id },
+                        dedupe_key: dedupeKey
+                    }], { onConflict: 'user_id,dedupe_key' })
+                }
+            }
+        } catch (_) {}
 
         // 获取被审核通过的参与者信息和创建者信息
         const approvedTask = tasksToApprove[0] // 当前审核的任务行
@@ -2029,6 +2107,33 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
                 success: true,
                 message: '任务已驳回，请重新提交证明'
             })
+
+            // 通知领取者：被驳回需重新提交
+            try {
+                const claimerId = task.claimer_id
+                if (claimerId) {
+                    const { data: settings } = await supabase
+                        .from('user_notification_settings')
+                        .select('task_enabled')
+                        .eq('user_id', claimerId)
+                        .maybeSingle()
+                    const enabled = settings?.task_enabled !== false
+                    if (enabled) {
+                        const dedupeKey = `task_rejected_resubmit:${taskIdToUpdate}:${now}`
+                        await supabase.from('notifications').upsert([{
+                            user_id: claimerId,
+                            community_id: taskInfo?.community_id || null,
+                            category: 'task',
+                            type: 'task_rejected',
+                            title: '任务被驳回',
+                            body: `你领取的任务「${taskInfo?.title || ''}」被驳回：${reason.trim().slice(0, 80)}`,
+                            data: { taskId: taskIdToUpdate, taskInfoId: taskInfo?.id || task.task_info_id, rejectOption: 'resubmit' },
+                            dedupe_key: `task_rejected:resubmit:${taskIdToUpdate}:${reason.trim().slice(0, 20)}`
+                        }], { onConflict: 'user_id,dedupe_key' })
+                    }
+                }
+            } catch (_) {}
+
             return
         } else if (normalizedOption === 'reclaim') {
             // 重新发布任务：仅更新本条任务行（req.params.id），不按 task_info_id 批量、不联动其他参与者
@@ -2075,6 +2180,32 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
             success: true,
                 message: '任务已驳回，已重新发布'
             })
+
+            // 通知领取者：被驳回需重新领取
+            try {
+                const claimerId = task.claimer_id
+                if (claimerId) {
+                    const { data: settings } = await supabase
+                        .from('user_notification_settings')
+                        .select('task_enabled')
+                        .eq('user_id', claimerId)
+                        .maybeSingle()
+                    const enabled = settings?.task_enabled !== false
+                    if (enabled) {
+                        await supabase.from('notifications').upsert([{
+                            user_id: claimerId,
+                            community_id: taskInfo?.community_id || null,
+                            category: 'task',
+                            type: 'task_rejected',
+                            title: '任务被驳回',
+                            body: `你领取的任务「${taskInfo?.title || ''}」被驳回，需要重新领取`,
+                            data: { taskId: taskIdToUpdate, taskInfoId: taskInfo?.id || task.task_info_id, rejectOption: 'reclaim' },
+                            dedupe_key: `task_rejected:reclaim:${taskIdToUpdate}`
+                        }], { onConflict: 'user_id,dedupe_key' })
+                    }
+                }
+            } catch (_) {}
+
             return
         } else if (normalizedOption === 'rejected') {
             // 终止任务：仅将当前选中的这一条任务行改为 rejected（多人任务中只终止当前参与者，不关闭整个任务）
@@ -2109,6 +2240,32 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
                 success: true,
                 message: '任务已驳回，已终止'
             })
+
+            // 通知领取者：被终止
+            try {
+                const claimerId = task.claimer_id
+                if (claimerId) {
+                    const { data: settings } = await supabase
+                        .from('user_notification_settings')
+                        .select('task_enabled')
+                        .eq('user_id', claimerId)
+                        .maybeSingle()
+                    const enabled = settings?.task_enabled !== false
+                    if (enabled) {
+                        await supabase.from('notifications').upsert([{
+                            user_id: claimerId,
+                            community_id: taskInfo?.community_id || null,
+                            category: 'task',
+                            type: 'task_rejected',
+                            title: '任务被终止',
+                            body: `你领取的任务「${taskInfo?.title || ''}」已被终止：${reason.trim().slice(0, 80)}`,
+                            data: { taskId: taskIdToUpdate, taskInfoId: taskInfo?.id || task.task_info_id, rejectOption: 'rejected' },
+                            dedupe_key: `task_rejected:rejected:${taskIdToUpdate}`
+                        }], { onConflict: 'user_id,dedupe_key' })
+                    }
+                }
+            } catch (_) {}
+
             return
         }
 
@@ -2259,4 +2416,165 @@ export const unmarkTransferCompleted = async (req: AuthRequest, res: Response) =
             message: error.message || '取消转账标记失败'
         })
     }
+}
+
+// ==================== 发布者撤回/删除（未被领取前） ====================
+
+/**
+ * 撤回任务（仅发布者；且同 task_info 下无人领取）
+ * 撤回会删除该任务（task_info + tasks 等级联），并返回用于“重新编辑”的草稿数据
+ * POST /api/tasks/:id/withdraw
+ */
+export const withdrawTask = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ error: '未授权' })
+
+    const taskId = String(req.params.id || '').trim()
+    if (!taskId) return res.status(400).json({ error: '缺少任务ID' })
+
+    const { data: taskRow, error: taskError } = await supabase
+      .from('tasks')
+      .select('id, task_info_id')
+      .eq('id', taskId)
+      .single()
+
+    if (taskError) {
+      if ((taskError as any).code === 'PGRST116') return res.status(404).json({ error: '任务不存在' })
+      throw taskError
+    }
+
+    const taskInfoId = (taskRow as any).task_info_id as string
+    const { data: taskInfo, error: infoError } = await supabase
+      .from('task_info')
+      .select('id, title, description, start_date, deadline, submit_deadline, participant_limit, reward_distribution_mode, proof_config, submission_instructions, creator_id, assigned_user_id, community_id')
+      .eq('id', taskInfoId)
+      .single()
+
+    if (infoError) throw infoError
+    if (!taskInfo) return res.status(404).json({ error: '任务不存在' })
+
+    if ((taskInfo as any).creator_id !== user.id) {
+      return res.status(403).json({ error: '无权撤回此任务' })
+    }
+
+    // 检查是否有人领取过（同 task_info 下任意行 claimer_id 非空）
+    const { count: claimedCount, error: claimedError } = await supabase
+      .from('tasks')
+      .select('id', { count: 'exact', head: true })
+      .eq('task_info_id', taskInfoId)
+      .not('claimer_id', 'is', null)
+
+    if (claimedError) throw claimedError
+    if ((claimedCount || 0) > 0) {
+      return res.status(400).json({ error: '已有用户领取过该任务，无法撤回' })
+    }
+
+    // 取一条任务行的 reward/currency 作为“每人积分”的草稿值
+    const { data: anyTaskRow, error: anyTaskError } = await supabase
+      .from('tasks')
+      .select('reward, currency')
+      .eq('task_info_id', taskInfoId)
+      .order('participant_index', { ascending: true })
+      .limit(1)
+      .single()
+    if (anyTaskError) throw anyTaskError
+
+    // assignedUserIds 兼容：从 proof_config._assignedUserIds 或 assigned_user_id 推导
+    const proofConfig = (taskInfo as any).proof_config || null
+    const assignedFromConfig = Array.isArray(proofConfig?._assignedUserIds) ? proofConfig._assignedUserIds : []
+    const assignedFromSingle = (taskInfo as any).assigned_user_id ? [(taskInfo as any).assigned_user_id] : []
+    const assignedUserIds = assignedFromConfig.length > 0 ? assignedFromConfig : assignedFromSingle
+
+    const draft = {
+      title: (taskInfo as any).title,
+      description: (taskInfo as any).description,
+      reward: Number((anyTaskRow as any)?.reward || 0),
+      currency: (anyTaskRow as any)?.currency || 'NT',
+      startDate: formatLocalDateTime((taskInfo as any).start_date),
+      deadline: formatLocalDateTime((taskInfo as any).deadline),
+      submitDeadline: formatLocalDateTime((taskInfo as any).submit_deadline),
+      participantLimit: (taskInfo as any).participant_limit ?? 1,
+      rewardDistributionMode: (taskInfo as any).reward_distribution_mode || 'per_person',
+      submissionInstructions: (taskInfo as any).submission_instructions || '',
+      proofConfig,
+      assignedUserIds,
+      communityId: (taskInfo as any).community_id || null
+    }
+
+    // 删除 task_info（级联删除 tasks/task_timelines/task_proofs）
+    const { error: deleteError } = await supabase
+      .from('task_info')
+      .delete()
+      .eq('id', taskInfoId)
+
+    if (deleteError) throw deleteError
+
+    res.json({ success: true, draft })
+  } catch (error: any) {
+    console.error('[withdrawTask] error:', error)
+    res.status(500).json({ error: error?.message || '撤回失败' })
+  }
+}
+
+/**
+ * 删除任务（仅发布者；且同 task_info 下无人领取）
+ * DELETE /api/tasks/:id
+ */
+export const deleteTask = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ error: '未授权' })
+
+    const taskId = String(req.params.id || '').trim()
+    if (!taskId) return res.status(400).json({ error: '缺少任务ID' })
+
+    const { data: taskRow, error: taskError } = await supabase
+      .from('tasks')
+      .select('id, task_info_id')
+      .eq('id', taskId)
+      .single()
+
+    if (taskError) {
+      if ((taskError as any).code === 'PGRST116') return res.status(404).json({ error: '任务不存在' })
+      throw taskError
+    }
+
+    const taskInfoId = (taskRow as any).task_info_id as string
+    const { data: taskInfo, error: infoError } = await supabase
+      .from('task_info')
+      .select('id, creator_id')
+      .eq('id', taskInfoId)
+      .single()
+
+    if (infoError) throw infoError
+    if (!taskInfo) return res.status(404).json({ error: '任务不存在' })
+
+    if ((taskInfo as any).creator_id !== user.id) {
+      return res.status(403).json({ error: '无权删除此任务' })
+    }
+
+    const { count: claimedCount, error: claimedError } = await supabase
+      .from('tasks')
+      .select('id', { count: 'exact', head: true })
+      .eq('task_info_id', taskInfoId)
+      .not('claimer_id', 'is', null)
+
+    if (claimedError) throw claimedError
+    if ((claimedCount || 0) > 0) {
+      return res.status(400).json({ error: '已有用户领取过该任务，无法删除' })
+    }
+
+    const { error: deleteError } = await supabase
+      .from('task_info')
+      .delete()
+      .eq('id', taskInfoId)
+
+    if (deleteError) throw deleteError
+
+    res.json({ success: true, message: '任务已删除' })
+  } catch (error: any) {
+    console.error('[deleteTask] error:', error)
+    res.status(500).json({ error: error?.message || '删除失败' })
+  }
 }

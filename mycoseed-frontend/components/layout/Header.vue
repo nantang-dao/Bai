@@ -57,6 +57,19 @@
       <nav class="flex items-center gap-4">
         <PixelButton variant="warning" size="sm" @click="navigateTo('tasks')">🛒 商城</PixelButton>
 
+        <NuxtLink
+          v-if="userStore.isAuthenticated"
+          to="/messages"
+          class="relative w-10 h-10 flex items-center justify-center rounded-xl bg-input-bg border border-border text-text-title transition-all hover:scale-105 flex-shrink-0 shadow-soft"
+          title="消息"
+        >
+          🔔
+          <span
+            v-if="hasUnread"
+            class="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-red-500"
+          />
+        </NuxtLink>
+
         <div class="flex items-center gap-2">
           <div 
             v-if="userStore.isAuthenticated"
@@ -140,6 +153,7 @@ import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { useCommunityStore } from '~/stores/community'
 import { useUserStore } from '~/stores/user'
 import type { Community } from '~/utils/api'
+import { useApi } from '~/composables/useApi'
 
 interface Props {
   currentPage?: string
@@ -155,6 +169,23 @@ const router = useRouter()
 const route = useRoute()
 const communityStore = useCommunityStore()
 const userStore = useUserStore()
+const api = useApi()
+
+const hasUnread = ref(false)
+
+async function refreshUnread() {
+  if (!userStore.isAuthenticated) {
+    hasUnread.value = false
+    return
+  }
+  try {
+    const communityId = communityStore.currentCommunityId
+    const summary = await api.getNotificationSummary({ communityId })
+    hasUnread.value = !!summary.hasUnread
+  } catch {
+    // 忽略错误，避免影响 header
+  }
+}
 
 const switcherRef = ref<HTMLElement | null>(null)
 const showCommunityDropdown = ref(false)
@@ -203,6 +234,7 @@ onMounted(async () => {
     await userStore.getUser()
   }
   await communityStore.initialize()
+  await refreshUnread()
   if (typeof document !== 'undefined') {
     document.addEventListener('click', onDocumentClick)
   }
@@ -217,6 +249,11 @@ onBeforeUnmount(() => {
 watch(showCommunityDropdown, (open) => {
   if (open) loadMyCommunities()
 })
+
+watch(
+  () => [communityStore.currentCommunityId, userStore.isAuthenticated],
+  () => refreshUnread()
+)
 
 const navigateTo = (page: string) => {
   if (page === 'profile') {
