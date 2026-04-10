@@ -1272,7 +1272,19 @@ const handleTransferToSemi = async () => {
     const memo = defaultMemo.trim().slice(0, 32)
 
     const targetTaskId = currentSubmission.value?.taskId || taskId
-    const receiverRemark = (currentSubmission.value as any)?.receiverRemark?.trim().slice(0, 32) || ''
+    let receiverRemark = (currentSubmission.value as any)?.receiverRemark?.trim().slice(0, 32) || ''
+    if (!receiverRemark) {
+      const latestTask = await getTaskById(targetTaskId, baseUrl)
+      const rootRemark = (((latestTask as any)?.receiverRemark ?? (latestTask as any)?.receiver_remark ?? '') as string).trim().slice(0, 32)
+      if (rootRemark) {
+        receiverRemark = rootRemark
+      } else {
+        const matchedParticipant = Array.isArray((latestTask as any)?.participantsList)
+          ? (latestTask as any).participantsList.find((p: any) => String(p?.id || p?.taskId || '') === String(targetTaskId))
+          : null
+        receiverRemark = (((matchedParticipant?.receiverRemark ?? matchedParticipant?.receiver_remark ?? '') as string).trim().slice(0, 32))
+      }
+    }
     const poolUuid = ((task.value as any)?.taskInfoId || '').toString()
 
     // 构造并跳转到semi转账页面

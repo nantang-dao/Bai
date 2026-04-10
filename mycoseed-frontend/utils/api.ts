@@ -2856,6 +2856,29 @@ export const parseFragment = (fragment: string): Record<string, string> => {
 // ==================== Semi转账跳转相关 ====================
 
 /**
+ * 打开 Semi 转账页（打赏用）：固定 1 积分，不传任务参数
+ * @param receiverUserId 被打赏用户 ID（帖子作者或评论作者）
+ * @param getBaseUrl 获取后端 baseUrl，例如 () => getApiBaseUrl()
+ * @param semiAppUrl 可选，Semi 应用基址
+ * @returns true 表示已打开新窗口；false 表示未打开（如未绑定钱包）
+ */
+export async function openTipToSemi(
+  receiverUserId: string,
+  getBaseUrl: () => string,
+  semiAppUrl?: string
+): Promise<boolean> {
+  const baseUrl = getBaseUrl()
+  const address = await getWalletAddressByUserId(receiverUserId, baseUrl)
+  if (!address) return false
+
+  const url = buildSemiTransferUrl(address, '1', {
+    semiAppUrl: semiAppUrl || 'https://www.semi.im',
+  })
+  window.open(url, '_blank')
+  return true
+}
+
+/**
  * 构造跳转到Semi-app转账页面的链接
  * @param receiverAddress 接收方钱包地址（参与者的钱包地址）
  * @param amount 转账金额（字符串格式，如 "100"）
