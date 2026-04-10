@@ -11,6 +11,8 @@ import diagnosticsRouter from './routes/diagnostics'
 import communitiesRouter from './routes/communities'
 import postRouter from './routes/post'
 import commentsRouter from './routes/comments'
+import faqRouter from './routes/faq'
+import notificationsRouter from './routes/notifications'
 
 const nodeEnv = process.env.NODE_ENV || 'development'
 
@@ -75,6 +77,8 @@ app.use('/api/diagnostics', diagnosticsRouter)  // 诊断路由（开发用）
 app.use('/api/communities', communitiesRouter)  // 社区 CRUD、成员、公告、动态
 app.use('/api/posts', postRouter)         // 单个动态相关路由
 app.use('/api/comments', commentsRouter)  // 评论删除路由
+app.use('/api/faq', faqRouter)            // FAQ（帮助与反馈）
+app.use('/api/notifications', notificationsRouter) // 站内消息通知 & 设置
 
 
 // 启动服务器（监听 0.0.0.0 以支持 Fly.io 等云环境）

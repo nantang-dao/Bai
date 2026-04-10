@@ -3,6 +3,17 @@ import { supabase } from '../services/supabase'
 import { AuthRequest } from '../middleware/auth'
 import { getMemberRole } from '../middleware/communityAdmin'
 
+/**
+ * 防止 PostgREST `.or()` 过滤表达式注入：
+ * 将用户输入限制为常见文本字符，避免 `,():"` 等进入表达式语法。
+ */
+const sanitizeSearchTerm = (raw: string): string => {
+    const s = String(raw || '').trim()
+    if (!s) return ''
+    const cleaned = s.replace(/[^a-zA-Z0-9\u4e00-\u9fa5\s_-]/g, ' ').replace(/\s+/g, ' ').trim()
+    return cleaned.slice(0, 50)
+}
+
 function toCommunity(row: any) {
     if (!row) return null
     let backgroundImages: string[] = []
@@ -34,7 +45,7 @@ function toCommunity(row: any) {
 export const list = async (req: AuthRequest, res: Response) => {
     try {
         const mine = req.query.mine === '1' || req.query.mine === 'true'
-        const q = (req.query.q as string)?.trim() || ''
+        const q = sanitizeSearchTerm(req.query.q as string)
 
         if (mine) {
             if (!req.user?.id) return res.status(401).json({ result: 'error', message: 'Unauthorized' })

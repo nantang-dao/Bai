@@ -29,10 +29,10 @@
               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary/80 cursor-pointer"
               @change="onFileChange"
             />
-            <div v-if="previewUrls.length" class="grid grid-cols-3 gap-2 mt-4">
+            <div v-if="allPreviewUrls.length" class="grid grid-cols-3 gap-2 mt-4">
               <div
-                v-for="(url, index) in previewUrls"
-                :key="index"
+                v-for="(url, index) in allPreviewUrls"
+                :key="`${url}-${index}`"
                 class="relative aspect-square rounded-lg overflow-hidden border border-gray-200"
               >
                 <img :src="url" class="w-full h-full object-cover" alt="预览" />
@@ -97,23 +97,35 @@ const communityId = computed(() => {
 const content = ref('')
 const selectedFiles = ref<File[]>([])
 const previewUrls = ref<string[]>([])
+const existingImages = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
+
+const POST_DRAFT_KEY = 'mycoseed_post_withdraw_draft'
+
+const allPreviewUrls = computed(() => [...existingImages.value, ...previewUrls.value])
 
 function onFileChange(e: Event) {
   const input = e.target as HTMLInputElement
   const files = input.files
   if (!files?.length) return
-  const list = Array.from(files).slice(0, 9)
+  const remaining = Math.max(0, 9 - existingImages.value.length)
+  const list = Array.from(files).slice(0, remaining)
   previewUrls.value.forEach(url => URL.revokeObjectURL(url))
   selectedFiles.value = list
   previewUrls.value = list.map(f => URL.createObjectURL(f))
 }
 
 function removeImage(index: number) {
-  if (previewUrls.value[index]) URL.revokeObjectURL(previewUrls.value[index])
-  selectedFiles.value.splice(index, 1)
-  previewUrls.value.splice(index, 1)
+  // index 是合并后的 allPreviewUrls 索引：先 existingImages，再 previewUrls
+  if (index < existingImages.value.length) {
+    existingImages.value.splice(index, 1)
+    return
+  }
+  const fileIndex = index - existingImages.value.length
+  if (previewUrls.value[fileIndex]) URL.revokeObjectURL(previewUrls.value[fileIndex])
+  selectedFiles.value.splice(fileIndex, 1)
+  previewUrls.value.splice(fileIndex, 1)
   const input = document.querySelector('input[type="file"]') as HTMLInputElement
   if (input) input.value = ''
 }
@@ -136,16 +148,18 @@ async function publish() {
         files: selectedFiles.value,
       })
       const images = (uploadRes.files || []).map(f => f.url)
+      const mergedImages = [...existingImages.value, ...images].slice(0, 9)
       await api.createPost({
         communityId: currentCommunityId,
         content: text,
-        images,
+        images: mergedImages,
         postId,
       })
     } else {
       await api.createPost({
         communityId: currentCommunityId,
         content: text,
+        images: existingImages.value.length ? existingImages.value.slice(0, 9) : undefined,
       })
     }
     await navigateTo('/?tab=COMMUNITY')
@@ -186,6 +200,24 @@ onMounted(async () => {
     return
   }
   await loadUserCommunity()
+
+  // 恢复撤回草稿
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = sessionStorage.getItem(POST_DRAFT_KEY)
+      if (raw) {
+        const draft = JSON.parse(raw || '{}') || {}
+        if (draft.communityId && typeof draft.communityId === 'string') {
+          await communityStore.setCurrentCommunity(draft.communityId)
+        }
+        content.value = String(draft.content || '')
+        existingImages.value = Array.isArray(draft.images) ? draft.images.filter((u: any) => typeof u === 'string') : []
+        sessionStorage.removeItem(POST_DRAFT_KEY)
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
 })
 
 onUnmounted(() => {

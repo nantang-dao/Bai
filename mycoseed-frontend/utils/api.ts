@@ -687,6 +687,43 @@ export const createTask = async (params: CreateTaskParams, baseUrl: string): Pro
 }
 
 /**
+ * 撤回任务（仅发布者；未被任何人领取）
+ * 撤回会删除任务，并返回草稿数据用于重新编辑
+ */
+export const withdrawTask = async (
+  taskId: string,
+  baseUrl: string
+): Promise<{ success: boolean; draft: any }> => {
+  const res = await fetch(`${baseUrl}/api/tasks/${encodeURIComponent(taskId)}/withdraw`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+/**
+ * 删除任务（仅发布者；未被任何人领取）
+ */
+export const deleteTask = async (
+  taskId: string,
+  baseUrl: string
+): Promise<{ success: boolean; message?: string }> => {
+  const res = await fetch(`${baseUrl}/api/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+/**
  * 领取任务
  * @param taskId 任务 ID (UUID string)
  * @param baseUrl API 基础 URL
@@ -1572,6 +1609,53 @@ export interface GetLikesResponse {
   total: number
 }
 
+// ==================== FAQ / 帮助 ====================
+export type GetFaqsParams = {
+  q?: string
+  limit?: number
+}
+
+export type FaqItem = {
+  id: string | number
+  question: string
+  answer: string
+  created_at?: string
+  updated_at?: string
+}
+
+/**
+ * 获取 FAQ 列表（支持关键字搜索）
+ */
+export async function getFaqs (params?: GetFaqsParams, baseUrl?: string): Promise<FaqItem[]> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const query = new URLSearchParams()
+  if (params?.q) query.set('q', params.q)
+  if (params?.limit) query.set('limit', String(params.limit))
+
+  const res = await fetch(`${url}/api/faq?${query.toString()}`, { method: 'GET' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  const data = await res.json()
+  return (data as { faqs?: FaqItem[] }).faqs ?? []
+}
+
+/**
+ * 获取 FAQ 详情
+ */
+export async function getFaqById (id: string, baseUrl?: string): Promise<FaqItem> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const res = await fetch(`${url}/api/faq/${encodeURIComponent(id)}`, { method: 'GET' })
+  if (!res.ok) {
+    if (res.status === 404) throw new Error('FAQ 不存在')
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  const data = await res.json()
+  return (data as { faq: FaqItem }).faq
+}
+
 // ==================== 社区圈 API（调用后端） ====================
 /**
  * 获取社区动态列表（分页）
@@ -1653,6 +1737,143 @@ export async function deletePost (postId: string, baseUrl?: string): Promise<voi
     const err = await res.json().catch(() => ({}))
     throw new Error((err as { error?: string }).error || res.statusText)
   }
+}
+
+/**
+ * 撤回动态（无评论时允许撤回）：删除并返回草稿用于重新编辑
+ */
+export async function withdrawPost (
+  postId: string,
+  baseUrl?: string
+): Promise<{ success: boolean; draft: { communityId: string | null; content: string; images: string[] } }> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const res = await fetch(`${url}/api/posts/${encodeURIComponent(postId)}/withdraw`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+// ==================== 通知 / 消息 ====================
+export type NotificationCategory = 'community' | 'task' | 'due'
+
+export type NotificationItem = {
+  id: string
+  user_id: string
+  community_id: string | null
+  category: NotificationCategory
+  type: string
+  title: string
+  body?: string | null
+  data?: any
+  dedupe_key?: string | null
+  read_at?: string | null
+  created_at: string
+}
+
+export type NotificationSummary = {
+  hasUnread: boolean
+  unreadTotal: number
+  unreadByCategory: { community: number; task: number; due: number }
+}
+
+export async function getNotificationSummary (
+  params: { communityId?: string | null } = {},
+  baseUrl?: string
+): Promise<NotificationSummary> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const query = new URLSearchParams()
+  if (params.communityId) query.set('communityId', params.communityId)
+  const res = await fetch(`${url}/api/notifications/summary?${query.toString()}`, {
+    method: 'GET',
+    headers: getAuthHeaders()
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+export async function listNotifications (
+  params: { communityId?: string | null; category?: NotificationCategory; limit?: number; offset?: number } = {},
+  baseUrl?: string
+): Promise<{ notifications: NotificationItem[] }> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const query = new URLSearchParams()
+  if (params.communityId) query.set('communityId', params.communityId)
+  if (params.category) query.set('category', params.category)
+  if (typeof params.limit === 'number') query.set('limit', String(params.limit))
+  if (typeof params.offset === 'number') query.set('offset', String(params.offset))
+  const res = await fetch(`${url}/api/notifications?${query.toString()}`, {
+    method: 'GET',
+    headers: getAuthHeaders()
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+export async function markNotificationsRead (
+  body: { ids?: string[]; category?: NotificationCategory; communityId?: string | null } = {},
+  baseUrl?: string
+): Promise<{ success: boolean }> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const res = await fetch(`${url}/api/notifications/mark-read`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body)
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+export type NotificationSettings = {
+  user_id: string
+  push_sms_enabled: boolean
+  push_email_enabled: boolean
+  community_enabled: boolean
+  task_enabled: boolean
+  due_enabled: boolean
+}
+
+export async function getNotificationSettings (baseUrl?: string): Promise<{ settings: NotificationSettings }> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const res = await fetch(`${url}/api/notifications/settings`, {
+    method: 'GET',
+    headers: getAuthHeaders()
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+export async function updateNotificationSettings (
+  patch: Partial<Omit<NotificationSettings, 'user_id'>>,
+  baseUrl?: string
+): Promise<{ success: boolean; settings: NotificationSettings }> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const res = await fetch(`${url}/api/notifications/settings`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(patch)
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
 }
 
 /**

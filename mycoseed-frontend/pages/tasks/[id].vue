@@ -39,6 +39,24 @@
                 >
                   {{ getStatusText(task.status) }}
                 </span>
+                <PixelButton
+                  v-if="canCreatorWithdraw"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="loading"
+                  @click="handleWithdrawTask"
+                >
+                  撤回
+                </PixelButton>
+                <PixelButton
+                  v-if="canCreatorDelete"
+                  variant="danger"
+                  size="sm"
+                  :disabled="loading"
+                  @click="handleDeleteTask"
+                >
+                  删除
+                </PixelButton>
               </div>
             </div>
             
@@ -578,6 +596,7 @@ import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import { parseBeijingTime, getCurrentBeijingDate, formatBeijingTime } from '~/utils/time'
+import { withdrawTask, deleteTask } from '~/utils/api'
 
 // 获取路由参数
 const route = useRoute()
@@ -621,6 +640,22 @@ const currentParticipantId = ref<string>(taskId)
 const canReview = computed(() => {
   return userStore.user?.id === task.value.creatorId
 })
+
+const isCreator = computed(() => {
+  return userStore.user?.id === task.value.creatorId
+})
+
+const noOneClaimed = computed(() => {
+  // 多人任务：一个人都没领取过
+  if (task.value.participantLimit && task.value.participantLimit > 1) {
+    return claimedParticipantsCount.value === 0
+  }
+  // 单人任务：未领取
+  return !task.value.claimerId
+})
+
+const canCreatorWithdraw = computed(() => isCreator.value && noOneClaimed.value)
+const canCreatorDelete = computed(() => isCreator.value && noOneClaimed.value)
 
 // 权限检查：判断当前用户是否是任务领取者
 const isClaimer = computed(() => {
@@ -1410,6 +1445,45 @@ const loadTask = async () => {
       description: '无法加载任务详情，请稍后重试',
       color: 'red'
     })
+  } finally {
+    loading.value = false
+  }
+}
+
+const TASK_DRAFT_KEY = 'mycoseed_task_withdraw_draft'
+
+async function handleWithdrawTask() {
+  if (!canCreatorWithdraw.value) return
+  const ok = window.confirm('确认撤回？撤回后会回到编辑页，任务将从列表中移除。')
+  if (!ok) return
+  loading.value = true
+  try {
+    const baseUrl = getApiBaseUrl()
+    const res = await withdrawTask(taskId, baseUrl)
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(TASK_DRAFT_KEY, JSON.stringify(res.draft || {}))
+    }
+    toast.add({ title: '已撤回', description: '已为你保留草稿，可继续修改后重新发布', color: 'green' })
+    router.push('/tasks/create?from=withdraw')
+  } catch (e: any) {
+    toast.add({ title: '撤回失败', description: e?.message || '请稍后重试', color: 'red' })
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleDeleteTask() {
+  if (!canCreatorDelete.value) return
+  const ok = window.confirm('确认删除？删除后将无法恢复。')
+  if (!ok) return
+  loading.value = true
+  try {
+    const baseUrl = getApiBaseUrl()
+    await deleteTask(taskId, baseUrl)
+    toast.add({ title: '已删除', description: '任务已彻底删除', color: 'green' })
+    router.push('/tasks')
+  } catch (e: any) {
+    toast.add({ title: '删除失败', description: e?.message || '请稍后重试', color: 'red' })
   } finally {
     loading.value = false
   }

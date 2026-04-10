@@ -161,7 +161,25 @@
                         />
                         <span class="text-sm font-medium">{{ post.author?.name || '用户' }}</span>
                       </div>
-                      <span class="text-xs text-gray-500">{{ formatTimeAgo(post.createdAt) }}</span>
+                      <div class="flex items-center gap-2">
+                        <PixelButton
+                          v-if="canWithdrawPost(post)"
+                          size="sm"
+                          variant="secondary"
+                          @click.stop="handleWithdrawPost(post)"
+                        >
+                          撤回
+                        </PixelButton>
+                        <PixelButton
+                          v-if="canDeletePost(post)"
+                          size="sm"
+                          variant="danger"
+                          @click.stop="handleDeletePost(post)"
+                        >
+                          删除
+                        </PixelButton>
+                        <span class="text-xs text-gray-500">{{ formatTimeAgo(post.createdAt) }}</span>
+                      </div>
                     </div>
                   </template>
                   <div
@@ -518,6 +536,7 @@ const replyTarget = ref<{ postId: string; userId: string; userName: string } | n
 const expandedPosts = ref<Set<string>>(new Set())
 // 图片预览状态
 const previewImage = ref<{ url: string; index: number; allImages: string[] } | null>(null)
+const POST_DRAFT_KEY = 'mycoseed_post_withdraw_draft'
 
 // 获取当前社区ID（只使用用户选择的社区，不设置默认值）
 const getCurrentCommunityId = (): string | null => {
@@ -675,6 +694,43 @@ async function submitComment(postId: string) {
     postCommentsMap.value = new Map(postCommentsMap.value).set(postId, comments)
   } catch (e: any) {
     console.error('评论失败:', e?.message)
+  }
+}
+
+function canDeletePost(post: any) {
+  return !!userStore.user?.id && post?.authorId === userStore.user.id
+}
+
+function canWithdrawPost(post: any) {
+  // 无评论可撤回；已有评论不能撤回但仍可删除
+  return canDeletePost(post) && Number(post?.commentsCount || 0) === 0
+}
+
+async function handleDeletePost(post: any) {
+  if (!canDeletePost(post)) return
+  const ok = window.confirm('确认删除这条动态？删除后将无法恢复。')
+  if (!ok) return
+  try {
+    await api.deletePost(post.id)
+    posts.value = posts.value.filter(p => p.id !== post.id)
+  } catch (e: any) {
+    console.error('删除动态失败:', e?.message)
+  }
+}
+
+async function handleWithdrawPost(post: any) {
+  if (!canWithdrawPost(post)) return
+  const ok = window.confirm('确认撤回？撤回后会回到编辑页，并保留你之前填写的内容。')
+  if (!ok) return
+  try {
+    const res = await api.withdrawPost(post.id)
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(POST_DRAFT_KEY, JSON.stringify(res.draft || {}))
+    }
+    posts.value = posts.value.filter(p => p.id !== post.id)
+    await navigateTo('/post/create?from=withdraw')
+  } catch (e: any) {
+    console.error('撤回动态失败:', e?.message)
   }
 }
 

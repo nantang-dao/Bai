@@ -404,6 +404,64 @@ export const deletePost = async (req: AuthRequest, res: Response) => {
 }
 
 /**
+ * 撤回动态（无评论时允许撤回）：删除动态并返回草稿用于重新编辑
+ * POST /api/posts/:postId/withdraw
+ */
+export const withdrawPost = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ error: '未授权' })
+
+    const postId = String(req.params.postId || '').trim()
+    if (!postId) return res.status(400).json({ error: '缺少动态ID' })
+
+    const { data: post, error: postError } = await supabase
+      .from('community_posts')
+      .select('id, author_id, community_id, content, images')
+      .eq('id', postId)
+      .single()
+
+    if (postError) {
+      if ((postError as any).code === 'PGRST116') return res.status(404).json({ error: '动态不存在' })
+      throw postError
+    }
+
+    if ((post as any).author_id !== user.id) {
+      return res.status(403).json({ error: '无权撤回此动态' })
+    }
+
+    // 无评论才允许撤回
+    const { count: commentsCount, error: countError } = await supabase
+      .from('community_post_comments')
+      .select('id', { count: 'exact', head: true })
+      .eq('post_id', postId)
+
+    if (countError) throw countError
+    if ((commentsCount || 0) > 0) {
+      return res.status(400).json({ error: '已有评论，无法撤回（可直接删除）' })
+    }
+
+    const draft = {
+      communityId: (post as any).community_id || null,
+      content: (post as any).content || '',
+      images: Array.isArray((post as any).images) ? (post as any).images : []
+    }
+
+    const { error: deleteError } = await supabase
+      .from('community_posts')
+      .delete()
+      .eq('id', postId)
+
+    if (deleteError) throw deleteError
+
+    res.json({ success: true, draft })
+  } catch (error: any) {
+    console.error('撤回动态失败:', error)
+    res.status(500).json({ error: '撤回动态失败', details: error.message })
+  }
+}
+
+/**
  * 获取动态评论列表
  * GET /api/posts/:postId/comments
  */
@@ -476,10 +534,10 @@ export const createComment = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ error: '评论内容不能超过500字' })
         }
 
-        // 验证动态是否存在
+        // 验证动态是否存在 + 获取作者/社区（用于通知）
         const { data: post } = await supabase
             .from('community_posts')
-            .select('id')
+            .select('id, author_id, community_id, content')
             .eq('id', postId)
             .single()
 
@@ -528,6 +586,35 @@ export const createComment = async (req: AuthRequest, res: Response) => {
         if (createError) throw createError
 
         const transformed = transformComment(comment)
+
+        // 写入通知：评论了你的动态（仅作者本人、且非自己；且作者开启了 community 开关）
+        try {
+            const postAuthorId = (post as any)?.author_id
+            if (postAuthorId && postAuthorId !== user.id) {
+                const { data: settings } = await supabase
+                    .from('user_notification_settings')
+                    .select('community_enabled')
+                    .eq('user_id', postAuthorId)
+                    .maybeSingle()
+                const enabled = settings?.community_enabled !== false
+                if (enabled) {
+                    const dedupeKey = `post_comment:${postId}:${(transformed as any).id || comment.id}`
+                    await supabase.from('notifications').upsert([{
+                        user_id: postAuthorId,
+                        community_id: (post as any)?.community_id || null,
+                        category: 'community',
+                        type: 'post_comment',
+                        title: '有人评论了你的动态',
+                        body: `${user.name || '用户'}：${String(content).trim().slice(0, 80)}`,
+                        data: { postId, commentId: (transformed as any).id || comment.id, fromUserId: user.id },
+                        dedupe_key: dedupeKey
+                    }], { onConflict: 'user_id,dedupe_key' })
+                }
+            }
+        } catch (e) {
+            // 通知失败不影响主流程
+        }
+
         res.status(201).json(transformed)
     } catch (error: any) {
         console.error('创建评论失败:', error)
@@ -595,6 +682,17 @@ export const toggleLike = async (req: AuthRequest, res: Response) => {
 
         const postId = req.params.postId
 
+        // 取帖子作者/社区（用于点赞通知）
+        const { data: post, error: postError } = await supabase
+            .from('community_posts')
+            .select('id, author_id, community_id')
+            .eq('id', postId)
+            .single()
+        if (postError) {
+            if ((postError as any).code === 'PGRST116') return res.status(404).json({ error: '动态不存在' })
+            throw postError
+        }
+
         // 检查是否已点赞
         const { data: existingLike } = await supabase
             .from('community_post_likes')
@@ -623,6 +721,34 @@ export const toggleLike = async (req: AuthRequest, res: Response) => {
                 })
 
             if (insertError) throw insertError
+
+            // 写入通知：点赞了你的动态（仅作者本人、且非自己；且作者开启 community 开关）
+            try {
+                const postAuthorId = (post as any)?.author_id
+                if (postAuthorId && postAuthorId !== user.id) {
+                    const { data: settings } = await supabase
+                        .from('user_notification_settings')
+                        .select('community_enabled')
+                        .eq('user_id', postAuthorId)
+                        .maybeSingle()
+                    const enabled = settings?.community_enabled !== false
+                    if (enabled) {
+                        const dedupeKey = `post_like:${postId}:${user.id}`
+                        await supabase.from('notifications').upsert([{
+                            user_id: postAuthorId,
+                            community_id: (post as any)?.community_id || null,
+                            category: 'community',
+                            type: 'post_like',
+                            title: '有人点赞了你的动态',
+                            body: `${user.name || '用户'} 点赞了你的动态`,
+                            data: { postId, fromUserId: user.id },
+                            dedupe_key: dedupeKey
+                        }], { onConflict: 'user_id,dedupe_key' })
+                    }
+                }
+            } catch (e) {
+                // ignore
+            }
 
             res.json({ liked: true, message: '已点赞' })
         }
