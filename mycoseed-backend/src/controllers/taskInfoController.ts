@@ -1,6 +1,7 @@
 import { Response } from 'express'
 import { supabase } from '../services/supabase'
 import { ensureSubtaskMallListings, ensureTaskpoolPoolPrimaryListing } from '../services/taskpoolMallSync'
+import { jsonSafe } from '../utils/jsonSafe'
 import { AuthRequest } from '../middleware/auth'
 import type { TaskSubtaskDraft, TaskpoolPhase } from '../types/task'
 
@@ -1281,7 +1282,7 @@ export const completeTaskpoolPrepayIntent = async (req: AuthRequest, res: Respon
       onchain = { ok: false, error: e?.message || 'onchain verify failed' }
     }
 
-    res.json({ ok: true, intent: updatedIntent, onchain })
+    res.json({ ok: true, intent: updatedIntent, onchain: onchain == null ? null : jsonSafe(onchain) })
   } catch (e: any) {
     console.error('[completeTaskpoolPrepayIntent]', e)
     res.status(500).json({ error: e?.message || '更新失败' })
@@ -1316,7 +1317,7 @@ export const completeTaskpoolFinalApprove = async (req: AuthRequest, res: Respon
     const v = await verifyTaskpoolPoolFinalApprovedByTx({ taskInfoId, txHash })
     if (!v.ok) return res.status(409).json({ error: v.error })
 
-    res.json({ ok: true, onchain: v })
+    res.json({ ok: true, onchain: jsonSafe(v) })
   } catch (e: any) {
     console.error('[completeTaskpoolFinalApprove]', e)
     res.status(500).json({ error: e?.message || 'final approve complete 失败' })
@@ -1356,7 +1357,7 @@ export const completeTaskpoolDistribute = async (req: AuthRequest, res: Response
       await supabase.from('task_info').update({ taskpool_phase: 'closed' }).eq('id', taskInfoId)
     }
 
-    res.json({ ok: true, onchain: v })
+    res.json({ ok: true, onchain: jsonSafe(v) })
   } catch (e: any) {
     console.error('[completeTaskpoolDistribute]', e)
     res.status(500).json({ error: e?.message || 'distribute complete 失败' })
