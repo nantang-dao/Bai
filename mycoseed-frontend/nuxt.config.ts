@@ -8,6 +8,7 @@ const env = loadEnv(nodeEnv, process.cwd(), '')
 export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: [
+    './modules/persist-nuxt-paths',
     '@nuxt/ui',
     '@pinia/nuxt',
     '@nuxt/icon'
@@ -33,6 +34,26 @@ export default defineNuxtConfig({
         (nodeEnv === 'development' 
           ? 'http://localhost:3003/auth/callback'
           : ''),
+      /** TaskPool V2 Proxy：`verifyingContract`、合约读调用 */
+      taskpoolProxyAddress:
+        env.NUXT_PUBLIC_TASKPOOL_PROXY_ADDRESS,
+      /** TaskPool V2 admin（平台兜底地址；用于签名兜底/权限口径展示） */
+      taskpoolAdminAddress:
+        env.NUXT_PUBLIC_TASKPOOL_ADMIN_ADDRESS,
+      /** OP Mainnet = 10 */
+      chainId: Number(env.NUXT_PUBLIC_CHAIN_ID || '10'),
+      /** OP JSON-RPC（读链、发送交易） */
+      opRpcUrl:
+        env.NUXT_PUBLIC_OP_RPC_URL || 'https://mainnet.optimism.io',
+      /** NT ERC20（需与合约 initialize 的 pointToken 一致） */
+      ntTokenAddress:
+        env.NUXT_PUBLIC_NT_TOKEN_ADDRESS ||
+        '0x7563cb33148cD2b929ed85e69F697be13b515Bd0',
+      /**
+       * 任务池管理页是否展示「MetaMask 注入钱包 · 建池 demo」。
+       * 默认 false：主路径仅 Semi 预付 +（后续）Semi 建池；完整注入钱包竖切见 /dev/taskpool-vertical。
+       */
+      taskpoolShowInjectedWalletDemo: env.NUXT_PUBLIC_TASKPOOL_SHOW_INJECTED_WALLET_DEMO === 'true',
     }
   },
   // 配置UI主题

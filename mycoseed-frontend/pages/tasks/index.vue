@@ -2,7 +2,16 @@
   <div class="min-h-screen bg-background py-8">
     <div class="container mx-auto px-6">
       <!-- 创建任务按钮 -->
-      <div v-if="isAuthenticated" class="mb-6 flex justify-end gap-2">
+      <div v-if="isAuthenticated" class="mb-6 flex justify-end flex-wrap gap-2">
+        <PixelButton
+          variant="secondary"
+          @click="navigateTo('/tasks/pool')"
+        >
+          <span class="flex items-center gap-1.5 whitespace-nowrap">
+            <span class="text-base">📋</span>
+            <span>任务池</span>
+          </span>
+        </PixelButton>
         <PixelButton
           variant="primary"
           @click="navigateTo('/tasks/create')"
@@ -73,7 +82,7 @@
                 </div>
                 <div class="flex flex-col min-w-0">
                   <span class="text-text-body text-sm font-medium truncate">{{ item.creator || '系统' }}</span>
-                  <span class="text-xs text-text-placeholder mt-0.5">发布于 {{ formatTimeAgo(item.createdAt || item.deadline) }}</span>
+                  <span class="text-xs text-text-placeholder mt-0.5">发布于 {{ formatTimeAgo(item.createdAt ?? item.deadline ?? '') }}</span>
                 </div>
               </div>
               <!-- 右侧：状态标签 -->
@@ -137,6 +146,8 @@ import { useUserStore } from '~/stores/user'
 import { useCommunityStore } from '~/stores/community'
 import { getAllTasks, getApiBaseUrl, type Task } from '~/utils/api'
 import { parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'
+
+type TaskStatus = Task['status']
 
 definePageMeta({
   layout: 'default'

@@ -40,7 +40,7 @@
                   {{ getStatusText(task.status) }}
                 </span>
                 <PixelButton
-                  v-if="canCreatorWithdraw"
+                  v-if="canCreatorWithdrawEffective"
                   variant="secondary"
                   size="sm"
                   :disabled="loading"
@@ -49,7 +49,7 @@
                   撤回
                 </PixelButton>
                 <PixelButton
-                  v-if="canCreatorDelete"
+                  v-if="canCreatorDeleteEffective"
                   variant="danger"
                   size="sm"
                   :disabled="loading"
@@ -158,6 +158,52 @@
                     <span class="text-xs md:text-base text-text-body">提交截止时间:</span>
                     <span class="text-xs md:text-base text-text-title font-medium">{{ task.submitDeadline ? formatDate(task.submitDeadline) : (task.deadline ? formatDate(task.deadline) : '未设置') }}</span>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 链上托管：阶段、建池交易、入口（与方案 A 话术一致，不出现「任务池」） -->
+            <div
+              v-if="showTaskpoolOnchainSection"
+              class="pt-4 border-t-2 border-black/20"
+            >
+              <h3 class="font-bold text-xs uppercase text-text-title mb-3">链上进度</h3>
+              <div class="space-y-3 text-base text-text-title">
+                <div class="flex flex-wrap justify-between gap-2 items-baseline">
+                  <span class="text-text-body shrink-0">链上阶段</span>
+                  <span class="font-medium text-right">{{ taskpoolPhaseLabel }}</span>
+                </div>
+                <div
+                  v-if="taskpoolCreateStatusLabel"
+                  class="flex flex-wrap justify-between gap-2 items-baseline"
+                >
+                  <span class="text-text-body shrink-0">同步状态</span>
+                  <span class="text-sm text-right break-words max-w-[min(100%,18rem)]">{{ taskpoolCreateStatusLabel }}</span>
+                </div>
+                <div
+                  v-if="task.taskpoolCreateTxHash"
+                  class="flex flex-wrap justify-between gap-2 items-start"
+                >
+                  <span class="text-text-body shrink-0 pt-0.5">建池交易</span>
+                  <a
+                    :href="optimismTxExplorerUrl(task.taskpoolCreateTxHash)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="font-mono text-sm text-primary underline break-all text-right max-w-[min(100%,20rem)]"
+                  >{{ shortTxHash(task.taskpoolCreateTxHash) }}</a>
+                </div>
+                <div class="pt-1">
+                  <PixelButton
+                    v-if="task.taskInfoId"
+                    variant="secondary"
+                    size="sm"
+                    @click="openTaskpoolManage"
+                  >
+                    查看链上进度与结算
+                  </PixelButton>
+                  <p v-else class="text-sm text-text-body">
+                    链上信息同步中，请稍后在「我的」或发布入口进入管理页。
+                  </p>
                 </div>
               </div>
             </div>
@@ -543,6 +589,18 @@
             >
               已完成
             </PixelButton>
+
+            <!-- 一键分享到社区圈（接包者审核通过后 / 发包者转账后显示） -->
+            <PixelButton
+              v-if="showShareButton"
+              variant="secondary"
+              size="lg"
+              :block="true"
+              class="mt-3"
+              @click="openShareModal()"
+            >
+              一键分享任务到社区圈
+            </PixelButton>
             
             <!-- 已驳回状态 -->
             <PixelButton
@@ -585,18 +643,42 @@
         </div>
       </div>
     </Teleport>
+
+    <ShareToCommunityModal
+      :visible="shareModalVisible"
+      :mode="shareModalMode"
+      :task="shareTask"
+      :sender-remark="shareSenderRemark"
+      @close="onShareModalClose"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { getTaskById, claimTask, getApiBaseUrl, markTransferCompleted, unmarkTransferCompleted, buildSemiTransferUrl, getWalletAddressByUserId } from '~/utils/api'
+import { nextTick, watch } from 'vue'
+import {
+  getTaskById,
+  claimTask,
+  getApiBaseUrl,
+  markTransferCompleted,
+  unmarkTransferCompleted,
+  buildSemiTransferUrl,
+  getWalletAddressByUserId,
+  getTaskpoolClaimIntent,
+} from '~/utils/api'
+import ShareToCommunityModal from '~/components/tasks/ShareToCommunityModal.vue'
 import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import { parseBeijingTime, getCurrentBeijingDate, formatBeijingTime } from '~/utils/time'
-import { withdrawTask, deleteTask } from '~/utils/api'
+import { withdrawTask, deleteTask, withdrawTaskPool } from '~/utils/api'
+import {
+  buildSemiTaskpoolClaimUrl,
+  SEMI_TASKPOOL_PREPAY_STATE_KEY,
+  optimismTxExplorerUrl,
+} from '~/utils/semiTaskpoolPrepay'
 
 // 获取路由参数
 const route = useRoute()
@@ -610,6 +692,18 @@ const taskRewardSymbol = ref('积分') // 任务奖励的积分符号
 const isTransferring = ref(false)
 const isMarkingTransfer = ref(false)
 const proofPreviewUrl = ref<string | null>(null)
+
+const shareModalVisible = ref(false)
+const shareTask = ref<{
+  id: string
+  title: string
+  completedAt?: string
+  proof?: string | null
+  receiverRemark?: string | null
+  taskInfo?: { id?: string; communityId?: string | null }
+} | null>(null)
+const shareSenderRemark = ref('')
+const shareModalMode = ref<'claimer' | 'reviewer'>('claimer')
 
 // 当前查看的参与者ID（用于多人任务导航）
 
@@ -630,7 +724,23 @@ const task = ref<any>({
   proof: null as string | null, // 当前查看的参与者的凭证
   updates: [],
   participantLimit: null as number | null,
-  participantsList: [] as any[]
+  participantsList: [] as any[],
+  // taskpool 扩展字段（用于门禁与提示）
+  taskInfoId: '',
+  useTaskpool: false as boolean | undefined,
+  listingKind: undefined as 'standard' | 'taskpool_pool' | 'taskpool_subtask' | undefined,
+  managerUserId: null as string | null | undefined,
+  subtasksFinalized: false as boolean | undefined,
+  taskpoolCreateTxHash: null as string | null | undefined,
+  taskpoolPhase: undefined as 'none' | 'awaiting_pool' | 'pool_created' | 'closed' | undefined,
+  taskpoolCreateStatus: undefined as
+    | 'idle'
+    | 'signing'
+    | 'pending'
+    | 'confirmed'
+    | 'failed'
+    | undefined,
+  taskpoolCreateLastError: null as string | null | undefined,
 })
 
 // 当前查看的参与者任务ID（用于多人任务切换）
@@ -657,10 +767,119 @@ const noOneClaimed = computed(() => {
 const canCreatorWithdraw = computed(() => isCreator.value && noOneClaimed.value)
 const canCreatorDelete = computed(() => isCreator.value && noOneClaimed.value)
 
+const isTaskpoolPoolListing = computed(() => task.value?.useTaskpool === true && task.value?.listingKind === 'taskpool_pool')
+
+/** 走链上托管的普通任务：详情页展示链上阶段与建池交易 */
+const showTaskpoolOnchainSection = computed(() => task.value?.useTaskpool === true)
+
+const taskpoolPhaseLabel = computed(() => {
+  const p = task.value?.taskpoolPhase
+  if (p === 'none') return '未开始'
+  if (p === 'awaiting_pool') return '等待建池'
+  if (p === 'pool_created') return '已建池'
+  if (p === 'closed') return '已结算关闭'
+  return p ? String(p) : '—'
+})
+
+const taskpoolCreateStatusLabel = computed(() => {
+  const s = task.value?.taskpoolCreateStatus
+  if (!s || s === 'idle' || s === 'confirmed') return ''
+  if (s === 'signing') return '等待钱包签名'
+  if (s === 'pending') return '链上确认中…'
+  if (s === 'failed') {
+    return task.value?.taskpoolCreateLastError
+      ? `失败：${task.value.taskpoolCreateLastError}`
+      : '建池失败'
+  }
+  return String(s)
+})
+
+function shortTxHash(hash: string) {
+  if (!hash || hash.length < 18) return hash
+  return `${hash.slice(0, 10)}…${hash.slice(-8)}`
+}
+
+function openTaskpoolManage() {
+  const id = task.value?.taskInfoId
+  if (!id) return
+  navigateTo(`/tasks/pool/${id}/manage`)
+}
+
+// 与任务池管理页 gate 对齐：仅早期可撤回
+const canCreatorWithdrawPoolFromMall = computed(() => {
+  if (!isTaskpoolPoolListing.value) return false
+  if (!isCreator.value) return false
+  if (!noOneClaimed.value) return false
+  if (task.value?.managerUserId != null) return false
+  if (task.value?.taskpoolCreateTxHash) return false
+  if (task.value?.subtasksFinalized === true) return false
+  return true
+})
+
+const canCreatorWithdrawEffective = computed(() => {
+  if (isTaskpoolPoolListing.value) return canCreatorWithdrawPoolFromMall.value
+  return canCreatorWithdraw.value
+})
+
+const canCreatorDeleteEffective = computed(() => {
+  // 任务池：管理侧只有“撤回”，商城详情不提供“物理删除”入口
+  if (isTaskpoolPoolListing.value) return false
+  return canCreatorDelete.value
+})
+
 // 权限检查：判断当前用户是否是任务领取者
 const isClaimer = computed(() => {
   return userStore.user?.id === task.value.claimerId
 })
+
+// 当前选中社区（来自 localStorage），用于任务未带 communityId 时的兜底分享目标
+const currentCommunityId = ref<string | null>(null)
+
+const shareCommunityId = computed(() => {
+  return (task.value?.taskInfo?.communityId ??
+    task.value?.communityId ??
+    currentCommunityId.value ??
+    null) as string | null
+})
+
+const showShareButton = computed(() => {
+  if (!shareCommunityId.value) return false
+  if (task.value.status !== 'completed') return false
+  if (isClaimer.value) return true
+  if (canReview.value && task.value.transferredAt) return true
+  return false
+})
+
+function openShareModal(mode?: 'claimer' | 'reviewer') {
+  const communityId = shareCommunityId.value
+  if (!communityId) return
+
+  const effectiveMode: 'claimer' | 'reviewer' =
+    mode ?? (isClaimer.value ? 'claimer' : 'reviewer')
+
+  // reviewer 必须在已转账后才允许分享（避免流程混乱）
+  if (effectiveMode === 'reviewer' && !task.value.transferredAt) return
+
+  shareTask.value = {
+    id: task.value.id,
+    title: task.value.title,
+    completedAt: task.value.completedAt,
+    proof: task.value.proof,
+    receiverRemark: (task.value as any)?.receiverRemark ?? null,
+    taskInfo: { id: (task.value as any)?.taskInfoId ?? (task.value as any)?.taskInfo?.id, communityId }
+  }
+
+  shareModalMode.value = effectiveMode
+  shareSenderRemark.value = ''
+  shareModalVisible.value = true
+}
+
+function onShareModalClose() {
+  shareModalVisible.value = false
+  shareTask.value = null
+  shareSenderRemark.value = ''
+  shareModalMode.value = 'claimer'
+}
 
 // 获取用户名（用于显示预留用户）
 const getUserName = (userId: string) => {
@@ -1291,13 +1510,14 @@ const updateTimeline = () => {
 }
 
 // 加载任务详情
-const loadTask = async () => {
+const loadTask = async (options?: { useCache?: boolean }) => {
   loading.value = true
   claimError.value = null // 清除之前的错误消息
   try {
     const baseUrl = getApiBaseUrl()
     // 第一次加载使用缓存，后续加载不使用缓存以确保数据最新
-    const taskData = await getTaskById(taskId, baseUrl, true, 5000)
+    const useCache = options?.useCache ?? true
+    const taskData = await getTaskById(taskId, baseUrl, useCache, 5000)
     if (!taskData) {
       toast.add({
         title: '任务不存在',
@@ -1323,14 +1543,14 @@ const loadTask = async () => {
           const creatorTask = taskData.participantsList.find((p: any) => p.id === creatorTaskId.value)
           if (creatorTask) {
             // 需要重新获取创建者任务行的完整数据（包括时间线）
-            currentTaskData = await getTaskById(creatorTaskId.value, baseUrl, true, 5000) || taskData
+            currentTaskData = await getTaskById(creatorTaskId.value, baseUrl, useCache, 5000) || taskData
           }
         } else {
           // 创建者未领取，显示第一个已领取的任务行，或第一个任务行
           const firstClaimed = taskData.participantsList.find((p: any) => p.claimerId && p.claimedAt) || taskData.participantsList[0]
           if (firstClaimed && firstClaimed.id) {
             targetTaskId = firstClaimed.id
-            currentTaskData = await getTaskById(firstClaimed.id, baseUrl, true, 5000) || taskData
+            currentTaskData = await getTaskById(firstClaimed.id, baseUrl, useCache, 5000) || taskData
           }
         }
         currentParticipantId.value = targetTaskId
@@ -1339,14 +1559,14 @@ const loadTask = async () => {
         const myTask = taskData.participantsList.find((p: any) => p.claimerId === userStore.user?.id)
         if (myTask && myTask.id) {
           targetTaskId = myTask.id
-          currentTaskData = await getTaskById(myTask.id, baseUrl, true, 5000) || taskData
+          currentTaskData = await getTaskById(myTask.id, baseUrl, useCache, 5000) || taskData
           currentParticipantId.value = myTask.id
         } else {
           // 未领取，显示第一个未领取的任务行
           const firstUnclaimed = taskData.participantsList.find((p: any) => !p.claimerId) || taskData.participantsList[0]
           if (firstUnclaimed && firstUnclaimed.id) {
             targetTaskId = firstUnclaimed.id
-            currentTaskData = await getTaskById(firstUnclaimed.id, baseUrl, true, 5000) || taskData
+            currentTaskData = await getTaskById(firstUnclaimed.id, baseUrl, useCache, 5000) || taskData
           }
           currentParticipantId.value = targetTaskId
         }
@@ -1386,6 +1606,7 @@ const loadTask = async () => {
       description: currentTaskData.description || taskData.description,
       reward: currentTaskData.reward || taskData.reward,
       status: currentTaskData.status || taskData.status,
+      communityId: (currentTaskData as any).communityId || (taskData as any).communityId || null,
       deadline: currentTaskData.deadline || taskData.deadline || currentTaskData.createdAt, // 领取截止日期
       submitDeadline: currentTaskData.submitDeadline || taskData.submitDeadline || currentTaskData.deadline || currentTaskData.createdAt, // 提交截止日期
       startDate: currentTaskData.startDate || taskData.startDate, // 任务领取时间
@@ -1410,7 +1631,20 @@ const loadTask = async () => {
       claimedAt: currentTaskData.claimedAt,
       submittedAt: currentTaskData.submittedAt,
       completedAt: currentTaskData.completedAt,
-      transferredAt: currentTaskData.transferredAt || undefined // ✅ 新增：从后端数据中读取转账状态
+      transferredAt: currentTaskData.transferredAt || undefined, // ✅ 新增：从后端数据中读取转账状态
+      // taskpool 扩展字段（多人任务行可能不带 task_info，优先用聚合 taskData）
+      taskInfoId: (taskData as any).taskInfoId || (currentTaskData as any).taskInfoId || '',
+      useTaskpool: (taskData as any).useTaskpool ?? (currentTaskData as any).useTaskpool,
+      listingKind: (taskData as any).listingKind ?? (currentTaskData as any).listingKind,
+      managerUserId: (taskData as any).managerUserId ?? (currentTaskData as any).managerUserId ?? null,
+      subtasksFinalized: (taskData as any).subtasksFinalized ?? (currentTaskData as any).subtasksFinalized,
+      taskpoolCreateTxHash:
+        (taskData as any).taskpoolCreateTxHash ?? (currentTaskData as any).taskpoolCreateTxHash ?? null,
+      taskpoolPhase: (taskData as any).taskpoolPhase ?? (currentTaskData as any).taskpoolPhase,
+      taskpoolCreateStatus:
+        (taskData as any).taskpoolCreateStatus ?? (currentTaskData as any).taskpoolCreateStatus,
+      taskpoolCreateLastError:
+        (taskData as any).taskpoolCreateLastError ?? (currentTaskData as any).taskpoolCreateLastError ?? null,
     }
     
     // 调试：打印 assignedUserId
@@ -1453,18 +1687,32 @@ const loadTask = async () => {
 const TASK_DRAFT_KEY = 'mycoseed_task_withdraw_draft'
 
 async function handleWithdrawTask() {
-  if (!canCreatorWithdraw.value) return
-  const ok = window.confirm('确认撤回？撤回后会回到编辑页，任务将从列表中移除。')
+  if (!canCreatorWithdrawEffective.value) return
+  const ok = window.confirm(
+    isTaskpoolPoolListing.value
+      ? '确认撤回任务池？撤回后会回到发布页，并保留草稿用于重新编辑。'
+      : '确认撤回？撤回后会回到编辑页，任务将从列表中移除。'
+  )
   if (!ok) return
   loading.value = true
   try {
     const baseUrl = getApiBaseUrl()
-    const res = await withdrawTask(taskId, baseUrl)
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(TASK_DRAFT_KEY, JSON.stringify(res.draft || {}))
+    if (isTaskpoolPoolListing.value) {
+      const TASKPOOL_DRAFT_KEY = 'mycoseed_taskpool_withdraw_draft'
+      const res = await withdrawTaskPool(task.value.taskInfoId, baseUrl)
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(TASKPOOL_DRAFT_KEY, JSON.stringify(res.draft || {}))
+      }
+      toast.add({ title: '已撤回', description: '已为你保留草稿，可继续修改后重新发布', color: 'green' })
+      router.push('/tasks/pool/create?from=withdraw')
+    } else {
+      const res = await withdrawTask(taskId, baseUrl)
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(TASK_DRAFT_KEY, JSON.stringify(res.draft || {}))
+      }
+      toast.add({ title: '已撤回', description: '已为你保留草稿，可继续修改后重新发布', color: 'green' })
+      router.push('/tasks/create?from=withdraw')
     }
-    toast.add({ title: '已撤回', description: '已为你保留草稿，可继续修改后重新发布', color: 'green' })
-    router.push('/tasks/create?from=withdraw')
   } catch (e: any) {
     toast.add({ title: '撤回失败', description: e?.message || '请稍后重试', color: 'red' })
   } finally {
@@ -1497,6 +1745,82 @@ const handleClaimTask = async () => {
   
   try {
     const baseUrl = getApiBaseUrl()
+    // TaskPool 普通任务：走 Semi claimTask（链上领取）
+    if (task.value?.useTaskpool) {
+      let intent: any
+      try {
+        const r = await getTaskpoolClaimIntent(taskId, baseUrl)
+        intent = (r as any)?.intent
+      } catch (e: any) {
+        const body = e?.body as { last_error?: string; hint?: string; code?: string } | undefined
+        const raw = e?.message || String(e)
+        const baseHint =
+          raw.includes('尚未上链建池完成') || raw.includes('暂不可领取')
+            ? '服务端尚未记录建池交易哈希：接包者需等发布者在 Semi 预付链上完成且后台校验到 PoolCreated。请到「任务池管理」查看预付记录与 last_error。'
+            : raw
+        const detail =
+          body?.last_error != null && String(body.last_error).trim()
+            ? ` 链上/后台原因：${String(body.last_error).slice(0, 500)}`
+            : ''
+        const friendly = `${baseHint}${detail}`
+        claimError.value = friendly
+        toast.add({
+          title: '暂不可领取',
+          description: friendly,
+          color: 'orange',
+        })
+        // 尝试引导到管理页（若我们能拿到 taskInfoId）
+        try {
+          const taskInfoId = String((task.value as any)?.taskInfoId || '')
+          if (taskInfoId) {
+            router.push(`/tasks/pool/${encodeURIComponent(taskInfoId)}/manage`)
+          }
+        } catch {}
+        return
+      }
+      const config = useRuntimeConfig()
+      const semiAppUrl = String((config.public as any).semiAppUrl || '')
+      const chainId = Number((config.public as any).chainId ?? 10)
+      const proxy = String((config.public as any).taskpoolProxyAddress || '')
+      if (!semiAppUrl) throw new Error('未配置 NUXT_PUBLIC_SEMI_APP_URL')
+      if (!proxy) throw new Error('未配置 NUXT_PUBLIC_TASKPOOL_PROXY_ADDRESS')
+
+      const state =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      try {
+        sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+      } catch {}
+
+      const infoId = String((task.value as any)?.taskInfoId || '')
+      const returnUrl = `${window.location.origin}/wallet/semi-claim-callback?taskId=${encodeURIComponent(
+        taskId
+      )}${infoId ? `&taskInfoId=${encodeURIComponent(infoId)}` : ''}`
+      const url = buildSemiTaskpoolClaimUrl({
+        semiAppBaseUrl: semiAppUrl,
+        returnUrl,
+        state,
+        chainId,
+        taskpoolProxyAddress: proxy,
+        poolId: String(intent.message.poolId),
+        taskId: String(intent.message.taskId),
+        amountWei: String(intent.message.amountWei),
+        sigDeadline: String(intent.message.sigDeadline),
+        signature: String(intent.signature),
+      })
+
+      const w = window.open('about:blank', '_blank')
+      if (!w) throw new Error('浏览器阻止了弹窗，请允许弹窗后重试')
+      try {
+        w.document.title = '正在跳转…'
+      } catch {}
+      w.location.href = url
+
+      toast.add({ title: '已打开 Semi', description: '请在 Semi 完成领取确认', color: 'green' })
+      return
+    }
+
     const result = await claimTask(taskId, baseUrl)
     if (result.success) {
       toast.add({
@@ -1755,6 +2079,12 @@ const handleMarkTransferCompleted = async () => {
           currentParticipant.transferredAt = transferredAtValue
         }
       }
+
+      // 发布者在本页点「标记为已转账」时不会带 URL query，需在此直接弹出「分享到社区圈」
+      await nextTick()
+      if (canReview.value && shareCommunityId.value) {
+        openShareModal('reviewer')
+      }
       
     } else {
       toast.add({
@@ -1891,36 +2221,67 @@ const stopProgressPolling = () => {
   }
 }
 
-// 组件挂载时加载任务并开始轮询
+async function handleReturnQuery () {
+  const shareMode =
+    route.query.share === 'reviewer' || route.query.share === 'claimer'
+      ? (route.query.share as 'reviewer' | 'claimer')
+      : null
+
+  const shouldRefresh =
+    route.query.submitted === 'true' || route.query.reviewed === 'true' || !!shareMode
+
+  if (!shouldRefresh) return
+
+  // 清缓存 + 绕过缓存，确保 transferredAt / 状态是最新的
+  const { responseCache } = await import('~/utils/cache')
+  responseCache.delete(`task:${taskId}`)
+  await loadTask({ useCache: false })
+
+  // 从审核页带回时，偶发 API 与缓存竞态：reviewer 分享前再拉一次
+  if (shareMode === 'reviewer' && !task.value.transferredAt) {
+    await new Promise((r) => setTimeout(r, 400))
+    await loadTask({ useCache: false })
+  }
+
+  if (shareMode) {
+    openShareModal(shareMode)
+  }
+
+  router.replace({ query: {} })
+}
+
+// 组件挂载时加载任务并开始轮询（return query 统一走 handleReturnQuery，避免与 watch 重复）
 onMounted(async () => {
-  // 确保用户信息已加载
   await userStore.getUser()
-  
-  await loadTask()
-  
-  // 检查是否从提交页面返回
-  if (route.query.submitted === 'true') {
-    // 清除缓存，确保获取最新数据
-    const { responseCache } = await import('~/utils/cache')
-    responseCache.delete(`task:${taskId}`)
-    
-    // 重新加载任务以获取最新状态
+
+  // 读取当前选中的社区（仅客户端）
+  try {
+    currentCommunityId.value = localStorage.getItem('mycoseed_current_community_id')
+  } catch {}
+
+  const q = route.query
+  const hasReturn =
+    q.submitted === 'true' ||
+    q.reviewed === 'true' ||
+    q.share === 'reviewer' ||
+    q.share === 'claimer'
+
+  if (hasReturn) {
+    await handleReturnQuery()
+  } else {
     await loadTask()
-    // 清理URL参数
-    router.replace({ query: {} })
   }
-  
-  // 检查是否从审核页面返回
-  if (route.query.reviewed === 'true') {
-    // 重新加载任务以获取最新状态
-    await loadTask()
-    // 清理URL参数
-    router.replace({ query: {} })
-  }
-  
-  // 开始进度轮询
+
   startProgressPolling()
 })
+
+// 同一路由仅 query 变化时（例如从审核页 client 导航回来）不会再次 onMounted
+watch(
+  () => route.query,
+  () => {
+    void handleReturnQuery()
+  }
+)
 
 // 组件卸载时清理轮询
 onUnmounted(() => {

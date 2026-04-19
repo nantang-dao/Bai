@@ -4,7 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "compile": "hardhat compile",
+    "deploy:taskpool": "hardhat run scripts/taskpool/deploy.ts",
+    "deploy:taskpool:sepolia": "hardhat run scripts/taskpool/deploy.ts --network sepolia",
+    "deploy:taskpool:optimism": "hardhat run scripts/taskpool/deploy.ts --network optimism",
+    "upgrade:taskpool:optimism": "hardhat run scripts/taskpool/upgrade.ts --network optimism",
+    "verify:eip712": "hardhat run scripts/taskpool/verify-eip712.ts",
+    "taskpool:derive-poolid": "hardhat run scripts/taskpool/derive-poolid.ts"
   },
   "keywords": [],
   "author": "",

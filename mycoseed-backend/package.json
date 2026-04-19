@@ -7,7 +7,20 @@
     "dev": "cross-env NODE_ENV=development tsx watch src/index.ts",
     "build": "tsc",
     "start": "cross-env NODE_ENV=production node dist/index.js",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test:domain": "tsx scripts/verify-taskListingKind.ts",
+    "test:pool-listing-sync": "tsx scripts/runPoolListingSyncTwice.ts",
+    "test:taskpool-pool-claim": "tsx scripts/testTaskpoolPoolClaim.ts",
+    "test:taskpool-subtask-review": "tsx scripts/testTaskpoolSubtaskReviewPermission.ts",
+    "test:taskpool-overall-gate": "tsx scripts/testTaskpoolOverallSubmissionGate.ts",
+    "test:taskpool-delete-edit-gates": "tsx scripts/testTaskpoolDeleteEditGates.ts",
+    "test:taskpool-subtask-draft-fields": "tsx scripts/testTaskpoolSubtaskDraftFields.ts",
+    "test:taskpool-subtask-overrides": "tsx scripts/testTaskpoolSubtaskOverrides.ts",
+    "test:taskpool-subtask-participant-limit": "tsx scripts/testTaskpoolSubtaskParticipantLimit.ts",
+    "test:taskpool-step0": "tsx scripts/testTaskpoolStep0.ts",
+    "test:taskpool-proxy-impl": "tsx scripts/checkTaskpoolProxyImplementation.ts",
+    "diagnose:taskpool-pool-created": "tsx scripts/diagnoseTaskpoolPoolCreated.ts",
+    "diagnose:taskpool-prepay-gap": "tsx scripts/diagnoseTaskpoolPrepayGap.ts"
   },
   "keywords": [],
   "author": "",
@@ -19,7 +32,8 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "viem": "^2.47.10"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

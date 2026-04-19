@@ -1,3 +1,5 @@
+import type { TaskListingKind } from './taskListingKind'
+
 export type TaskStatus = 'unclaimed' | 'claimed' | 'unsubmit' | 'submitted' | 'under_review' | 'completed' | 'rejected'
 
 /**
@@ -36,6 +38,9 @@ export interface ProofConfig{
 /**
  * 任务信息（多人任务共享的基本信息）
  */
+/** TaskPool 链下阶段（C1） */
+export type TaskpoolPhase = 'none' | 'awaiting_pool' | 'pool_created' | 'closed'
+
 export interface TaskInfo {
     id: string
     title: string
@@ -53,6 +58,18 @@ export interface TaskInfo {
     assignedUserIds?: string[]  // 指定参与人员ID列表（多人任务）
     createdAt?: string
     updatedAt?: string
+    /** 是否允许拆分子任务 */
+    allowSplit?: boolean
+    /** 是否走链上 TaskPool */
+    useTaskpool?: boolean
+    /** 计划锁入池的 NT 总额（预留校验） */
+    plannedLockNt?: number | null
+    taskpoolPhase?: TaskpoolPhase
+    taskpoolCreateTxHash?: string | null
+    taskpoolManagerUserId?: string | null
+    /** 链下 Manager：维护子任务草稿；认领后写入，不可改 */
+    managerUserId?: string | null
+    subtasksFinalized?: boolean
 }
 
 /**
@@ -105,6 +122,23 @@ export interface Task{
     proofConfig?: ProofConfig
     submissionInstructions?: string
     assignedUserId?: string  // 指定参与人员ID（从 taskInfo 中获取）
+    /** C1：与 TaskInfo 同步的 TaskPool 元数据（扁平返回） */
+    allowSplit?: boolean
+    useTaskpool?: boolean
+    plannedLockNt?: number | null
+    taskpoolPhase?: TaskpoolPhase
+    taskpoolCreateTxHash?: string | null
+    taskpoolManagerUserId?: string | null
+    /** 链下 Manager（子任务维护者） */
+    managerUserId?: string | null
+    subtasksFinalized?: boolean
+    /** 链上 poolId 由 task_info.id（UUID）派生，此字段便于前端展示 */
+    taskInfoIdForPool?: string
+
+    /** 商城任务行语义：见 migration 028 / taskListingKind.ts */
+    listingKind?: TaskListingKind
+    /** 子任务可领行时关联 task_subtasks.id */
+    poolSubtaskId?: string | null
     
     // 参与者列表（用于多人任务）
     participantsList?: Array<{
@@ -148,6 +182,30 @@ export interface CreateTaskParams{
     
     // 权重分配（如果 rewardDistributionMode 是 'custom'）
     weights?: Array<{ participantIndex: number; weight: number }>
+
+    /** C1：是否走 TaskPool；为 true 时写入 planned_lock 与 phase=awaiting_pool */
+    useTaskpool?: boolean
+    allowSplit?: boolean
+    /** 覆盖自动计算的预留 NT；默认 per_person 为 reward*participantLimit，custom 为各席加总 */
+    plannedLockNt?: number
+}
+
+/** 子任务草稿行 */
+export interface TaskSubtaskDraft {
+    id: string
+    taskInfoId: string
+    subtaskUuid: string
+    title: string
+    sortOrder: number
+    maxAmountNt?: number | null
+    description?: string
+    submissionInstructions?: string
+    proofConfig?: any
+    participantLimit?: number | null
+    rewardNt?: number | null
+    submitDeadlineOverride?: string | null
+    createdAt?: string
+    updatedAt?: string
 }
 
 export interface TaskResponse

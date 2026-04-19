@@ -373,10 +373,23 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
-import { createTask, getApiBaseUrl, getCookie, AUTH_TOKEN_KEY, getCommunityMembers } from '~/utils/api'
+import {
+  createTask,
+  getApiBaseUrl,
+  getCookie,
+  AUTH_TOKEN_KEY,
+  getCommunityMembers,
+  generateRandomState,
+  startTaskpoolPrepayIntent,
+} from '~/utils/api'
 import { useToast } from '~/composables/useToast'
 import { getCurrentBeijingTime } from '~/utils/time'
 import { useCommunityStore } from '~/stores/community'
+import {
+  buildSemiTaskpoolPrepayUrl,
+  SEMI_TASKPOOL_PREPAY_STATE_KEY,
+} from '~/utils/semiTaskpoolPrepay'
+import { parseNtToWei, uuidToTaskPoolUint256 } from '~/utils/taskpool'
 
 definePageMeta({
   layout: 'default'
@@ -387,6 +400,7 @@ const communityStore = useCommunityStore()
 const navigateTo = (path: string) => router.push(path)
 
 const TASK_DRAFT_KEY = 'mycoseed_task_withdraw_draft'
+const SEMI_TASK_PUBLISH_DRAFT_KEY = 'semi_task_publish_draft'
 
 // 时间输入框引用
 const startDateInput = ref<HTMLInputElement | null>(null)
@@ -648,42 +662,27 @@ const publishTask = async () => {
   isPublishing.value = true
   
   try {
-    console.log('[CREATE TASK] 开始创建任务...')
-    console.log('[CREATE TASK] 表单数据:', {
-      title: taskForm.value.title,
-      description: taskForm.value.objective,
-      reward: taskForm.value.reward,
-      startDate: taskForm.value.startDate,
-      deadline: taskForm.value.deadline,
-      submitDeadline: taskForm.value.submitDeadline,
-      participantLimit: taskForm.value.participantLimit,
-      rewardDistributionMode: rewardDistributionMode.value
-    })
-    
-    // 模拟钱包签名和发布
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    // 创建任务
     const baseUrl = getApiBaseUrl()
-    console.log('[CREATE TASK] API Base URL:', baseUrl)
     
     // 检查是否指定了用户（多人任务支持多个用户）
     const assignedUserIds = assignUser.value && selectedUsers.value.length > 0 
       ? selectedUsers.value.map(u => u.id) 
       : undefined
-    console.log('[CREATE TASK] 指定用户检查:', {
-      assignUser: assignUser.value,
-      selectedUsers: selectedUsers.value,
-      assignedUserIds: assignedUserIds
-    })
+    // 避免在用户侧控制台输出敏感/无关调试信息
     
     // 如果未填写任务领取时间，使用当前时间
     const startDate = taskForm.value.startDate || getCurrentDateTimeString()
     
+    const rewardNum = parseFloat(taskForm.value.reward)
+    const plannedLockNt =
+      (rewardDistributionMode.value === 'per_person' ? rewardNum : rewardNum) *
+      (taskForm.value.participantLimit || 1)
+
+    // 先创建一条 useTaskpool 任务，拿到 taskInfoId 用于 Semi 预付协议（pool_uuid）
     const taskParams = {
       title: taskForm.value.title,
       description: taskForm.value.objective,
-      reward: parseFloat(taskForm.value.reward),
+      reward: rewardNum,
       startDate: startDate,
       deadline: taskForm.value.deadline,
       submitDeadline: taskForm.value.submitDeadline,
@@ -692,27 +691,128 @@ const publishTask = async () => {
       submissionInstructions: taskForm.value.submissionInstructions || '请按照任务要求完成并提交相关凭证。',
       proofConfig: proofConfig.value,
       assignedUserIds: assignedUserIds,
-      communityId: communityStore.currentCommunityId || undefined  // 所属社区
+      communityId: communityStore.currentCommunityId || undefined, // 所属社区
+      // 关键：普通任务=单子任务池，发布时强制走 TaskPool（用于 Semi prepay）
+      useTaskpool: true,
+      allowSplit: false,
+      plannedLockNt: plannedLockNt,
     }
-    
-    console.log('[CREATE TASK] 发送请求参数:', taskParams)
     
     const newTask = await createTask(taskParams, baseUrl)
     
-    console.log('[CREATE TASK] 创建成功，返回的任务:', newTask)
-    
-    // 显示成功消息
+    const taskInfoId = (newTask as any).taskInfoId as string | undefined
+    if (!taskInfoId) {
+      throw new Error('后端未返回 taskInfoId，无法发起 Semi 预付')
+    }
+
+    // 预付 intent：必须与后端 planned_lock_nt 一致（数值字符串）
+    const amountHuman = String(plannedLockNt)
+    const state = generateRandomState()
+    const clientReference =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${state.slice(0, 8)}`
+
+    // 记录草稿与 state，用于回跳失败时可自动撤回并恢复
+    try {
+      sessionStorage.setItem(
+        SEMI_TASK_PUBLISH_DRAFT_KEY,
+        JSON.stringify({
+          state,
+          taskId: newTask.id,
+          taskInfoId,
+          draft: taskParams,
+        })
+      )
+      sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+    } catch {
+      // ignore
+    }
+
+    await startTaskpoolPrepayIntent(
+      taskInfoId,
+      { state, amountHuman, clientReference },
+      baseUrl
+    )
+
+    const config = useRuntimeConfig()
+    const semiAppUrl = String((config.public as any).semiAppUrl || '')
+    const chainId = Number((config.public as any).chainId ?? 10)
+    const tokenAddress = String((config.public as any).ntTokenAddress || '')
+    const proxy = String((config.public as any).taskpoolProxyAddress || '')
+
+    if (!semiAppUrl) throw new Error('未配置 NUXT_PUBLIC_SEMI_APP_URL')
+    if (!tokenAddress) throw new Error('未配置 NUXT_PUBLIC_NT_TOKEN_ADDRESS')
+    if (!proxy) throw new Error('未配置 NUXT_PUBLIC_TASKPOOL_PROXY_ADDRESS')
+
+    const returnUrl = `${window.location.origin}/wallet/semi-prepay-callback`
+
+    const toUnixSeconds = (v: unknown): string => {
+      const ms = typeof v === 'number' ? v : new Date(String(v)).getTime()
+      if (!Number.isFinite(ms) || ms <= 0) throw new Error('无效日期，无法计算 deadline')
+      return String(Math.floor(ms / 1000))
+    }
+
+    // 普通任务（含多人）= TaskPool：同一笔 UserOp 里追加 createTaskPoolSelf（V3）
+    const poolId = uuidToTaskPoolUint256(taskInfoId).toString()
+    const lockedWei = parseNtToWei(amountHuman).toString()
+    const perPersonWei = parseNtToWei(String(rewardNum)).toString()
+
+    const participantTaskIds = ((newTask as any).participantTaskIds as string[] | undefined) || []
+    const n = Math.max(1, taskForm.value.participantLimit || 1)
+    const taskIdUuids =
+      participantTaskIds.length === n
+        ? participantTaskIds
+        : // fallback：后端没给全量列表时，退回单 taskId 口径（不阻塞发布）
+          [taskInfoId]
+
+    const taskIdsUint = taskIdUuids.map((u) => uuidToTaskPoolUint256(u).toString())
+    const taskMaxAmounts = taskIdUuids.map(() => perPersonWei)
+    const claimDeadline = toUnixSeconds(taskForm.value.deadline)
+    const credentialDeadline = toUnixSeconds(taskForm.value.submitDeadline)
+
+    const url = buildSemiTaskpoolPrepayUrl({
+      semiAppBaseUrl: semiAppUrl,
+      returnUrl,
+      state,
+      chainId,
+      tokenAddress,
+      taskpoolProxyAddress: proxy,
+      amountHuman,
+      poolUuid: taskInfoId,
+      poolId,
+      taskIds: taskIdsUint.join(','),
+      taskMaxAmounts: taskMaxAmounts.join(','),
+      claimDeadline,
+      credentialDeadline,
+    })
+
+    // 打开 Semi（与任务池 manage 页一致，尽量避免被浏览器拦截）
+    const w = window.open('about:blank', '_blank')
+    if (!w) {
+      throw new Error('浏览器阻止了弹窗，请允许弹窗后重试')
+    }
+    try {
+      w.document.title = '正在跳转…'
+    } catch {
+      /* ignore */
+    }
+    w.location.href = url
+
     const toast = useToast()
     toast.add({
-      title: '任务发布成功！',
-      description: '任务已成功发布到区块链网络',
-      color: 'green'
+      title: '已打开 Semi 预付',
+      description: '请在 Semi 完成 approve + deposit + create；完成后会回到本站的回调页',
+      color: 'green',
     })
-    
-    // 跳转到任务列表
-    console.log('[CREATE TASK] 准备跳转到任务列表...')
-    await navigateTo('/tasks')
-    console.log('[CREATE TASK] 跳转完成')
+
+    // UX：自动带用户去“管理页看进度/下一步”，避免留在表单页迷路
+    // 管理页会展示 taskpoolCreateTxHash / phase / 预付记录等
+    try {
+      router.push(`/tasks/pool/${encodeURIComponent(taskInfoId)}/manage?focus=semi-prepay`)
+    } catch {
+      // ignore
+    }
   } catch (error) {
     console.error('[CREATE TASK] 发布任务失败:', error)
     console.error('[CREATE TASK] 错误详情:', {
@@ -728,7 +828,6 @@ const publishTask = async () => {
       color: 'red'
     })
   } finally {
-    console.log('[CREATE TASK] 完成，重置发布状态')
     isPublishing.value = false
   }
 }
@@ -808,11 +907,9 @@ const selectUser = (user: { id: string; name: string }) => {
     return
   }
   
-  console.log('[SELECT USER] 选择用户:', user)
   selectedUsers.value.push(user)
   userSearchQuery.value = ''
   showUserDropdown.value = false
-  console.log('[SELECT USER] selectedUsers.value:', selectedUsers.value)
 }
 
 // 移除用户

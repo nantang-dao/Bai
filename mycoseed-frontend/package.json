@@ -2,27 +2,56 @@
   "name": "activity-frontend",
   "type": "module",
   "private": true,
+  "imports": {
+    "#internal/nuxt/paths": "./.nuxt/paths.mjs"
+  },
   "scripts": {
     "dev": "cross-env NODE_ENV=development nuxt dev --host 0.0.0.0 --port 3003",
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "check:taskpool-digest": "tsx scripts/check-taskpool-digest.mts",
+    "taskpool:print-typeddata": "tsx scripts/taskpool-print-typeddata.mts",
+    "taskpool:test-eip712": "tsx scripts/test-taskpool-eip712.mts",
+    "taskpool:test-createpool-mock": "tsx scripts/test-taskpool-createpool-mock.mts",
+    "taskpool:onchain-createpool-demo": "tsx scripts/taskpool-onchain-createpool-and-persist.mts",
+    "taskpool:confirm-and-patch": "tsx scripts/taskpool-confirm-and-patch.mts",
+    "taskpool:test-overall-review": "tsx scripts/test-taskpool-overall-review.mts",
+    "taskpool:test-withdraw": "tsx scripts/test-taskpool-withdraw.mts",
+    "taskpool:test-pool-draft": "tsx scripts/test-taskpool-pool-draft.mts",
+    "taskpool:test-subtask-delete": "tsx scripts/test-taskpool-subtask-delete.mts",
+    "taskpool:test-semi-prepay-callback": "tsx scripts/test-semi-prepay-callback.mts",
+    "taskpool:test-prepay-intent": "tsx scripts/test-taskpool-prepay-intent.mts",
+    "taskpool:test-semi-payment-5-2": "tsx scripts/test-taskpool-semi-payment-5-2.mts",
+    "taskpool:test-multi-taskids": "tsx scripts/test-taskpool-multi-taskids.mts",
+    "taskpool:test-step0": "tsx scripts/test-taskpool-step0.mts",
+    "typecheck": "nuxi typecheck",
+    "test:e2e:auth": "PWDEBUG=1 playwright test e2e/auth.setup.spec.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:taskpool": "playwright test e2e/taskpool-*.spec.ts --grep-invert @slow",
+    "test:e2e:slow": "playwright test --grep @slow",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@types/d3": "^7.4.3",
     "d3": "^7.9.0",
     "nuxt": "^3.15.3",
+    "viem": "^2.47.10",
     "vue": "^3.5.22",
     "vue-boring-avatars": "^1.4.0",
     "yarn": "^1.22.22"
   },
   "devDependencies": {
+    "@playwright/test": "^1.51.0",
     "@nuxt/icon": "^1.9.3",
     "@nuxt/ui": "^2.21.0",
     "@pinia/nuxt": "^0.5.5",
     "@types/node": "^25.5.0",
     "cross-env": "^10.1.0",
-    "pinia": "^2.3.0"
+    "pinia": "^2.3.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.6.3",
+    "vue-tsc": "^2.2.0"
   }
 }

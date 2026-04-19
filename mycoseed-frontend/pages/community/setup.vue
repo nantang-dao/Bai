@@ -235,8 +235,11 @@ onMounted(async () => {
   if (user.name) {
     formState.name = user.name
   }
-  if (user.description) {
-    formState.description = user.description
+  const u = user as { description?: string; bio?: string }
+  if (u.description) {
+    formState.description = u.description
+  } else if (u.bio) {
+    formState.description = u.bio
   }
   if (user.avatar) {
     formState.avatar = user.avatar

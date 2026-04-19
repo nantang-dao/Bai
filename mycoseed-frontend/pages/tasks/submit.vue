@@ -190,7 +190,7 @@
                   <div class=" text-sm text-text-title space-y-1">
                     <div>纬度: {{ gpsLocation.latitude?.toFixed(6) }}</div>
                     <div>经度: {{ gpsLocation.longitude?.toFixed(6) }}</div>
-                    <div v-if="gpsLocation.accuracy">精度: ±{{ Math.round(gpsLocation.accuracy) }}米</div>
+                    <div v-if="gpsLocation.accuracy != null">精度: ±{{ Math.round(Number(gpsLocation.accuracy)) }}米</div>
                   </div>
                   <PixelButton
                     @click="getGPSLocation"
@@ -298,7 +298,7 @@ const additionalFileInput = ref<HTMLInputElement | null>(null)
 
 // 任务数据
 const task = ref<{
-  id: number
+  id: string
   title: string
   description: string
   reward: number
@@ -339,8 +339,8 @@ const loadTask = async () => {
       title: taskData.title,
       description: taskData.description,
       reward: taskData.reward,
-      deadline: taskData.deadline || taskData.createdAt, // 领取截止日期
-      submitDeadline: taskData.submitDeadline || taskData.deadline || taskData.createdAt, // 提交截止日期
+      deadline: taskData.deadline || taskData.createdAt || '', // 领取截止日期
+      submitDeadline: taskData.submitDeadline || taskData.deadline || taskData.createdAt || '', // 提交截止日期
       submissionInstructions: taskData.submissionInstructions || '请按照任务要求完成并提交相关凭证。',
       proofConfig: taskData.proofConfig || null // 保存证明配置用于动态设置文件类型
     }

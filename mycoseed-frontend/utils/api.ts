@@ -3,6 +3,9 @@
 // 默认社区 UUID（南塘，与后端迁移一致）
 export const DEFAULT_COMMUNITY_UUID = '00000000-0000-0000-0000-000000000002'
 
+// 社区圈动态内容最大长度（与后端约束保持一致：目前后端未做 DB CHECK，这里按 500 对齐评论限制与常见 UI 约束）
+export const POST_CONTENT_MAX_LENGTH = 500
+
 // ==================== 数据类型定义 ====================
 
 export interface ProofFile
@@ -99,6 +102,13 @@ export interface Task {
   claimerId?: string             // 接单者ID (UUID)（单人任务）
   claimerName?: string           // 接单者名称（单人任务）
   assignedUserId?: string        // 指定参与人员ID（可选，如果指定，则只有该用户可以领取）
+  /** 多人任务：指定参与者 id 列表（与 participantsList 行对应） */
+  assignedUserIds?: string[]
+  /** 参与者 id → 展示名 */
+  assignedUserNames?: Record<string, string>
+  /** 列表页等：创建者头像 */
+  creatorAvatar?: string
+  communityId?: string | null
   participantsList?: Array<{    // 参与者列表（多人任务）
     id: string
     name: string
@@ -107,6 +117,8 @@ export interface Task {
     proof?: string
     status?: string
     transferredAt?: string     // 转账完成时间
+    /** 与 assignedUserIds 对齐时用于匹配展示名 */
+    claimerId?: string
   }>
   timeline?: TimelineStatus[]     // 任务时间线（状态数组，仅追加写入，通过最后一个元素获取最新状态）
   createdAt?: string             // 创建时间
@@ -118,6 +130,46 @@ export interface Task {
   submittedAt?: string           // 提交时间（单人任务）
   completedAt?: string           // 完成时间
   transferredAt?: string        // 转账完成时间
+  /** C1 TaskPool 链下元数据（与后端一致） */
+  taskInfoId?: string
+  allowSplit?: boolean
+  useTaskpool?: boolean
+  plannedLockNt?: number | null
+  taskpoolPhase?: 'none' | 'awaiting_pool' | 'pool_created' | 'closed'
+  taskpoolCreateTxHash?: string | null
+  taskpoolManagerUserId?: string | null
+  /** 链下 Manager（子任务维护者） */
+  managerUserId?: string | null
+  /** 4B 幂等：建池状态机（链下记录） */
+  taskpoolCreateStatus?: 'idle' | 'signing' | 'pending' | 'confirmed' | 'failed'
+  taskpoolCreateDigest?: string | null
+  taskpoolCreateLastError?: string | null
+  taskpoolCreateUpdatedAt?: string | null
+  subtasksFinalized?: boolean
+  /** 链上 poolId 由该 UUID 派生（通常等于 task_info.id） */
+  taskInfoIdForPool?: string
+}
+
+function normalizeTaskRow(raw: any): Task {
+  // 后端可能返回 snake_case；这里做一次轻量兼容映射，避免前端读不到关键字段
+  if (!raw || typeof raw !== 'object') return raw as Task
+  const t: any = { ...raw }
+  if (t.taskInfoId == null && t.task_info_id != null) t.taskInfoId = t.task_info_id
+  if (t.communityId == null && t.community_id != null) t.communityId = t.community_id
+  if (t.creatorId == null && t.creator_id != null) t.creatorId = t.creator_id
+  if (t.useTaskpool == null && t.use_taskpool != null) t.useTaskpool = t.use_taskpool
+  if (t.allowSplit == null && t.allow_split != null) t.allowSplit = t.allow_split
+  if (t.plannedLockNt == null && t.planned_lock_nt != null) t.plannedLockNt = t.planned_lock_nt
+  if (t.taskpoolPhase == null && t.taskpool_phase != null) t.taskpoolPhase = t.taskpool_phase
+  if (t.taskpoolCreateTxHash == null && t.taskpool_create_tx_hash != null) t.taskpoolCreateTxHash = t.taskpool_create_tx_hash
+  if (t.taskpoolManagerUserId == null && t.taskpool_manager_user_id != null) t.taskpoolManagerUserId = t.taskpool_manager_user_id
+  if (t.taskpoolCreateStatus == null && t.taskpool_create_status != null) t.taskpoolCreateStatus = t.taskpool_create_status
+  if (t.taskpoolCreateDigest == null && t.taskpool_create_digest != null) t.taskpoolCreateDigest = t.taskpool_create_digest
+  if (t.taskpoolCreateLastError == null && t.taskpool_create_last_error != null) t.taskpoolCreateLastError = t.taskpool_create_last_error
+  if (t.taskpoolCreateUpdatedAt == null && t.taskpool_create_updated_at != null) t.taskpoolCreateUpdatedAt = t.taskpool_create_updated_at
+  if (t.managerUserId == null && t.manager_user_id != null) t.managerUserId = t.manager_user_id
+  if (t.subtasksFinalized == null && t.subtasks_finalized != null) t.subtasksFinalized = t.subtasks_finalized
+  return t as Task
 }
 
 // ==================== Mock 数据 ====================
@@ -563,9 +615,7 @@ export const getTaskById = async (
     }
 
     const data = await response.json()
-    
-    // 处理单个任务格式
-    return data as Task
+    return normalizeTaskRow(data)
   } catch (error: any) {
     console.error('Get task by id error:', error)
     throw error
@@ -592,8 +642,8 @@ export const getAllTasks = async (baseUrl: string, communityId?: string | null):
       throw new Error(error.error || '获取任务列表失败')
     }
 
-    const tasks: Task[] = await response.json()
-    return tasks
+    const tasks = (await response.json()) as any[]
+    return (tasks || []).map(normalizeTaskRow)
   } catch (error: any) {
     console.error('Get all tasks error:', error)
     throw error
@@ -617,6 +667,10 @@ export interface CreateTaskParams {
   assignedUserId?: string  // 指定参与人员ID（可选，向后兼容）
   assignedUserIds?: string[]  // 指定参与人员ID列表（多人任务）
   communityId?: string  // 所属社区 ID，不传则任务不归属任何社区
+  /** C1：走链上 TaskPool 时传 true，将写入 planned_lock 与 phase=awaiting_pool */
+  useTaskpool?: boolean
+  allowSplit?: boolean
+  plannedLockNt?: number
 }
 
 /**
@@ -643,6 +697,9 @@ export const createTask = async (params: CreateTaskParams, baseUrl: string): Pro
       assignedUserId: params.assignedUserId || undefined,
       assignedUserIds: params.assignedUserIds || undefined,
       communityId: params.communityId || undefined,
+      useTaskpool: params.useTaskpool === true,
+      allowSplit: params.allowSplit ?? false,
+      plannedLockNt: params.plannedLockNt,
     }
     
     console.log('[API] createTask - 请求体:', requestBody)
@@ -684,6 +741,421 @@ export const createTask = async (params: CreateTaskParams, baseUrl: string): Pro
     console.error('[API] createTask - 错误堆栈:', error?.stack)
     throw error
   }
+}
+
+/** 子任务草稿（C1） */
+export interface TaskSubtaskDraft {
+  id: string
+  taskInfoId: string
+  subtaskUuid: string
+  title: string
+  sortOrder: number
+  maxAmountNt?: number | null
+  description?: string
+  submissionInstructions?: string
+  proofConfig?: any
+  participantLimit?: number | null
+  rewardNt?: number | null
+  submitDeadlineOverride?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export const listTaskSubtasks = async (
+  taskInfoId: string,
+  baseUrl: string
+): Promise<{ subtasks: TaskSubtaskDraft[] }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/subtasks`, {
+    headers: getAuthHeaders(),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '获取子任务失败')
+  }
+  return response.json()
+}
+
+export const createTaskSubtask = async (
+  taskInfoId: string,
+  body: {
+    title?: string
+    sortOrder?: number
+    maxAmountNt?: number
+    subtaskUuid?: string
+    description?: string
+    submissionInstructions?: string
+    proofConfig?: any
+    participantLimit?: number | null
+    rewardNt?: number | null
+    submitDeadlineOverride?: string | null
+  },
+  baseUrl: string
+): Promise<{ subtask: TaskSubtaskDraft }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/subtasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '创建子任务失败')
+  }
+  return response.json()
+}
+
+export const patchTaskSubtask = async (
+  taskInfoId: string,
+  subtaskId: string,
+  body: {
+    title?: string
+    sortOrder?: number
+    maxAmountNt?: number | null
+    description?: string
+    submissionInstructions?: string
+    proofConfig?: any
+    participantLimit?: number | null
+    rewardNt?: number | null
+    submitDeadlineOverride?: string | null
+  },
+  baseUrl: string
+): Promise<{ subtask?: TaskSubtaskDraft; ok?: boolean }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/subtasks/${subtaskId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '更新子任务失败')
+  }
+  return response.json()
+}
+
+export const finalizeTaskSubtasks = async (
+  taskInfoId: string,
+  baseUrl: string
+): Promise<{ ok: boolean }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/subtasks/finalize`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders() },
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '定稿失败')
+  }
+  return response.json()
+}
+
+export const patchTaskInfoTaskpool = async (
+  taskInfoId: string,
+  body: {
+    taskpoolPhase?: 'none' | 'awaiting_pool' | 'pool_created' | 'closed'
+    taskpoolCreateTxHash?: string
+    taskpoolManagerUserId?: string
+    taskpoolCreateStatus?: 'idle' | 'signing' | 'pending' | 'confirmed' | 'failed'
+    taskpoolCreateDigest?: string
+    taskpoolCreateLastError?: string
+  },
+  baseUrl: string
+): Promise<{ taskInfo: Record<string, unknown> }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/taskpool`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '更新 TaskPool 元数据失败')
+  }
+  return response.json()
+}
+
+/** Semi 预付 intent（后端 taskpool_prepay_intents） */
+export type TaskpoolPrepayIntent = {
+  id: string
+  task_info_id?: string
+  taskInfoId?: string
+  amount_human?: string | null
+  amountHuman?: string | null
+  /** 阶段 5.2：链下支付单号（发起 Semi 前由前端生成） */
+  client_reference?: string | null
+  status: 'pending' | 'success' | 'failed' | 'cancelled' | 'superseded'
+  user_op_hash?: string | null
+  tx_hash?: string | null
+  error_code?: string | null
+  error?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export const startTaskpoolPrepayIntent = async (
+  taskInfoId: string,
+  body: { state: string; amountHuman: string; clientReference?: string },
+  baseUrl: string
+): Promise<{ intent: TaskpoolPrepayIntent & { state_token?: string } }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/prepay-intent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '登记预付意向失败')
+  }
+  return response.json()
+}
+
+export const completeTaskpoolPrepayIntent = async (
+  taskInfoId: string,
+  body: {
+    state: string
+    status: 'success' | 'failed' | 'cancelled'
+    user_op_hash?: string | null
+    tx_hash?: string | null
+    error_code?: string | null
+    error?: string | null
+  },
+  baseUrl: string
+): Promise<{
+  ok: boolean
+  intent?: TaskpoolPrepayIntent
+  alreadyFinalized?: boolean
+  /** 后端链上确权结果（可能为 null/undefined） */
+  onchain?: { ok: boolean; error?: string; warnings?: string[] }
+}> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/prepay-complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '同步预付结果失败')
+  }
+  return response.json()
+}
+
+export const getTaskpoolPrepayIntentLatest = async (
+  taskInfoId: string,
+  baseUrl: string
+): Promise<TaskpoolPrepayIntent | null> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/prepay-intent/latest`, {
+    headers: getAuthHeaders(),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '查询预付记录失败')
+  }
+  const data = (await response.json()) as { intent: TaskpoolPrepayIntent | null }
+  return data.intent ?? null
+}
+
+/** 阶段 5.2：同一任务池下半 Semi credit 预付记录列表（仅创建者） */
+export const listTaskpoolPrepayIntents = async (
+  taskInfoId: string,
+  baseUrl: string,
+  limit?: number
+): Promise<TaskpoolPrepayIntent[]> => {
+  const q = limit != null && limit > 0 ? `?limit=${Math.min(50, limit)}` : ''
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/prepay-intents${q}`, {
+    headers: getAuthHeaders(),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '查询预付列表失败')
+  }
+  const data = (await response.json()) as { intents: TaskpoolPrepayIntent[] }
+  return data.intents ?? []
+}
+
+/** 认领任务池主项目为 Manager（仅 use_taskpool 且尚未有 Manager 时可调用一次） */
+export const claimTaskPoolManager = async (
+  taskInfoId: string,
+  baseUrl: string
+): Promise<{ result: string; taskInfoId: string; managerUserId: string }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/claim-manager`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({}),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '认领 Manager 失败')
+  }
+  return response.json()
+}
+
+/** TaskPool 整单提交（链下，阶段 4A） */
+export interface TaskpoolOverallSubmission {
+  taskInfoId: string
+  submittedByUserId: string | null
+  payload: { summary?: string; url?: string }
+  submittedAt: string
+  updatedAt: string
+  status?: 'draft' | 'under_review' | 'approved' | 'rejected'
+}
+
+export interface TaskpoolOverallSubmissionReview {
+  id: string
+  taskInfoId: string
+  reviewerUserId: string
+  decision: 'approved' | 'rejected'
+  reason: string | null
+  reviewedAt: string
+}
+
+export const getTaskpoolOverallSubmission = async (
+  taskInfoId: string,
+  baseUrl: string
+): Promise<{ submission: TaskpoolOverallSubmission | null; reviews: TaskpoolOverallSubmissionReview[] }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/overall-submission`, {
+    headers: getAuthHeaders(),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '获取整单提交失败')
+  }
+  const data = (await response.json()) as { submission: any; reviews?: any[] }
+  const sub = data.submission
+  const reviewsRaw = (data.reviews || []) as any[]
+  const reviews: TaskpoolOverallSubmissionReview[] = reviewsRaw.map((r) => ({
+    id: r.id,
+    taskInfoId: r.task_info_id,
+    reviewerUserId: r.reviewer_user_id,
+    decision: r.decision,
+    reason: r.reason ?? null,
+    reviewedAt: r.reviewed_at,
+  }))
+  if (!sub) return { submission: null, reviews }
+  return {
+    submission: {
+      taskInfoId: sub.task_info_id,
+      submittedByUserId: sub.submitted_by_user_id,
+      payload: sub.payload || {},
+      submittedAt: sub.submitted_at,
+      updatedAt: sub.updated_at,
+      status: sub.status,
+    },
+    reviews,
+  }
+}
+
+export const upsertTaskpoolOverallSubmission = async (
+  taskInfoId: string,
+  body: { summary?: string; url?: string },
+  baseUrl: string
+): Promise<{ submission: TaskpoolOverallSubmission }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/overall-submission`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '整单提交失败')
+  }
+  const data = (await response.json()) as { submission: any }
+  const sub = data.submission
+  return {
+    submission: {
+      taskInfoId: sub.task_info_id,
+      submittedByUserId: sub.submitted_by_user_id,
+      payload: sub.payload || {},
+      submittedAt: sub.submitted_at,
+      updatedAt: sub.updated_at,
+      status: sub.status,
+    },
+  }
+}
+
+export const reviewTaskpoolOverallSubmission = async (
+  taskInfoId: string,
+  body: { decision: 'approved' | 'rejected'; reason?: string },
+  baseUrl: string
+): Promise<{ submission?: TaskpoolOverallSubmission; ok?: boolean; status?: string }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/overall-submission/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '整单审核失败')
+  }
+  const data = (await response.json()) as any
+  if (data.submission) {
+    const sub = data.submission
+    return {
+      submission: {
+        taskInfoId: sub.task_info_id,
+        submittedByUserId: sub.submitted_by_user_id,
+        payload: sub.payload || {},
+        submittedAt: sub.submitted_at,
+        updatedAt: sub.updated_at,
+        status: sub.status,
+      },
+    }
+  }
+  return data
+}
+
+export const withdrawTaskPool = async (
+  taskInfoId: string,
+  baseUrl: string
+): Promise<{ success: boolean; draft: any }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/withdraw`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({}),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '撤回任务池失败')
+  }
+  return response.json()
+}
+
+export const getTaskPoolDraftForEdit = async (
+  taskInfoId: string,
+  baseUrl: string
+): Promise<{ draft: Record<string, unknown> }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/pool-draft`, {
+    headers: getAuthHeaders(),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '获取任务池草稿失败')
+  }
+  return response.json()
+}
+
+export const patchTaskPoolDraft = async (
+  taskInfoId: string,
+  body: {
+    title: string
+    description: string
+    startDate: string
+    deadline: string
+    submitDeadline: string
+    /** 与后端兼容：可只传 plannedLockNt，由服务端推导锁仓 */
+    plannedLockNt?: number
+    reward?: number
+    participantLimit?: number
+    submissionInstructions?: string
+    proofConfig?: Record<string, unknown>
+  },
+  baseUrl: string
+): Promise<{ success: boolean; taskInfoId: string }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/pool-draft`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '更新任务池失败')
+  }
+  return response.json()
 }
 
 /**
@@ -767,6 +1239,119 @@ export const claimTask = async (taskId: string, baseUrl: string, userIdentifier?
     console.error('Claim task error:', error)
     return { success: false, message: error.message || '领取任务失败' }
   }
+}
+
+export type TaskpoolClaimIntentErrorBody = {
+  error?: string
+  code?: string
+  taskpool_phase?: string | null
+  last_error?: string | null
+  hint?: string | null
+}
+
+export class TaskpoolClaimIntentError extends Error {
+  status: number
+  body: TaskpoolClaimIntentErrorBody
+
+  constructor(status: number, body: TaskpoolClaimIntentErrorBody) {
+    super(body.error || '生成 claim intent 失败')
+    this.name = 'TaskpoolClaimIntentError'
+    this.status = status
+    this.body = body
+  }
+}
+
+export const getTaskpoolClaimIntent = async (
+  taskId: string,
+  baseUrl: string
+): Promise<{ intent: any }> => {
+  const response = await fetch(`${baseUrl}/api/tasks/${taskId}/taskpool-claim-intent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({}),
+  })
+  if (!response.ok) {
+    const err = (await response.json().catch(() => ({}))) as TaskpoolClaimIntentErrorBody
+    throw new TaskpoolClaimIntentError(response.status, err)
+  }
+  return response.json()
+}
+
+export const completeTaskpoolClaim = async (
+  taskId: string,
+  body: {
+    state: string
+    status: 'success' | 'failed' | 'cancelled'
+    tx_hash?: string | null
+  },
+  baseUrl: string
+): Promise<{ ok: boolean; alreadyClaimed?: boolean; skipped?: boolean }> => {
+  const response = await fetch(`${baseUrl}/api/tasks/${taskId}/taskpool-claim-complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '同步领取结果失败')
+  }
+  return response.json()
+}
+
+export const completeTaskpoolApprove = async (
+  taskId: string,
+  body: {
+    state: string
+    status: 'success' | 'failed' | 'cancelled'
+    tx_hash?: string | null
+    comments?: string | null
+  },
+  baseUrl: string
+): Promise<{ ok: boolean; alreadyCompleted?: boolean; skipped?: boolean }> => {
+  const response = await fetch(`${baseUrl}/api/tasks/${taskId}/taskpool-approve-complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '同步审核结果失败')
+  }
+  return response.json()
+}
+
+export const completeTaskpoolFinalApprove = async (
+  taskInfoId: string,
+  body: { state: string; status: 'success' | 'failed' | 'cancelled'; tx_hash?: string | null },
+  baseUrl: string
+): Promise<{ ok: boolean; skipped?: boolean; onchain?: any }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/taskpool/final-approve-complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '同步终审结果失败')
+  }
+  return response.json()
+}
+
+export const completeTaskpoolDistribute = async (
+  taskInfoId: string,
+  body: { state: string; status: 'success' | 'failed' | 'cancelled'; tx_hash?: string | null },
+  baseUrl: string
+): Promise<{ ok: boolean; skipped?: boolean; onchain?: any }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/taskpool/distribute-complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '同步结算结果失败')
+  }
+  return response.json()
 }
 
 /**
@@ -2340,7 +2925,15 @@ export const createCommunity = async (
 /** 更新社区（名称、简介、公开性、头像等，需总管理员或系统管理员） */
 export const updateCommunity = async (
   communityId: string,
-  payload: { name?: string; description?: string; markdownIntro?: string; isPublic?: boolean; pointName?: string; avatarUrl?: string },
+  payload: {
+    name?: string
+    description?: string
+    markdownIntro?: string
+    isPublic?: boolean
+    pointName?: string
+    avatarUrl?: string
+    backgroundImages?: string[]
+  },
   baseUrl?: string
 ): Promise<Community> => {
   const url = baseUrl ?? getApiBaseUrl()

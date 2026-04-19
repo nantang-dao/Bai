@@ -111,11 +111,12 @@ const getActionText = (type: string) => {
   return map[type] || '进行了操作'
 }
 
-const formatNumber = (num: number) => {
-  if (num >= 10000) {
-    return (num / 10000).toFixed(1) + 'w'
+const formatNumber = (num: number | undefined) => {
+  const n = Number(num ?? 0)
+  if (n >= 10000) {
+    return (n / 10000).toFixed(1) + 'w'
   }
-  return num
+  return n
 }
 
 const formatTime = (isoString: string) => {

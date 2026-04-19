@@ -1,7 +1,42 @@
 import { Request, Response } from 'express'
 import { supabase } from '../services/supabase'
-import { Task, CreateTaskParams, TaskStatus, TimelineStatus } from '../types/task'
+import { Task, CreateTaskParams, TaskStatus, TimelineStatus, TaskpoolPhase } from '../types/task'
+import { checkTaskApproveRejectPermission } from '../utils/taskReviewPermission'
+import { buildTaskpoolClaimIntent } from '../services/taskpoolClaimIntent'
+import { isAddress } from 'viem'
+
+/** C1：计划锁入 TaskPool 的 NT 总额（与链下预留一致；未传 plannedLockNt 时自动算） */
+function computePlannedLockNt(params: CreateTaskParams): number {
+  if (params.plannedLockNt != null && !Number.isNaN(Number(params.plannedLockNt))) {
+    return Number(params.plannedLockNt)
+  }
+  const limit = params.participantLimit ?? 1
+  const mode = params.rewardDistributionMode || 'per_person'
+  if (mode === 'custom' && params.weights && params.weights.length > 0) {
+    const totalW = params.weights.reduce((s, w) => s + w.weight, 0)
+    if (totalW <= 0) return params.reward * limit
+    return params.weights.reduce((s, w) => s + (params.reward * w.weight) / totalW, 0)
+  }
+  return params.reward * limit
+}
 import { AuthRequest } from '../middleware/auth'
+
+/** tasks 行统一 select（含 migration 028：listing_kind / pool_subtask_id） */
+const TASKS_ROW_SELECT_WITH_TRANSFER =
+  'id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at, listing_kind, pool_subtask_id'
+const TASKS_ROW_SELECT =
+  'id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at, listing_kind, pool_subtask_id'
+
+/** 按 tasks.id 查无行：错误 uuid、误用 task_info_id、仅用 ANON+RLS、连错 Supabase 项目等 */
+class TaskRowMissingError extends Error {
+  readonly code = 'TASK_ROW_MISSING' as const
+  constructor(public readonly taskId: string) {
+    super(
+      `无匹配 tasks 行（id=${taskId}）。请确认：① 使用表 tasks 的主键 uuid，勿填 task_info_id；② 后端 .env 配置 SUPABASE_SERVICE_ROLE_KEY（仅用 ANON 且库上 RLS 时可能读不到行）；③ 环境与创建该任务时一致。`
+    )
+    this.name = 'TaskRowMissingError'
+  }
+}
 
 // ==================== 类型定义 ====================
 
@@ -71,13 +106,14 @@ const appendStatusToTimeline = async (
       throw new Error(`无效的任务ID: ${taskId}`)
     }
     
-    // 验证该任务行是否存在（确保 taskId 是正确的任务行ID）
-    const { data: taskRow, error: taskRowError } = await supabase
+    // 验证该任务行是否存在（避免 .single() 在异常数据下 coerce 报错）
+    const { data: taskRows, error: taskRowError } = await supabase
       .from('tasks')
       .select('id, claimer_id')
       .eq('id', taskId)
-      .single()
-    
+      .limit(1)
+
+    const taskRow = taskRows?.[0]
     if (taskRowError || !taskRow) {
       console.error(`[TIMELINE] ❌ 任务行不存在: ${taskId}`, taskRowError)
       throw new Error(`任务行不存在: ${taskId}`)
@@ -86,16 +122,25 @@ const appendStatusToTimeline = async (
     console.log(`[TIMELINE] 验证: 任务行存在，claimer_id: ${taskRow.claimer_id || 'null'}`)
     
     // 获取或创建 task_timelines 记录（严格使用 task_id 匹配）
+    // 不用 .single()：0/多行时 PostgREST 会报错（如 Cannot coerce the result to a single JSON object）
     let timelineData = null
-    const { data: existingTimeline, error: fetchError } = await supabase
+    const { data: timelineRows, error: fetchError } = await supabase
       .from('task_timelines')
       .select('task_id, timeline')
       .eq('task_id', taskId)
-      .single()
+      .limit(2)
 
-    if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = not found
+    if (fetchError) {
       console.error(`[TIMELINE] ❌ 获取时间线失败:`, fetchError)
       throw fetchError
+    }
+
+    const existingTimeline =
+      timelineRows && timelineRows.length > 0 ? timelineRows[0] : null
+    if (timelineRows && timelineRows.length > 1) {
+      console.warn(
+        `[TIMELINE] ⚠️ task_id=${taskId} 存在多条 task_timelines，仅使用第一条；请检查库内唯一约束`
+      )
     }
 
     // 验证获取到的时间线确实属于该任务行
@@ -106,19 +151,23 @@ const appendStatusToTimeline = async (
 
     // 如果不存在，创建新记录
     if (!existingTimeline) {
-      const { data: newTimeline, error: createError } = await supabase
+      const { data: insertedTl, error: createError } = await supabase
         .from('task_timelines')
         .insert({ task_id: taskId, timeline: [] })
         .select('task_id, timeline')
-        .single()
       
       if (createError) {
         console.error(`[TIMELINE] ❌ 创建时间线记录失败:`, createError)
         throw createError
       }
+
+      const newTimeline = insertedTl?.[0]
+      if (!newTimeline) {
+        throw new Error(`[TIMELINE] 创建时间线后无返回行: task_id=${taskId}`)
+      }
       
       // 再次验证创建的时间线
-      if (newTimeline && newTimeline.task_id !== taskId) {
+      if (newTimeline.task_id !== taskId) {
         console.error(`[TIMELINE] ❌ 创建的时间线任务ID不匹配! 期望: ${taskId}, 实际: ${newTimeline.task_id}`)
         throw new Error(`创建的时间线任务ID不匹配: 期望 ${taskId}, 实际 ${newTimeline.task_id}`)
       }
@@ -360,7 +409,15 @@ const mapDbTaskToTask = (
       assignedUserId: taskInfo.assigned_user_id || null,  // 指定参与人员ID（向后兼容）
       assignedUserIds: (taskInfo.proof_config as any)?._assignedUserIds || (taskInfo.assigned_user_id ? [taskInfo.assigned_user_id] : []),  // 指定参与人员ID列表
       createdAt: formatLocalDateTime(taskInfo.created_at),
-      updatedAt: formatLocalDateTime(taskInfo.updated_at)
+      updatedAt: formatLocalDateTime(taskInfo.updated_at),
+      allowSplit: taskInfo.allow_split === true,
+      useTaskpool: taskInfo.use_taskpool === true,
+      plannedLockNt: taskInfo.planned_lock_nt != null ? parseFloat(String(taskInfo.planned_lock_nt)) : null,
+      taskpoolPhase: (taskInfo.taskpool_phase || 'none') as TaskpoolPhase,
+      taskpoolCreateTxHash: taskInfo.taskpool_create_tx_hash || null,
+      taskpoolManagerUserId: taskInfo.taskpool_manager_user_id || null,
+      managerUserId: taskInfo.manager_user_id || null,
+      subtasksFinalized: taskInfo.subtasks_finalized === true
     } : undefined,
     // 创建者和领取者
   creatorId: dbTask.creator_id,
@@ -398,6 +455,17 @@ const mapDbTaskToTask = (
     proofConfig: info.proof_config,
     submissionInstructions: info.submission_instructions,
     assignedUserId: info.assigned_user_id || null,  // 指定参与人员ID（向后兼容）
+    allowSplit: info.allow_split === true,
+    useTaskpool: info.use_taskpool === true,
+    plannedLockNt: info.planned_lock_nt != null ? parseFloat(String(info.planned_lock_nt)) : null,
+    taskpoolPhase: (info.taskpool_phase || 'none') as TaskpoolPhase,
+    taskpoolCreateTxHash: info.taskpool_create_tx_hash || null,
+    taskpoolManagerUserId: info.taskpool_manager_user_id || null,
+    managerUserId: info.manager_user_id || null,
+    subtasksFinalized: info.subtasks_finalized === true,
+    taskInfoIdForPool: info.id,
+    listingKind: (dbTask.listing_kind as Task['listingKind']) || 'standard',
+    poolSubtaskId: dbTask.pool_subtask_id ?? null,
     // 用户信息
     creatorName: dbTask.creator?.name || null,
     creatorAvatar: dbTask.creator?.avatar || null,
@@ -411,14 +479,15 @@ const mapDbTaskToTask = (
  */
 const getTaskFromDb = async (taskId: string): Promise<TaskDataWithRelations> => {
     // 获取任务行数据（只选择存在的字段，排除已删除的字段）
-    const { data: taskData, error: taskError } = await supabase
+    const { data: taskRows, error: taskError } = await supabase
       .from('tasks')
-      .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at')
+      .select(TASKS_ROW_SELECT_WITH_TRANSFER)
       .eq('id', taskId)
-      .single()
-  
+      .limit(1)
+
     if (taskError) throw taskError
-    if (!taskData) throw new Error('任务不存在')
+    const taskData = taskRows?.[0]
+    if (!taskData) throw new TaskRowMissingError(taskId)
   
     // 使用类型断言，允许动态添加属性
     const taskDataWithRelations = taskData as TaskDataWithRelations
@@ -426,52 +495,60 @@ const getTaskFromDb = async (taskId: string): Promise<TaskDataWithRelations> => 
     // 获取关联的 task_info
     let taskInfo = null
     if (taskDataWithRelations.task_info_id) {
-      const { data: infoData, error: infoError } = await supabase
+      const { data: infoRows, error: infoError } = await supabase
         .from('task_info')
         .select('*')
         .eq('id', taskDataWithRelations.task_info_id)
-        .single()
-      
-      if (!infoError && infoData) {
-        taskInfo = infoData
-        taskDataWithRelations.task_info = infoData
+        .limit(1)
+
+      if (!infoError && infoRows?.[0]) {
+        taskInfo = infoRows[0]
+        taskDataWithRelations.task_info = infoRows[0]
       }
     }
   
-    // 获取 task_timelines
+    // 获取 task_timelines（避免 .single() 在 0/多行时触发 PostgREST coerce 错误）
     let taskTimeline = null
-    const { data: timelineData, error: timelineError } = await supabase
+    const { data: tlRows, error: timelineError } = await supabase
       .from('task_timelines')
       .select('timeline')
       .eq('task_id', taskId)
-      .single()
-    
-    if (!timelineError && timelineData) {
+      .limit(1)
+
+    if (timelineError) {
+      throw timelineError
+    }
+
+    if (tlRows && tlRows.length > 0) {
+      const timelineData = tlRows[0]
       taskTimeline = timelineData
       taskDataWithRelations.timeline = timelineData.timeline
     } else {
       // 如果不存在，创建默认记录
-      const { data: newTimeline } = await supabase
+      const { data: insTlRows, error: insTlErr } = await supabase
         .from('task_timelines')
         .insert({ task_id: taskId, timeline: [] })
         .select('timeline')
-        .single()
-      
+
+      if (insTlErr) throw insTlErr
+      const newTimeline = insTlRows?.[0]
       if (newTimeline) {
         taskTimeline = newTimeline
         taskDataWithRelations.timeline = newTimeline.timeline
       }
     }
   
-    // 获取 task_proofs
+    // 获取 task_proofs（无行或多行时避免 .single() coerce）
     let taskProof = null
-    const { data: proofData, error: proofError } = await supabase
+    const { data: proofRows, error: proofError } = await supabase
       .from('task_proofs')
       .select('proof, receiver_remark, reject_reason, reject_option, discount, discount_reason')
       .eq('task_id', taskId)
-      .single()
-    
-    if (!proofError && proofData) {
+      .limit(1)
+
+    if (proofError) throw proofError
+    const proofData = proofRows?.[0]
+    if (proofData) {
       taskProof = proofData
       taskDataWithRelations.proof = proofData.proof
       ;(taskDataWithRelations as any).receiver_remark = (proofData as any).receiver_remark
@@ -483,27 +560,27 @@ const getTaskFromDb = async (taskId: string): Promise<TaskDataWithRelations> => 
   
     // 获取创建者信息
     if (taskDataWithRelations.creator_id) {
-      const { data: creatorData, error: creatorError } = await supabase
+      const { data: creatorRows, error: creatorError } = await supabase
         .from('users')
         .select('id, name')
         .eq('id', taskDataWithRelations.creator_id)
-        .single()
-      
-      if (!creatorError && creatorData) {
-        taskDataWithRelations.creator = creatorData
+        .limit(1)
+
+      if (!creatorError && creatorRows?.[0]) {
+        taskDataWithRelations.creator = creatorRows[0]
       }
     }
-  
+
     // 获取领取者信息
     if (taskDataWithRelations.claimer_id) {
-      const { data: claimerData, error: claimerError } = await supabase
+      const { data: claimerRows, error: claimerError } = await supabase
         .from('users')
         .select('id, name')
         .eq('id', taskDataWithRelations.claimer_id)
-        .single()
-      
-      if (!claimerError && claimerData) {
-        taskDataWithRelations.claimer = claimerData
+        .limit(1)
+
+      if (!claimerError && claimerRows?.[0]) {
+        taskDataWithRelations.claimer = claimerRows[0]
       }
     }
   
@@ -521,7 +598,7 @@ const getTaskGroupFromDb = async (taskInfoId: string) => {
     // 获取所有关联的任务行（只选择存在的字段，排除已删除的字段）
     const { data: tasksData, error: tasksError } = await supabase
       .from('tasks')
-      .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+      .select(TASKS_ROW_SELECT)
       .eq('task_info_id', taskInfoId)
       .order('participant_index', { ascending: true })
   
@@ -612,7 +689,11 @@ const getTaskGroupFromDb = async (taskInfoId: string) => {
  */
 const handleError = (res: Response, error: any, defaultMessage: string) => {
     const message = error?.message || defaultMessage
-    const status = error?.message === '任务不存在' ? 404 : 500
+    const missing =
+      error?.code === 'TASK_ROW_MISSING' ||
+      error?.name === 'TaskRowMissingError' ||
+      error?.message === '任务不存在'
+    const status = missing ? 404 : 500
     res.status(status).json({ error: message })
 }
 
@@ -632,7 +713,7 @@ export const getAllTasks = async (req: Request, res: Response) => {
         }
         const { data, error } = await supabase
           .from('tasks')
-          .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+          .select(TASKS_ROW_SELECT)
           .in('task_info_id', ids)
           .order('created_at', { ascending: false })
         if (error) throw error
@@ -640,7 +721,7 @@ export const getAllTasks = async (req: Request, res: Response) => {
       } else {
         const { data, error } = await supabase
           .from('tasks')
-          .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+          .select(TASKS_ROW_SELECT)
           .order('created_at', { ascending: false })
         if (error) throw error
         tasksData = data || []
@@ -743,15 +824,28 @@ export const getAllTasks = async (req: Request, res: Response) => {
           }
         })
   
+      // 子任务商城行单独成卡，不参与按 task_info 合并（与池主/普通参与行分开）
+      const subtaskListingRows = tasksWithInfo.filter((t: any) => t.listing_kind === 'taskpool_subtask')
+      const poolListingRows = tasksWithInfo.filter((t: any) => t.listing_kind !== 'taskpool_subtask')
+
       // 按 task_info_id 分组（多人任务应该只显示一个卡片）
       const taskGroups: Record<string, any[]> = {}
-      tasksWithInfo.forEach(task => {
+      poolListingRows.forEach(task => {
         const key = task.task_info_id
         if (!taskGroups[key]) {
           taskGroups[key] = []
         }
         taskGroups[key].push(task)
       })
+
+      // 任务池：代表卡片优先使用 listing_kind=taskpool_pool 的行（与商城「池主」一致）
+      for (const k of Object.keys(taskGroups)) {
+        taskGroups[k].sort((a: any, b: any) => {
+          if (a.listing_kind === 'taskpool_pool' && b.listing_kind !== 'taskpool_pool') return -1
+          if (b.listing_kind === 'taskpool_pool' && a.listing_kind !== 'taskpool_pool') return 1
+          return 0
+        })
+      }
   
       // 为每个任务组创建一个代表任务
       const groupedTasks = Object.values(taskGroups).map(taskGroup => {
@@ -838,8 +932,37 @@ export const getAllTasks = async (req: Request, res: Response) => {
           )
         }
       })
-      
-      res.json(groupedTasks)
+
+      const subIds = [...new Set(subtaskListingRows.map((t: any) => t.pool_subtask_id).filter(Boolean))]
+      let subMetaMap: Record<string, { title: string }> = {}
+      if (subIds.length > 0) {
+        const { data: subs } = await supabase.from('task_subtasks').select('id, title').in('id', subIds)
+        subMetaMap = (subs || []).reduce(
+          (acc: Record<string, { title: string }>, s: any) => {
+            acc[s.id] = { title: s.title || '' }
+            return acc
+          },
+          {}
+        )
+      }
+
+      const subtaskCards = subtaskListingRows.map((t: any) => {
+        const taskInfo = taskInfoMap[t.task_info_id]
+        const sub = t.pool_subtask_id ? subMetaMap[t.pool_subtask_id] : null
+        const augmentedInfo =
+          sub && taskInfo
+            ? { ...taskInfo, title: `${taskInfo.title || ''} · ${sub.title}`.trim() }
+            : taskInfo
+        return mapDbTaskToTask(t, augmentedInfo, t.task_timeline, t.task_proof)
+      })
+
+      const combined = [...groupedTasks, ...subtaskCards].sort((a, b) => {
+        const ta = new Date((a as any).createdAt || 0).getTime()
+        const tb = new Date((b as any).createdAt || 0).getTime()
+        return tb - ta
+      })
+
+      res.json(combined)
     } catch (error: any) {
       console.error('[GET ALL TASKS] Error:', error)
       handleError(res, error, '获取任务列表失败')
@@ -865,16 +988,51 @@ export const getTaskById = async (req: Request, res: Response) => {
           taskInfo = infoData
         }
       }
+
+      // 子任务行：合并 task_subtasks 覆盖字段（展示/校验用；无则继承 task_info）
+      // 规则：subtask.proof_config 非空则覆盖；submit_deadline_override 非空则覆盖；description/submission_instructions/title 同理；participant_limit 同理。
+      if ((dbTask as any).listing_kind === 'taskpool_subtask' && (dbTask as any).pool_subtask_id && taskInfo) {
+        try {
+          const sid = (dbTask as any).pool_subtask_id as string
+          const { data: sub, error: sErr } = await supabase
+            .from('task_subtasks')
+            .select('id, title, description, submission_instructions, proof_config, submit_deadline_override, participant_limit')
+            .eq('id', sid)
+            .eq('task_info_id', dbTask.task_info_id)
+            .maybeSingle()
+          if (!sErr && sub) {
+            const ti = taskInfo as any
+            taskInfo = {
+              ...ti,
+              title: `${ti.title || ''} · ${sub.title || ''}`.trim(),
+              description: (sub as any).description ?? ti.description,
+              submission_instructions: (sub as any).submission_instructions ?? ti.submission_instructions,
+              proof_config: (sub as any).proof_config ?? ti.proof_config,
+              submit_deadline: (sub as any).submit_deadline_override ?? ti.submit_deadline,
+              participant_limit: (sub as any).participant_limit ?? ti.participant_limit,
+            }
+          }
+        } catch (_) {
+          // 不阻塞：回退为 task_info 原字段
+        }
+      }
       
       // 如果是多人任务（participant_limit > 1），获取所有任务行构建 participantsList
       let participantsList: any[] = []
       if (taskInfo && taskInfo.participant_limit && taskInfo.participant_limit > 1) {
-        // 获取该 task_info_id 下的所有任务行
-        const { data: allTasks } = await supabase
+        // 获取同一组任务行
+        // - 普通多人任务：按 task_info_id
+        // - 子任务多人：按 task_info_id + pool_subtask_id（防止串到其它子任务/池主行）
+        const isSubtask = (dbTask as any).listing_kind === 'taskpool_subtask' && (dbTask as any).pool_subtask_id
+        const baseQ = supabase
           .from('tasks')
           .select('id, claimer_id, status, participant_index, transferred_at, created_at, updated_at')
           .eq('task_info_id', dbTask.task_info_id)
           .order('participant_index', { ascending: true })
+
+        const { data: allTasks } = isSubtask
+          ? await baseQ.eq('pool_subtask_id', (dbTask as any).pool_subtask_id)
+          : await baseQ.is('pool_subtask_id', null)
         
         if (allTasks && allTasks.length > 0) {
           // 获取所有领取者信息
@@ -1132,6 +1290,10 @@ export const createTask = async (req: AuthRequest, res: Response) => {
         _assignedUserIds: assignedUserIds
       }
       
+      const useTaskpool = params.useTaskpool === true
+      const plannedLockNtVal = useTaskpool ? computePlannedLockNt(params) : null
+      const taskpoolPhase = useTaskpool ? 'awaiting_pool' : 'none'
+
       const { data: taskInfo, error: infoError } = await supabase
         .from('task_info')
         .insert({
@@ -1147,7 +1309,12 @@ export const createTask = async (req: AuthRequest, res: Response) => {
           submission_instructions: params.submissionInstructions || null,
           creator_id: userId,
           assigned_user_id: assignedUserId,  // 指定参与人员ID（使用第一个，向后兼容）
-          community_id: params.communityId || null  // 所属社区
+          community_id: params.communityId || null,  // 所属社区
+          allow_split: params.allowSplit ?? false,
+          use_taskpool: useTaskpool,
+          planned_lock_nt: plannedLockNtVal,
+          taskpool_phase: taskpoolPhase,
+          subtasks_finalized: false
         })
         .select()
         .single()
@@ -1195,12 +1362,19 @@ export const createTask = async (req: AuthRequest, res: Response) => {
           })
         }
       }
+
+      if (useTaskpool && taskRows.length > 0) {
+        taskRows = taskRows.map((row: Record<string, unknown>, idx: number) => ({
+          ...row,
+          listing_kind: idx === 0 ? 'taskpool_pool' : 'standard',
+        }))
+      }
   
       // 步骤3: 创建所有任务行（明确指定要返回的字段，排除已删除的字段）
       const { data: createdTasks, error: tasksError } = await supabase
         .from('tasks')
         .insert(taskRows)
-        .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+        .select(TASKS_ROW_SELECT)
   
       if (tasksError) {
         console.error('[CREATE TASK] Insert tasks error:', tasksError)
@@ -1267,6 +1441,15 @@ export const createTask = async (req: AuthRequest, res: Response) => {
       console.log('[CREATE TASK] Mapped task:', JSON.stringify(task, null, 2))
       
       // 确保返回格式与前端 Task 接口匹配（向后兼容）
+      const participantTaskIds =
+        Array.isArray(createdTasks) && createdTasks.length > 0
+          ? [...createdTasks]
+              .sort(
+                (a: any, b: any) =>
+                  Number(a?.participant_index ?? 0) - Number(b?.participant_index ?? 0)
+              )
+              .map((t: any) => String(t.id))
+          : []
       const responseTask = {
         id: task.id,
         activityId: task.activityId || 0,
@@ -1295,7 +1478,19 @@ export const createTask = async (req: AuthRequest, res: Response) => {
         submitDeadline: task.submitDeadline,
         claimedAt: task.claimedAt,
         submittedAt: task.submittedAt,
-        completedAt: task.completedAt
+        completedAt: task.completedAt,
+        taskInfoId: task.taskInfoId,
+        allowSplit: task.allowSplit,
+        useTaskpool: task.useTaskpool,
+        plannedLockNt: task.plannedLockNt,
+        taskpoolPhase: task.taskpoolPhase,
+        taskpoolCreateTxHash: task.taskpoolCreateTxHash,
+        taskpoolManagerUserId: task.taskpoolManagerUserId,
+        managerUserId: task.managerUserId,
+        subtasksFinalized: task.subtasksFinalized,
+        taskInfoIdForPool: task.taskInfoIdForPool,
+        /** 多人任务：返回该 task_info 下所有任务行 id（用于链上 taskIds 派生） */
+        participantTaskIds: participantTaskIds.length > 0 ? participantTaskIds : undefined
       }
       
       console.log('[CREATE TASK] Response task:', JSON.stringify(responseTask, null, 2))
@@ -1324,12 +1519,13 @@ export const claimTask = async (req: AuthRequest, res: Response) =>
         // 获取 task_info 以检查时间限制
         let taskInfo = null
         if (task.task_info_id) {
-            const { data: infoData } = await supabase
+            const { data: infoRows, error: infoFetchErr } = await supabase
                 .from('task_info')
                 .select('*')
                 .eq('id', task.task_info_id)
-                    .single()
-            taskInfo = infoData
+                .limit(1)
+            if (infoFetchErr) throw infoFetchErr
+            taskInfo = infoRows?.[0] ?? null
         }
 
         // 检查任务是否已过期（从 task_info 获取）
@@ -1379,25 +1575,30 @@ export const claimTask = async (req: AuthRequest, res: Response) =>
         }
 
         // 验证用户是否属于该任务的社区
+        // 不用 maybeSingle()：若存在重复 membership 行，多行会触发 PostgREST coerce 错误
         if (taskInfo?.community_id) {
-            const { data: member } = await supabase
+            const { data: memberRows, error: memberErr } = await supabase
                 .from('community_members')
                 .select('user_id')
                 .eq('community_id', taskInfo.community_id)
                 .eq('user_id', user.id)
-                .maybeSingle()
-            
-            if (!member) {
+                .limit(1)
+
+            if (memberErr) throw memberErr
+            if (!memberRows?.length) {
                 return res.status(403).json({ success: false, message: '您不属于该任务的社区，无法领取' })
             }
         }
 
         // 获取用户信息
-        const { data: userData } = await supabase
+        const { data: userRows, error: userFetchErr } = await supabase
             .from('users')
             .select('id, name')
             .eq('id', user.id)
-            .single()
+            .limit(1)
+
+        if (userFetchErr) throw userFetchErr
+        const userData = userRows?.[0]
 
         const userName = userData?.name || '未知用户'
         const now = new Date().toISOString()
@@ -1405,8 +1606,117 @@ export const claimTask = async (req: AuthRequest, res: Response) =>
         // 确定要更新的任务行ID
         let taskIdToUpdate = id
 
-        // 如果是多人任务，需要查找一个未领取的任务行
-        if (taskInfo?.participant_limit && taskInfo.participant_limit > 1) {
+        const listingKind = (task as any).listing_kind as string | null | undefined
+        /** 本次请求是否在 taskpool_pool 分支里新写入了 task_info.manager_user_id（用于失败回滚） */
+        let poolClaimWroteManager = false
+
+        // 任务池商城「主入口」行：领取 = 绑定 Manager + 领取本行，与普通参与/子任务行分支隔离
+        if (listingKind === 'taskpool_pool') {
+            if (!taskInfo) {
+                return res.status(400).json({ success: false, message: '任务信息缺失' })
+            }
+            const ti = taskInfo as Record<string, unknown>
+            if (ti.use_taskpool !== true) {
+                return res.status(400).json({ success: false, message: '非任务池任务' })
+            }
+
+            const mgrId = ti.manager_user_id as string | null | undefined
+
+            // 已是 Manager：只允许补写池主行的 claimer（例如先管理页 claim-manager 再在商城点领取）
+            if (mgrId === user.id) {
+                if (task.claimer_id === user.id) {
+                    return res.status(409).json({ success: false, message: '您已领取该任务池入口' })
+                }
+                if (task.claimer_id) {
+                    return res.status(403).json({ success: false, message: '该任务池主入口已被领取' })
+                }
+                taskIdToUpdate = id
+            } else if (mgrId) {
+                return res.status(403).json({ success: false, message: '已有 Manager，不可重复认领' })
+            } else {
+                if (task.claimer_id) {
+                    if (task.claimer_id === user.id) {
+                        return res.status(409).json({ success: false, message: '您已领取该任务池入口' })
+                    }
+                    return res.status(403).json({ success: false, message: '该任务池主入口已被领取' })
+                }
+
+                const { data: mgrRows, error: mgrErr } = await supabase
+                    .from('task_info')
+                    .update({ manager_user_id: user.id })
+                    .eq('id', task.task_info_id)
+                    .is('manager_user_id', null)
+                    .select('id')
+                    .limit(1)
+
+                if (mgrErr) throw mgrErr
+                const mgrRow = mgrRows?.[0]
+                if (!mgrRow) {
+                    return res.status(409).json({ success: false, message: '认领冲突，请重试' })
+                }
+                poolClaimWroteManager = true
+                taskIdToUpdate = id
+            }
+        } else if (listingKind === 'taskpool_subtask' && (task as any).pool_subtask_id && task.task_info_id) {
+            // 子任务多人：人数取 task_subtasks.participant_limit，且领取仅在同 pool_subtask_id 组内分配，避免串单
+            const sid = (task as any).pool_subtask_id as string
+            let subParticipantLimit = 1
+            try {
+                const { data: sub } = await supabase
+                    .from('task_subtasks')
+                    .select('participant_limit')
+                    .eq('id', sid)
+                    .eq('task_info_id', task.task_info_id)
+                    .maybeSingle()
+                const pl = (sub as any)?.participant_limit
+                if (pl != null && !Number.isNaN(Number(pl)) && Number(pl) > 1) subParticipantLimit = Number(pl)
+            } catch (_) {}
+
+            if (subParticipantLimit > 1) {
+                // 先检查用户是否已经领取过这个子任务组中的任何一行
+                const { data: userClaimedTasks } = await supabase
+                    .from('tasks')
+                    .select('id')
+                    .eq('task_info_id', task.task_info_id)
+                    .eq('pool_subtask_id', sid)
+                    .eq('claimer_id', user.id)
+
+                if (userClaimedTasks && userClaimedTasks.length > 0) {
+                    return res.status(400).json({ success: false, message: '您已经领取过这个子任务' })
+                }
+
+                const { data: allTasks } = await supabase
+                    .from('tasks')
+                    .select('id, claimer_id')
+                    .eq('task_info_id', task.task_info_id)
+                    .eq('pool_subtask_id', sid)
+                    .order('participant_index', { ascending: true })
+
+                if (!allTasks || allTasks.length === 0) {
+                    return res.status(400).json({ success: false, message: '任务数据异常' })
+                }
+
+                const claimedCount = allTasks.filter(t => t.claimer_id).length
+                if (claimedCount >= subParticipantLimit) {
+                    return res.status(400).json({ success: false, message: '任务参与人数已满' })
+                }
+                const unclaimedTask = allTasks.find(t => !t.claimer_id)
+                if (!unclaimedTask) {
+                    return res.status(400).json({ success: false, message: '没有可用的任务位置' })
+                }
+                taskIdToUpdate = unclaimedTask.id
+            } else {
+                // 子任务单人：走普通单人门禁（下面会检查 task.claimer_id）
+                if (task.claimer_id) {
+                    if (task.claimer_id === user.id) {
+                        return res.status(400).json({ success: false, message: '您已经领取过这个任务' })
+                    } else {
+                        return res.status(400).json({ success: false, message: '该任务已被其他用户领取' })
+                    }
+                }
+            }
+        } else if (taskInfo?.participant_limit && taskInfo.participant_limit > 1) {
+            // 如果是多人任务，需要查找一个未领取的任务行
             // 首先检查用户是否已经领取过这个任务组中的任何一行
             const { data: userClaimedTasks } = await supabase
                 .from('tasks')
@@ -1468,7 +1778,16 @@ export const claimTask = async (req: AuthRequest, res: Response) =>
             .update(updateData)
             .eq('id', taskIdToUpdate)
 
-        if (updateError) throw updateError
+        if (updateError) {
+            if (listingKind === 'taskpool_pool' && poolClaimWroteManager) {
+                await supabase
+                    .from('task_info')
+                    .update({ manager_user_id: null })
+                    .eq('id', task.task_info_id)
+                    .eq('manager_user_id', user.id)
+            }
+            throw updateError
+        }
 
         // 更新状态和时间线（使用新的 updateTaskStatus 函数）
         await updateTaskStatus(
@@ -1476,18 +1795,19 @@ export const claimTask = async (req: AuthRequest, res: Response) =>
           'claimed', // 领取后状态为 claimed
           user.id, 
           userName, 
-          '领取任务'
+          listingKind === 'taskpool_pool' ? '认领任务池 Manager' : '领取任务'
         )
 
         // 写入通知：有人领取了我发布的任务（task 开关）
         try {
             const creatorId = taskInfo?.creator_id
             if (creatorId && creatorId !== user.id) {
-                const { data: settings } = await supabase
+                const { data: settingsRows } = await supabase
                     .from('user_notification_settings')
                     .select('task_enabled')
                     .eq('user_id', creatorId)
-                    .maybeSingle()
+                    .limit(1)
+                const settings = settingsRows?.[0]
                 const enabled = settings?.task_enabled !== false
                 if (enabled) {
                     const dedupeKey = `task_claim:${taskIdToUpdate}:${user.id}`
@@ -1505,12 +1825,242 @@ export const claimTask = async (req: AuthRequest, res: Response) =>
             }
         } catch (_) {}
 
-        res.json({ success: true, message: '任务领取成功！' })
+        const isPoolPrimaryClaim = listingKind === 'taskpool_pool'
+        res.json({
+            success: true,
+            message: isPoolPrimaryClaim ? '已认领任务池 Manager' : '任务领取成功！',
+            ...(isPoolPrimaryClaim ? { claimRole: 'taskpool_manager' as const } : {}),
+        })
     } catch (error: any)
     {
         console.error('Claim task error:', error)
+        if (error?.code === 'TASK_ROW_MISSING' || error?.name === 'TaskRowMissingError') {
+            return res.status(404).json({
+                success: false,
+                code: 'TASK_ROW_MISSING',
+                taskId: error.taskId ?? req.params.id,
+                message: error.message || '无匹配任务行',
+            })
+        }
         res.status(500).json({ success: false, message: error.message || '领取任务失败' })
     }
+}
+
+/**
+ * Step4：POST /api/tasks/:id/taskpool-claim-intent
+ * - 领取者请求后端生成 ClaimTask 的签名参数（默认走平台签名占位；未配置私钥则返回 501）
+ */
+export const getTaskpoolClaimIntent = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ error: '未授权' })
+    const taskId = String(req.params.id || '').trim()
+    if (!taskId) return res.status(400).json({ error: '缺少 taskId' })
+
+    const task = await getTaskFromDb(taskId)
+    const taskInfoId = (task as any).task_info_id as string | undefined
+    if (!taskInfoId) return res.status(400).json({ error: '缺少 task_info_id' })
+
+    const { data: taskInfo, error: infoErr } = await supabase
+      .from('task_info')
+      .select('id, use_taskpool, taskpool_phase, taskpool_create_tx_hash, taskpool_create_last_error')
+      .eq('id', taskInfoId)
+      .single()
+    if (infoErr) throw infoErr
+    if (!taskInfo) return res.status(404).json({ error: '任务信息不存在' })
+    if ((taskInfo as any).use_taskpool !== true) {
+      return res.status(400).json({ error: '非任务池任务' })
+    }
+    if (!(taskInfo as any).taskpool_create_tx_hash) {
+      const last = (taskInfo as any).taskpool_create_last_error as string | null | undefined
+      return res.status(409).json({
+        error: '任务池尚未上链建池完成，暂不可领取（请稍后刷新）',
+        code: 'TASKPOOL_POOL_NOT_CONFIRMED',
+        taskpool_phase: (taskInfo as any).taskpool_phase ?? null,
+        last_error: last || null,
+        hint:
+          '发布者需在「任务池管理」确认 Semi 预付已成功且链上已出现 PoolCreated；若预付记录有 tx_hash 但仍未建池，多为链上校验未通过（见 last_error）。',
+      })
+    }
+
+    // Semi 发 UserOp 时 msg.sender 为 Safe；EIP-712 claimer 必须与之一致（evm_chain_address）。EOA 仅作兜底。
+    const claimer = (user.evm_chain_address || user.evm_chain_active_key || '').trim()
+    if (!claimer || !isAddress(claimer)) {
+      return res.status(400).json({
+        error: '用户缺少有效链上领取地址（需 Semi 智能账户 evm_chain_address，与 claimTask 的 msg.sender 一致）',
+      })
+    }
+
+    const rewardNtHuman = String((task as any).reward || '0')
+    const intent = await buildTaskpoolClaimIntent({
+      taskInfoId,
+      taskRowId: taskId,
+      claimerAddress: claimer,
+      rewardNtHuman,
+    })
+    if (!intent.ok) return res.status(intent.status).json({ error: intent.error })
+    res.json({ intent })
+  } catch (e: any) {
+    console.error('[getTaskpoolClaimIntent]', e)
+    res.status(500).json({ error: e?.message || '生成 claim intent 失败' })
+  }
+}
+
+/**
+ * Step4：POST /api/tasks/:id/taskpool-claim-complete
+ * Semi 回跳后：验链 TaskClaimed，并将对应 tasks 行标记为 claimed（幂等）
+ */
+export const completeTaskpoolClaim = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ error: '未授权' })
+    const taskId = String(req.params.id || '').trim()
+    if (!taskId) return res.status(400).json({ error: '缺少 taskId' })
+
+    const body = req.body || {}
+    const state = typeof body.state === 'string' ? body.state.trim() : ''
+    const status = body.status
+    const txHash = typeof body.tx_hash === 'string' ? body.tx_hash.trim() : ''
+    if (state.length < 8) return res.status(400).json({ error: 'state 无效' })
+    if (status !== 'success' && status !== 'failed' && status !== 'cancelled') {
+      return res.status(400).json({ error: 'status 无效' })
+    }
+    if (status !== 'success') return res.json({ ok: true, skipped: true })
+    if (!txHash) return res.status(400).json({ error: '缺少 tx_hash' })
+
+    const task = await getTaskFromDb(taskId)
+    const taskInfoId = (task as any).task_info_id as string | undefined
+    if (!taskInfoId) return res.status(400).json({ error: '缺少 task_info_id' })
+
+    const claimer = (user.evm_chain_address || user.evm_chain_active_key || '').trim()
+    if (!claimer || !isAddress(claimer)) {
+      return res.status(400).json({
+        error: '用户缺少有效链上领取地址（需 Semi 智能账户 evm_chain_address，与 claimTask 的 msg.sender 一致）',
+      })
+    }
+
+    const { data: taskInfo, error: infoErr } = await supabase
+      .from('task_info')
+      .select('id, use_taskpool, taskpool_create_tx_hash')
+      .eq('id', taskInfoId)
+      .single()
+    if (infoErr) throw infoErr
+    if (!taskInfo || (taskInfo as any).use_taskpool !== true) {
+      return res.status(400).json({ error: '非任务池任务' })
+    }
+
+    // 幂等：若已领取，直接返回
+    if ((task as any).claimer_id) {
+      return res.json({ ok: true, alreadyClaimed: true })
+    }
+
+    const rewardNtHuman = String((task as any).reward || '0')
+    const { verifyTaskpoolTaskClaimedByTx } = await import('../services/taskpoolOnchainVerifyClaim')
+    const v = await verifyTaskpoolTaskClaimedByTx({
+      taskInfoId,
+      taskRowId: taskId,
+      txHash,
+      claimerAddress: claimer as `0x${string}`,
+      rewardNtHuman,
+    })
+    if (!v.ok) return res.status(409).json({ error: v.error })
+
+    const now = new Date().toISOString()
+    const { error: updErr } = await supabase
+      .from('tasks')
+      .update({ claimer_id: user.id, status: 'claimed', updated_at: now })
+      .eq('id', taskId)
+      .is('claimer_id', null)
+    if (updErr) throw updErr
+
+    const userName = user.name || '未知用户'
+    await appendStatusToTimeline(taskId, 'claimed', user.id, userName, '领取任务')
+
+    res.json({ ok: true })
+  } catch (e: any) {
+    console.error('[completeTaskpoolClaim]', e)
+    res.status(500).json({ error: e?.message || 'claim complete 失败' })
+  }
+}
+
+/**
+ * Step5：POST /api/tasks/:id/taskpool-approve-complete
+ * Semi 回跳后：验链 SubtaskApproved，并将 tasks 行标记为 completed（幂等）
+ */
+export const completeTaskpoolApprove = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ error: '未授权' })
+    const taskId = String(req.params.id || '').trim()
+    if (!taskId) return res.status(400).json({ error: '缺少 taskId' })
+
+    const body = req.body || {}
+    const state = typeof body.state === 'string' ? body.state.trim() : ''
+    const status = body.status
+    const txHash = typeof body.tx_hash === 'string' ? body.tx_hash.trim() : ''
+    const comments = typeof body.comments === 'string' ? body.comments.trim() : ''
+    if (state.length < 8) return res.status(400).json({ error: 'state 无效' })
+    if (status !== 'success' && status !== 'failed' && status !== 'cancelled') {
+      return res.status(400).json({ error: 'status 无效' })
+    }
+    if (status !== 'success') return res.json({ ok: true, skipped: true })
+    if (!txHash) return res.status(400).json({ error: '缺少 tx_hash' })
+
+    const task = await getTaskFromDb(taskId)
+    const taskInfoId = (task as any).task_info_id as string | undefined
+    if (!taskInfoId) return res.status(400).json({ error: '缺少 task_info_id' })
+
+    // 幂等：已完成直接返回
+    if ((task as any).status === 'completed') return res.json({ ok: true, alreadyCompleted: true })
+
+    const { data: taskInfo, error: infoErr } = await supabase
+      .from('task_info')
+      .select('id, creator_id, manager_user_id, use_taskpool, taskpool_create_tx_hash')
+      .eq('id', taskInfoId)
+      .single()
+    if (infoErr) throw infoErr
+    if (!taskInfo || (taskInfo as any).use_taskpool !== true) return res.status(400).json({ error: '非任务池任务' })
+
+    // 权限：沿用原逻辑（子任务仅 Manager；其它仅创建者）——这里 taskpool 普通任务应为 creator
+    const creatorId = (taskInfo as any).creator_id as string
+    const managerUserId = (taskInfo as any).manager_user_id as string | null
+    const listingKind = (task as any).listing_kind as string | null | undefined
+    const perm = checkTaskApproveRejectPermission(listingKind, taskInfo as any, user.id)
+    if (!perm.ok) return res.status(403).json({ error: perm.message })
+
+    const { verifyTaskpoolSubtaskApprovedByTx } = await import('../services/taskpoolOnchainVerifyApprove')
+    const v = await verifyTaskpoolSubtaskApprovedByTx({ taskInfoId, taskRowId: taskId, txHash })
+    if (!v.ok) return res.status(409).json({ error: v.error })
+
+    // 更新 tasks 状态为 completed
+    const now = new Date().toISOString()
+    const { error: updErr } = await supabase
+      .from('tasks')
+      .update({ status: 'completed', completed_at: now, updated_at: now })
+      .eq('id', taskId)
+    if (updErr) throw updErr
+
+    // 保存审核意见（复用 task_proofs.reject_reason 字段作为评论）
+    if (comments) {
+      await supabase.from('task_proofs').upsert(
+        {
+          task_id: taskId,
+          reject_reason: comments,
+          reject_option: null,
+          updated_at: now,
+        },
+        { onConflict: 'task_id' }
+      )
+    }
+
+    const userName = user.name || '未知用户'
+    await appendStatusToTimeline(taskId, 'completed', user.id, userName, '审核通过', comments || undefined)
+
+    res.json({ ok: true })
+  } catch (e: any) {
+    console.error('[completeTaskpoolApprove]', e)
+    res.status(500).json({ error: e?.message || 'approve complete 失败' })
+  }
 }
 
 // 提交任务凭证（适配新数据库结构）
@@ -1555,6 +2105,25 @@ export const submitProof = async (req: AuthRequest, res: Response) =>
             taskInfo = infoData
         }
 
+        // 子任务：proof_config 优先使用 task_subtasks.proof_config（无则继承 task_info）
+        // 仅影响校验；不改写 task_info
+        let effectiveProofConfig = taskInfo?.proof_config as any
+        try {
+            const listingKind = (task as any).listing_kind as string | null | undefined
+            const sid = (task as any).pool_subtask_id as string | null | undefined
+            if (listingKind === 'taskpool_subtask' && sid && task.task_info_id) {
+                const { data: sub } = await supabase
+                    .from('task_subtasks')
+                    .select('id, proof_config')
+                    .eq('id', sid)
+                    .eq('task_info_id', task.task_info_id)
+                    .maybeSingle()
+                if (sub && (sub as any).proof_config != null) {
+                    effectiveProofConfig = (sub as any).proof_config
+                }
+            }
+        } catch (_) {}
+
         // 解析 proof 数据（可能是字符串或者对象）
         let proofData: any
         if(typeof proof === 'string')
@@ -1572,7 +2141,7 @@ export const submitProof = async (req: AuthRequest, res: Response) =>
         }
         
         // 验证 GPS 数据（从 task_info 获取）
-        const proofConfig = taskInfo?.proof_config as any
+        const proofConfig = effectiveProofConfig as any
         if(proofConfig?.gps?.enabled)
         {
             if(!proofData.gps)
@@ -1741,7 +2310,7 @@ export const approveTask = async (req: AuthRequest, res: Response) =>
             taskInfo = infoData
         }
 
-        // 权限检查：只有创建者可以审核（从 task_info 检查）
+        // 权限检查（阶段 7）：子任务仅 Manager；其它仅创建者
         if (!taskInfo || !taskInfo.creator_id)
         {
             return res.status(403).json
@@ -1750,13 +2319,13 @@ export const approveTask = async (req: AuthRequest, res: Response) =>
                 message: '该任务没有创建者，无法审核'
             })
         }
-        if (taskInfo.creator_id !== user.id)
-        {
-            return res.status(403).json
-            ({
-                success: false,
-                message: '您不是任务创建者，无权审核此任务'
-            })
+        const perm = checkTaskApproveRejectPermission(
+          (task as any).listing_kind,
+          taskInfo,
+          user.id
+        )
+        if (!perm.ok) {
+            return res.status(403).json({ success: false, message: perm.message })
         }
 
         // 已审核通过的任务：幂等返回，不再重复写入时间线，避免多次点击出现多条「审核通过」进度
@@ -2020,7 +2589,7 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
             })
         }
 
-        // 权限检查：只有创建者可以审核（从 task_info 检查）
+        // 权限检查（阶段 7）：子任务仅 Manager；其它仅创建者
         if (!taskInfo || !taskInfo.creator_id)
         {
             return res.status(403).json
@@ -2029,13 +2598,13 @@ export const rejectTask = async (req: AuthRequest, res: Response) =>
                 message: '该任务没有创建者，无法审核'
             })
         }
-        if (taskInfo.creator_id !== user.id)
-        {
-            return res.status(403).json
-            ({
-                success: false,
-                message: '您不是任务创建者，无权审核此任务'
-            })
+        const perm = checkTaskApproveRejectPermission(
+          (task as any).listing_kind,
+          taskInfo,
+          user.id
+        )
+        if (!perm.ok) {
+            return res.status(403).json({ success: false, message: perm.message })
         }
 
         // 仅驳回传入的单个任务行 id（多人任务中只驳回当前选中的参与者，不牵连同任务其他参与者）
@@ -2447,7 +3016,7 @@ export const withdrawTask = async (req: AuthRequest, res: Response) => {
     const taskInfoId = (taskRow as any).task_info_id as string
     const { data: taskInfo, error: infoError } = await supabase
       .from('task_info')
-      .select('id, title, description, start_date, deadline, submit_deadline, participant_limit, reward_distribution_mode, proof_config, submission_instructions, creator_id, assigned_user_id, community_id')
+      .select('id, title, description, start_date, deadline, submit_deadline, participant_limit, reward_distribution_mode, proof_config, submission_instructions, creator_id, assigned_user_id, community_id, use_taskpool, manager_user_id, taskpool_create_tx_hash, subtasks_finalized')
       .eq('id', taskInfoId)
       .single()
 
@@ -2468,6 +3037,19 @@ export const withdrawTask = async (req: AuthRequest, res: Response) => {
     if (claimedError) throw claimedError
     if ((claimedCount || 0) > 0) {
       return res.status(400).json({ error: '已有用户领取过该任务，无法撤回' })
+    }
+
+    // 任务池：与 pool-draft/withdrawTaskPool 保持一致的“早期门禁”
+    if ((taskInfo as any).use_taskpool === true) {
+      if ((taskInfo as any).manager_user_id != null) {
+        return res.status(400).json({ error: '任务池已被认领 Manager，无法撤回' })
+      }
+      if ((taskInfo as any).taskpool_create_tx_hash) {
+        return res.status(400).json({ error: '已发起链上建池，无法撤回' })
+      }
+      if ((taskInfo as any).subtasks_finalized === true) {
+        return res.status(400).json({ error: '子任务已定稿，无法撤回任务池' })
+      }
     }
 
     // 取一条任务行的 reward/currency 作为“每人积分”的草稿值
@@ -2543,7 +3125,7 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
     const taskInfoId = (taskRow as any).task_info_id as string
     const { data: taskInfo, error: infoError } = await supabase
       .from('task_info')
-      .select('id, creator_id')
+      .select('id, creator_id, use_taskpool, manager_user_id, taskpool_create_tx_hash, subtasks_finalized')
       .eq('id', taskInfoId)
       .single()
 
@@ -2563,6 +3145,19 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
     if (claimedError) throw claimedError
     if ((claimedCount || 0) > 0) {
       return res.status(400).json({ error: '已有用户领取过该任务，无法删除' })
+    }
+
+    // 任务池：与 pool-draft/withdrawTaskPool 保持一致的“早期门禁”
+    if ((taskInfo as any).use_taskpool === true) {
+      if ((taskInfo as any).manager_user_id != null) {
+        return res.status(400).json({ error: '任务池已被认领 Manager，无法删除' })
+      }
+      if ((taskInfo as any).taskpool_create_tx_hash) {
+        return res.status(400).json({ error: '已发起链上建池，无法删除' })
+      }
+      if ((taskInfo as any).subtasks_finalized === true) {
+        return res.status(400).json({ error: '子任务已定稿，无法删除任务池' })
+      }
     }
 
     const { error: deleteError } = await supabase

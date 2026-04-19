@@ -227,7 +227,7 @@ const history = ref<any[]>([])
 const communities = ref<any[]>([])
 const claimedTasks = ref<Task[]>([])
 const loadingTasks = ref(false)
-const taskRewardSymbols = ref<Record<number, string>>({}) // 存储每个任务对应的积分符号
+const taskRewardSymbols = ref<Record<string, string>>({}) // 存储每个任务对应的积分符号
 
 const navigateTo = (path: string) => {
   router.push(path)
@@ -307,13 +307,16 @@ const loadUserCommunity = async () => {
     const allCommunities = await getCommunities()
     
     // 找到用户所属的第一个社区
-    const community = allCommunities.find(c => member.communities.includes(c.id))
-    
+    const community = allCommunities.find((c) =>
+      member.communities.some((mid) => String(mid) === String(c.id))
+    )
+
     if (community) {
       userCommunity.value = community
-      
+
       // 从 API 获取真实的社区积分（使用 memberId）
-      const points = await getUserCommunityPoints(memberId, community.id)
+      const cid = Number(community.id)
+      const points = await getUserCommunityPoints(memberId, Number.isFinite(cid) ? cid : 0)
       userCommunityPoints.value = points
     }
   } catch (error) {
@@ -337,8 +340,12 @@ const loadClaimedTasks = async () => {
         return 1
       }
       // 对于相同优先级（都是已完成或都不是已完成），按更新时间倒序
-      const timeA = new Date(b.updatedAt || b.completedAt || b.submittedAt || b.claimedAt || b.createdAt).getTime()
-      const timeB = new Date(a.updatedAt || a.completedAt || a.submittedAt || a.claimedAt || a.createdAt).getTime()
+      const timeA = new Date(
+        b.updatedAt || b.completedAt || b.submittedAt || b.claimedAt || b.createdAt || 0
+      ).getTime()
+      const timeB = new Date(
+        a.updatedAt || a.completedAt || a.submittedAt || a.claimedAt || a.createdAt || 0
+      ).getTime()
       return timeA - timeB
     })
     
@@ -409,10 +416,12 @@ const formatTaskDate = (task: Task): string => {
     dateStr = task.claimedAt
     action = '领取于'
   } else {
-    dateStr = task.createdAt
+    dateStr = task.createdAt || ''
     action = '创建于'
   }
-  
+
+  if (!dateStr) return '—'
+
   const date = new Date(dateStr)
   const now = new Date()
   const diff = now.getTime() - date.getTime()

@@ -222,56 +222,86 @@
               </PixelButton>
             </div>
             
-            <!-- 审核成功后的转账按钮 -->
+            <!-- 审核通过后：任务池走链上结算；普通任务可走 Semi P2P + 标记 -->
             <div v-if="canReview && currentSubmission && currentSubmission.status === 'completed'" class="pt-6 border-t border-border">
-              <div class="bg-success/20 border border-success shadow-soft p-4 mb-4">
-                <p class=" text-base text-black mb-2">
-                  <span class="font-bold text-xs">✅</span> 审核已通过！
-                </p>
-                <p class=" text-sm text-black/70 mb-2">
-                  奖励金额：{{ transferData?.reward || 0 }} {{ taskRewardSymbol }}
-                </p>
-                <!-- 转账状态显示 -->
-                <p v-if="(currentSubmission as any).transferredAt" class=" text-sm text-primary">
-                  <span class="font-bold text-xs">✓</span> 已转账（{{ formatBeijingTime((currentSubmission as any).transferredAt) }}）
-                </p>
-                <p v-else class=" text-sm text-warning">
-                  <span class="font-bold text-xs">⚠</span> 待转账
-                </p>
-              </div>
-              <!-- 如果未转账，显示转账按钮和标记按钮 -->
-              <template v-if="!(currentSubmission as any).transferredAt">
+              <!-- TaskPool：资金在合约 lockedBalance，勿用本页 P2P 转账 -->
+              <div v-if="isTaskpoolTask" class="space-y-4">
+                <div class="bg-success/20 border border-success shadow-soft p-4">
+                  <p class="text-base text-black mb-2">
+                    <span class="font-bold text-xs">✅</span> 审核已通过（链下记录已更新）
+                  </p>
+                  <p class="text-sm text-black/70 mb-2">
+                    对应子任务奖励（约）：{{ transferData?.reward || 0 }} {{ taskRewardSymbol }}（以链上 TaskPool 为准）
+                  </p>
+                  <p class="text-sm text-black/80 leading-relaxed">
+                    任务池任务的 NT 已在合约内锁定，<strong>请勿</strong>使用「Semi 钱包间转账」发奖。请前往
+                    <strong>任务池管理</strong>按顺序完成：整单提交/审核 → 链上<strong>终审（公示）</strong> →
+                    <strong>结算（distribute）</strong>。
+                  </p>
+                  <p class="text-xs text-black/50 mt-3">
+                    说明：「标记已转账 / transferred_at」仅用于<strong>非任务池</strong>链下打款记录；任务池以链上结算为准。
+                  </p>
+                </div>
                 <PixelButton
-                  @click="handleTransferToSemi"
+                  v-if="task.taskInfoId"
                   variant="primary"
                   size="lg"
                   :block="true"
-                  :disabled="isTransferring"
-                  class="mb-3"
+                  @click="goToTaskpoolManage"
                 >
-                  {{ isTransferring ? '处理中...' : '跳转到Semi转账' }}
+                  前往任务池管理（终审与结算）
                 </PixelButton>
+                <p v-else class="text-sm text-warning">缺少 taskInfoId，无法跳转管理页，请从任务详情重新进入。</p>
+              </div>
+
+              <!-- 普通任务：Semi P2P + 可选标记 -->
+              <template v-else>
+                <div class="bg-success/20 border border-success shadow-soft p-4 mb-4">
+                  <p class=" text-base text-black mb-2">
+                    <span class="font-bold text-xs">✅</span> 审核已通过！
+                  </p>
+                  <p class=" text-sm text-black/70 mb-2">
+                    奖励金额：{{ transferData?.reward || 0 }} {{ taskRewardSymbol }}
+                  </p>
+                  <p v-if="(currentSubmission as any).transferredAt" class=" text-sm text-primary">
+                    <span class="font-bold text-xs">✓</span> 已转账（{{ formatBeijingTime((currentSubmission as any).transferredAt) }}）
+                  </p>
+                  <p v-else class=" text-sm text-warning">
+                    <span class="font-bold text-xs">⚠</span> 待转账
+                  </p>
+                </div>
+                <template v-if="!(currentSubmission as any).transferredAt">
+                  <PixelButton
+                    @click="handleTransferToSemi"
+                    variant="primary"
+                    size="lg"
+                    :block="true"
+                    :disabled="isTransferring"
+                    class="mb-3"
+                  >
+                    {{ isTransferring ? '处理中...' : '跳转到Semi转账' }}
+                  </PixelButton>
+                  <PixelButton
+                    @click="handleMarkTransferCompleted"
+                    variant="secondary"
+                    size="lg"
+                    :block="true"
+                    :disabled="isMarkingTransfer"
+                  >
+                    {{ isMarkingTransfer ? '标记中...' : '标记为已转账' }}
+                  </PixelButton>
+                </template>
                 <PixelButton
-                  @click="handleMarkTransferCompleted"
-                  variant="secondary"
+                  v-else
+                  @click="handleUnmarkTransfer"
+                  variant="success"
                   size="lg"
                   :block="true"
                   :disabled="isMarkingTransfer"
                 >
-                  {{ isMarkingTransfer ? '标记中...' : '标记为已转账' }}
+                  {{ isMarkingTransfer ? '处理中...' : '已完成转账' }}
                 </PixelButton>
               </template>
-              <!-- 如果已转账，显示已完成转账按钮（可点击取消标记） -->
-              <PixelButton
-                v-else
-                @click="handleUnmarkTransfer"
-                variant="success"
-                size="lg"
-                :block="true"
-                :disabled="isMarkingTransfer"
-              >
-                {{ isMarkingTransfer ? '处理中...' : '已完成转账' }}
-              </PixelButton>
             </div>
             
             <!-- 只读模式返回按钮 -->
@@ -433,6 +463,12 @@ import { getTaskRewardSymbol } from '~/utils/display'
 import type { Task } from '~/utils/api'
 import { formatBeijingTime, parseBeijingTime } from '~/utils/time'
 import { watch } from 'vue'
+import {
+  buildSemiTaskpoolApproveUrl,
+  SEMI_TASKPOOL_PREPAY_STATE_KEY,
+  taskpoolManagePath,
+} from '~/utils/semiTaskpoolPrepay'
+import { uuidToTaskPoolUint256 } from '~/utils/taskpool'
 
 
 // 获取路由参数
@@ -473,6 +509,9 @@ const isMarkingTransfer = ref(false)
 // 任务数据
 const task = ref<{
   id: string
+  taskInfoId?: string
+  /** 任务池任务：奖励在合约内结算，不使用本页 Semi P2P 转账 */
+  useTaskpool?: boolean
   title: string
   description: string
   reward: number
@@ -502,13 +541,11 @@ const task = ref<{
   participantsList: []
 })
 
+const isTaskpoolTask = computed(() => task.value.useTaskpool === true)
+
 // 权限检查：判断当前用户是否是任务创建者
 const canReview = computed(() => {
-  const result = userStore.user?.id === task.value.creatorId
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/12fcd2f2-6fd8-4340-8068-b1f6eb08d647',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'review.vue:455',message:'canReview computed',data:{userId:userStore.user?.id,creatorId:task.value.creatorId,result,currentSubmissionStatus:currentSubmission.value?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
-  return result
+  return userStore.user?.id === task.value.creatorId
 })
 
 // 所有参与者的提交数据（多人任务）
@@ -536,6 +573,7 @@ const allSubmissions = ref<Array<{
   status: string
   reward?: number
   transferredAt?: string
+  receiverRemark?: string
 }>>([])
 
 // 当前选中的提交（用于审核）
@@ -764,6 +802,8 @@ const loadTask = async () => {
       id: taskData.id,
       // scheme A: task_info_id 作为 pool_uuid（semi 侧派生 uint256 poolId）
       taskInfoId: (taskData as any).taskInfoId || (taskData as any).taskInfo?.id,
+      useTaskpool:
+        (taskData as any).useTaskpool === true || (taskData as any).use_taskpool === true,
       title: taskData.title,
       description: taskData.description,
       reward: taskData.reward,
@@ -1015,9 +1055,6 @@ const loadTask = async () => {
 // 提交审核
 const submitReview = async () => {
   if (isSubmitting.value) return
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/12fcd2f2-6fd8-4340-8068-b1f6eb08d647',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'review.vue:917',message:'submitReview called',data:{canSubmit:canSubmit.value,decision:reviewResult.value.decision,canReview:canReview.value},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
 
   if (!canSubmit.value) return
   
@@ -1034,22 +1071,51 @@ const submitReview = async () => {
     const baseUrl = getApiBaseUrl()
     // 使用当前选中提交的任务ID
     const targetTaskId = currentSubmission.value?.taskId || taskId
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/12fcd2f2-6fd8-4340-8068-b1f6eb08d647',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'review.vue:933',message:'Before approveTask call',data:{targetTaskId,baseUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
+
+    // TaskPool 普通任务：先走链上 approveSubtask，再回跳由后端确权并落库 completed
+    if ((task.value as any)?.useTaskpool) {
+      const config = useRuntimeConfig()
+      const semiAppUrl = String((config.public as any).semiAppUrl || '')
+      const chainId = Number((config.public as any).chainId ?? 10)
+      const proxy = String((config.public as any).taskpoolProxyAddress || '')
+      if (!semiAppUrl) throw new Error('未配置 NUXT_PUBLIC_SEMI_APP_URL')
+      if (!proxy) throw new Error('未配置 NUXT_PUBLIC_TASKPOOL_PROXY_ADDRESS')
+      const state =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      try {
+        sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+      } catch {}
+
+      const poolId = uuidToTaskPoolUint256((task.value as any).taskInfoId || '').toString()
+      const onchainTaskId = uuidToTaskPoolUint256(targetTaskId).toString()
+      const infoId = String((task.value as any)?.taskInfoId || '')
+      const returnUrl = `${window.location.origin}/wallet/semi-approve-callback?taskId=${encodeURIComponent(
+        targetTaskId
+      )}&comments=${encodeURIComponent(reviewResult.value.comments || '')}${
+        infoId ? `&taskInfoId=${encodeURIComponent(infoId)}` : ''
+      }`
+      const url = buildSemiTaskpoolApproveUrl({
+        semiAppBaseUrl: semiAppUrl,
+        returnUrl,
+        state,
+        chainId,
+        taskpoolProxyAddress: proxy,
+        poolId,
+        taskId: onchainTaskId,
+      })
+      const w = window.open('about:blank', '_blank')
+      if (!w) throw new Error('浏览器阻止了弹窗，请允许弹窗后重试')
+      try {
+        w.document.title = '正在跳转…'
+      } catch {}
+      w.location.href = url
+      toast.add({ title: '已打开 Semi', description: '请在 Semi 完成链上审核通过', color: 'green' })
+      return
+    }
     
     const result = await approveTask(targetTaskId, baseUrl, reviewResult.value.comments)
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/12fcd2f2-6fd8-4340-8068-b1f6eb08d647',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'review.vue:936',message:'After approveTask call',data:{success:result.success,hasData:!!result.data,data:result.data,message:result.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
-    // 添加调试日志
-    console.log('=== 审核结果 ===')
-    console.log('result:', JSON.stringify(result, null, 2))
-    console.log('result.data:', result.data)
-    console.log('result.success:', result.success)
     
     if (result.success) {
       // 更新当前提交的状态，watch会自动更新转账数据
@@ -1178,6 +1244,15 @@ const confirmReject = async () => {
   } finally {
     isSubmitting.value = false
   }
+}
+
+function goToTaskpoolManage() {
+  const id = String(task.value.taskInfoId || '').trim()
+  if (!id) {
+    toast.add({ title: '无法跳转', description: '缺少任务池 ID', color: 'orange' })
+    return
+  }
+  router.push(`${taskpoolManagePath(id)}#taskpool-settlement-steps`)
 }
 
 // 跳转到Semi转账页面
@@ -1364,8 +1439,8 @@ const handleMarkTransferCompleted = async () => {
         color: 'green'
       })
       
-      // 自动跳转到任务详情页面，页面会自动刷新显示已转账状态
-      router.push(`/tasks/${targetTaskId}?reviewed=true`)
+      // 自动跳转到任务详情页面，并弹出“分享到社区圈”
+      router.push(`/tasks/${targetTaskId}?reviewed=true&share=reviewer`)
     } else {
       console.error('❌ 标记失败:', result.message)
       toast.add({
@@ -1450,17 +1525,9 @@ const navigateTo = (path: string) => {
 
 // 组件挂载时加载任务数据
 onMounted(async () => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/12fcd2f2-6fd8-4340-8068-b1f6eb08d647',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'review.vue:1197',message:'Component mounted',data:{currentSubmissionStatus:currentSubmission.value?.status,transferData:transferData.value},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-  // #endregion
-  
   // 确保用户信息已加载
   await userStore.getUser()
   await loadTask()
-  
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/12fcd2f2-6fd8-4340-8068-b1f6eb08d647',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'review.vue:1205',message:'After loadTask',data:{currentSubmissionStatus:currentSubmission.value?.status,transferData:transferData.value,taskCreatorId:task.value.creatorId,userId:userStore.user?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-  // #endregion
 })
 </script>
 

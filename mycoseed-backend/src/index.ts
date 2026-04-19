@@ -5,6 +5,7 @@ import './config/env'
 import express from 'express'
 import cors from 'cors'
 import tasksRouter from './routes/tasks'
+import taskInfoRouter from './routes/taskInfo'
 import authRouter from './routes/auth'
 import uploadRouter from './routes/upload'
 import diagnosticsRouter from './routes/diagnostics'
@@ -72,6 +73,7 @@ app.get('/api/upload/test', (req, res) => {
 
 // 路由（上传已在上面挂载）
 app.use('/api/tasks', tasksRouter)
+app.use('/api/task-info', taskInfoRouter)
 app.use('/api/auth', authRouter)
 app.use('/api/diagnostics', diagnosticsRouter)  // 诊断路由（开发用）
 app.use('/api/communities', communitiesRouter)  // 社区 CRUD、成员、公告、动态

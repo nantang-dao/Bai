@@ -11,3 +11,9 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
+
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_ANON_KEY) {
+  console.warn(
+    '[supabase] 未设置 SUPABASE_SERVICE_ROLE_KEY，当前使用 ANON_KEY。服务端部分查询若受 RLS 限制，可能出现「无匹配 tasks 行」；本地/脚本建议配置 SERVICE ROLE。'
+  )
+}

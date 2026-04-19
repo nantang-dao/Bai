@@ -34,24 +34,27 @@ export const authenticate = async (req:AuthRequest,res:Response,next:NextFunctio
         const token = authHeader.split(' ')[1]
 
         // 查找 token
-        const {data:authToken, error: tokenError} = await supabase
+        const { data: tokenRows, error: tokenError } = await supabase
             .from('auth_tokens')
             .select('user_id')
-            .eq('token',token)
-            .eq('disabled',false)
-            .single()
-        
-        if(tokenError || !authToken)
-        {
-            return res.status(401).json({result:'error',message:'Invalid token'})
+            .eq('token', token)
+            .eq('disabled', false)
+            .limit(1)
+
+        const authToken = tokenRows?.[0]
+
+        if (tokenError || !authToken) {
+            return res.status(401).json({ result: 'error', message: 'Invalid token' })
         }
 
-        // 根据 user_id 查询用户信息
-        const {data:user, error:userError} = await supabase
+        // 根据 user_id 查询用户信息（避免 .single() 在重复行时 PostgREST coerce）
+        const { data: userRows, error: userError } = await supabase
             .from('users')
             .select('*')
-            .eq('id',authToken.user_id)
-            .single()
+            .eq('id', authToken.user_id)
+            .limit(1)
+
+        const user = userRows?.[0]
         
         if(userError || !user)
         {
@@ -74,18 +77,20 @@ export const optionalAuthenticate = async (req: AuthRequest, res: Response, next
         const authHeader = req.headers.authorization
         if (!authHeader || !authHeader.startsWith('Bearer ')) return next()
         const token = authHeader.split(' ')[1]
-        const { data: authToken, error: tokenError } = await supabase
+        const { data: tokenRows, error: tokenError } = await supabase
             .from('auth_tokens')
             .select('user_id')
             .eq('token', token)
             .eq('disabled', false)
-            .single()
+            .limit(1)
+        const authToken = tokenRows?.[0]
         if (tokenError || !authToken) return next()
-        const { data: user, error: userError } = await supabase
+        const { data: userRows, error: userError } = await supabase
             .from('users')
             .select('*')
             .eq('id', authToken.user_id)
-            .single()
+            .limit(1)
+        const user = userRows?.[0]
         if (userError || !user) return next()
         req.user = user as User
         next()
