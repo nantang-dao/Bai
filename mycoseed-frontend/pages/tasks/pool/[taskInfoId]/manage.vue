@@ -306,8 +306,8 @@
       <PixelCard v-if="taskMeta?.useTaskpool" id="taskpool-settlement-steps" class="mb-6 scroll-mt-24">
         <h2 class="font-bold text-text-title mb-2">链上终审与结算（Semi）</h2>
         <p class="text-xs text-text-placeholder mb-3">
-          先由发布者在 Semi 完成<strong>终审</strong>，合约进入约 <strong>24 小时公示</strong>；公示结束后再点<strong>结算</strong>完成 NT 发放与多余退款。
-          若在公示期内点结算，链上通常会失败，属正常限制，请稍后再试。
+          先由发布者在 Semi 完成<strong>终审</strong>，合约进入约 <strong>24 小时公示</strong>；公示结束后由<strong>领取者在任务详情页</strong>优先发起<strong>结算</strong>（同一套 Semi TaskPool 路径）。
+          此处「备用结算」仅作补位。若在公示期内点结算，链上通常会失败，属正常限制。
         </p>
         <div class="flex flex-wrap items-center gap-2">
           <PixelButton
@@ -324,7 +324,7 @@
             :disabled="!canDistributeOnchain || distributeOpening"
             @click="onDistributeOnchain"
           >
-            {{ distributeOpening ? '打开 Semi…' : '结算（链上发放）' }}
+            {{ distributeOpening ? '打开 Semi…' : '备用：结算（链上发放）' }}
           </PixelButton>
           <span v-if="finalApproveDisabledHint" class="text-xs text-text-placeholder">
             {{ finalApproveDisabledHint }}
@@ -737,7 +737,7 @@ const distributeDisabledHint = computed(() => {
   if (canDistributeOnchain.value) return ''
   if (!me.value?.id) return '请先登录'
   if (taskMeta.value.creatorId && me.value.id !== taskMeta.value.creatorId) {
-    return '仅发布者可在本页发起结算（合约允许他人代调，此处为防误操作）'
+    return '仅发布者可在本页使用备用结算；领取者优先在任务详情页发起'
   }
   if (!taskMeta.value.taskpoolCreateTxHash) return '需先完成链上建池'
   if (taskMeta.value.taskpoolPhase === 'closed') return '本任务池已结算关闭'

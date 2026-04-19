@@ -217,6 +217,56 @@
           </div>
         </PixelCard>
 
+        <!-- TaskPool：公示结束后由领取者在 Semi 发起 distribute（主路径；管理页为备用） -->
+        <PixelCard v-if="showClaimerTaskpoolSettlementCard" class="mb-4">
+          <template #header>
+            链上收款（领取者）
+          </template>
+          <div class="space-y-3 text-sm text-text-body">
+            <p class="text-xs text-text-placeholder">
+              奖励由合约内锁定余额结算，请使用下方按钮跳转 <strong>Semi</strong> 完成
+              <code class="text-xs">distribute</code>；与「钱包间转账」页面无关。
+            </p>
+            <p v-if="poolReadLoading" class="text-text-placeholder">读取链上池子状态…</p>
+            <p v-else-if="poolReadError" class="text-destructive">{{ poolReadError }}</p>
+            <template v-else-if="poolOnchainRow">
+              <div v-if="poolOnchainRow.settled" class="text-success font-medium">
+                链上已结算关闭，NT 已按合约规则发放（以区块浏览器为准）。
+              </div>
+              <div v-else-if="!publicizeStartedOnchain" class="text-text-body">
+                等待发布方完成链上<strong>终审（开启公示）</strong>后，此处会显示公示倒计时；终审前无法结算。
+              </div>
+              <div v-else-if="publicizeRemainingSec > 0" class="space-y-1">
+                <p>
+                  公示进行中（链上约 24 小时）。剩余约
+                  <span class="font-mono font-semibold text-text-title">{{ formatDurationCn(publicizeRemainingSec) }}</span>
+                </p>
+                <p class="text-xs text-text-placeholder">公示结束前在 Semi 发起结算通常会失败，属正常。</p>
+              </div>
+              <div v-else class="space-y-2">
+                <p class="text-text-title font-medium">已到链上可结算时间，请领取者本人在 Semi 确认交易。</p>
+                <PixelButton
+                  variant="primary"
+                  size="lg"
+                  :block="true"
+                  :disabled="claimerDistributeOpening || !canClaimerOpenSemiDistribute"
+                  @click="onClaimerSemiDistribute"
+                >
+                  {{ claimerDistributeOpening ? '正在打开 Semi…' : '打开 Semi 收款（链上结算）' }}
+                </PixelButton>
+              </div>
+            </template>
+            <PixelButton
+              variant="secondary"
+              size="sm"
+              :disabled="poolReadLoading"
+              @click="refreshTaskpoolPoolOnchain"
+            >
+              刷新链上状态
+            </PixelButton>
+          </div>
+        </PixelCard>
+
         <!-- 多人任务：参与者切换栏（所有人可见，可查看并切换各参与者的提交内容） -->
         <PixelCard 
           v-if="task.participantLimit && task.participantLimit > 1 && task.participantsList && task.participantsList.length > 0"
@@ -655,7 +705,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, watch } from 'vue'
+import { nextTick, onUnmounted, watch } from 'vue'
 import {
   getTaskById,
   claimTask,
@@ -665,6 +715,7 @@ import {
   buildSemiTransferUrl,
   getWalletAddressByUserId,
   getTaskpoolClaimIntent,
+  generateRandomState,
 } from '~/utils/api'
 import ShareToCommunityModal from '~/components/tasks/ShareToCommunityModal.vue'
 import { useToast } from '~/composables/useToast'
@@ -676,9 +727,13 @@ import { parseBeijingTime, getCurrentBeijingDate, formatBeijingTime } from '~/ut
 import { withdrawTask, deleteTask, withdrawTaskPool } from '~/utils/api'
 import {
   buildSemiTaskpoolClaimUrl,
+  buildSemiTaskpoolDistributeUrl,
   SEMI_TASKPOOL_PREPAY_STATE_KEY,
   optimismTxExplorerUrl,
 } from '~/utils/semiTaskpoolPrepay'
+import { uuidToTaskPoolUint256 } from '~/utils/taskpool'
+import { useTaskpoolPoolOnchain } from '~/composables/useTaskpoolPoolOnchain'
+import type { TaskpoolPoolRow } from '~/composables/useTaskpoolPoolOnchain'
 
 // 获取路由参数
 const route = useRoute()
@@ -830,6 +885,166 @@ const canCreatorDeleteEffective = computed(() => {
 // 权限检查：判断当前用户是否是任务领取者
 const isClaimer = computed(() => {
   return userStore.user?.id === task.value.claimerId
+})
+
+/** TaskPool：领取者在详情页发起 Semi distribute（主路径） */
+const runtimeConfig = useRuntimeConfig()
+const taskpoolPoolReader = useTaskpoolPoolOnchain()
+const poolOnchainRow = ref<TaskpoolPoolRow | null>(null)
+const poolReadLoading = ref(false)
+const poolReadError = ref('')
+const claimerDistributeOpening = ref(false)
+/** 仅用于公示倒计时每秒刷新 */
+const poolUiTick = ref(0)
+const poolPollTimerRef = ref<ReturnType<typeof setInterval> | null>(null)
+const tickTimerRef = ref<ReturnType<typeof setInterval> | null>(null)
+
+const showClaimerTaskpoolSettlementCard = computed(() => {
+  if (!task.value?.useTaskpool) return false
+  if (!task.value?.taskInfoId || !task.value?.taskpoolCreateTxHash) return false
+  if (!isClaimer.value) return false
+  if (task.value.taskpoolPhase === 'closed') return false
+  return true
+})
+
+const publicizeStartedOnchain = computed(() => {
+  const p = poolOnchainRow.value
+  if (!p) return false
+  return taskpoolPoolReader.isPublicizeStarted(p)
+})
+
+const publicizeRemainingSec = computed(() => {
+  poolUiTick.value
+  const p = poolOnchainRow.value
+  if (!p || !taskpoolPoolReader.isPublicizeStarted(p)) return 0
+  const now = BigInt(Math.floor(Date.now() / 1000))
+  if (now >= p.publicizeEndsAt) return 0
+  return Number(p.publicizeEndsAt - now)
+})
+
+const canClaimerOpenSemiDistribute = computed(() => {
+  poolUiTick.value
+  const p = poolOnchainRow.value
+  if (!p) return false
+  const now = BigInt(Math.floor(Date.now() / 1000))
+  return taskpoolPoolReader.canAttemptDistribute(p, now)
+})
+
+function formatDurationCn(totalSec: number): string {
+  if (totalSec <= 0) return '0 秒'
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  const parts: string[] = []
+  if (h > 0) parts.push(`${h} 小时`)
+  if (m > 0) parts.push(`${m} 分`)
+  if (s > 0 || parts.length === 0) parts.push(`${s} 秒`)
+  return parts.join('')
+}
+
+async function refreshTaskpoolPoolOnchain() {
+  const tid = task.value?.taskInfoId
+  if (!tid || !import.meta.client) return
+  poolReadLoading.value = true
+  poolReadError.value = ''
+  try {
+    const row = await taskpoolPoolReader.readPoolByTaskInfoId(tid)
+    poolOnchainRow.value = row
+    if (row && !row.exists) {
+      poolReadError.value = '链上未找到该池子（请确认已完成建池）'
+    }
+  } catch (e) {
+    poolReadError.value = e instanceof Error ? e.message : String(e)
+    poolOnchainRow.value = null
+  } finally {
+    poolReadLoading.value = false
+  }
+}
+
+async function onClaimerSemiDistribute() {
+  const id = task.value?.taskInfoId
+  if (!id || claimerDistributeOpening.value) return
+  if (!canClaimerOpenSemiDistribute.value) return
+  const semiAppUrl = String((runtimeConfig.public as Record<string, unknown>).semiAppUrl || '')
+  const chainId = Number((runtimeConfig.public as Record<string, unknown>).chainId ?? 10)
+  const proxy = String((runtimeConfig.public as Record<string, unknown>).taskpoolProxyAddress || '')
+  if (!semiAppUrl) {
+    toast.add({ title: '缺少配置', description: '未配置 NUXT_PUBLIC_SEMI_APP_URL', color: 'red' })
+    return
+  }
+  if (!proxy) {
+    toast.add({ title: '缺少配置', description: '未配置 NUXT_PUBLIC_TASKPOOL_PROXY_ADDRESS', color: 'red' })
+    return
+  }
+  claimerDistributeOpening.value = true
+  try {
+    const state = generateRandomState()
+    try {
+      sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+    } catch {
+      /* ignore */
+    }
+    const poolId = uuidToTaskPoolUint256(id).toString()
+    const returnUrl = `${window.location.origin}/wallet/semi-distribute-callback?taskInfoId=${encodeURIComponent(id)}`
+    const url = buildSemiTaskpoolDistributeUrl({
+      semiAppBaseUrl: semiAppUrl,
+      returnUrl,
+      state,
+      chainId,
+      taskpoolProxyAddress: proxy,
+      poolId,
+    })
+    const w = window.open('about:blank', '_blank')
+    if (!w) throw new Error('浏览器阻止了弹窗，请允许弹窗后重试')
+    try {
+      w.document.title = '正在跳转…'
+    } catch {
+      /* ignore */
+    }
+    w.location.href = url
+    toast.add({
+      title: '已打开 Semi',
+      description: '请在 Semi 完成结算（公示结束后链上才会成功）',
+      color: 'green',
+    })
+  } catch (e) {
+    toast.add({
+      title: '打开失败',
+      description: e instanceof Error ? e.message : String(e),
+      color: 'red',
+    })
+  } finally {
+    claimerDistributeOpening.value = false
+  }
+}
+
+watch(
+  showClaimerTaskpoolSettlementCard,
+  (on) => {
+    if (poolPollTimerRef.value) {
+      clearInterval(poolPollTimerRef.value)
+      poolPollTimerRef.value = null
+    }
+    if (tickTimerRef.value) {
+      clearInterval(tickTimerRef.value)
+      tickTimerRef.value = null
+    }
+    if (on && import.meta.client) {
+      void refreshTaskpoolPoolOnchain()
+      poolPollTimerRef.value = setInterval(() => {
+        void refreshTaskpoolPoolOnchain()
+      }, 30000)
+      tickTimerRef.value = setInterval(() => {
+        poolUiTick.value++
+      }, 1000)
+    }
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => {
+  if (poolPollTimerRef.value) clearInterval(poolPollTimerRef.value)
+  if (tickTimerRef.value) clearInterval(tickTimerRef.value)
 })
 
 // 当前选中社区（来自 localStorage），用于任务未带 communityId 时的兜底分享目标
