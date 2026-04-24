@@ -21,6 +21,7 @@ import {
   syncTaskpoolPoolListing,
   completeTaskpoolFinalApprove,
   completeTaskpoolDistribute,
+  getTaskpoolFinalRemarkPayloadIntent,
 } from '../controllers/taskInfoController'
 
 const router = Router()
@@ -43,6 +44,7 @@ router.patch('/:taskInfoId/subtasks/:subtaskId', authenticate, patchSubtask)
 router.delete('/:taskInfoId/subtasks/:subtaskId', authenticate, deleteSubtask)
 router.post('/:taskInfoId/subtasks/finalize', authenticate, finalizeSubtasks)
 router.patch('/:taskInfoId/taskpool', authenticate, patchTaskpoolMeta)
+router.post('/:taskInfoId/taskpool/final-remark-payload-intent', authenticate, getTaskpoolFinalRemarkPayloadIntent)
 router.post('/:taskInfoId/taskpool/final-approve-complete', authenticate, completeTaskpoolFinalApprove)
 router.post('/:taskInfoId/taskpool/distribute-complete', authenticate, completeTaskpoolDistribute)
 

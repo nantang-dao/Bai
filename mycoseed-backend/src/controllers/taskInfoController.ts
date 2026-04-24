@@ -4,6 +4,41 @@ import { ensureSubtaskMallListings, ensureTaskpoolPoolPrimaryListing } from '../
 import { jsonSafe } from '../utils/jsonSafe'
 import { AuthRequest } from '../middleware/auth'
 import type { TaskSubtaskDraft, TaskpoolPhase } from '../types/task'
+import { uuidToTaskPoolUint256 } from '../utils/taskpool/ids'
+
+function semiBackendBaseUrl(): string {
+  return String(process.env.SEMI_BACKEND_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '')
+}
+
+async function createSemiTaskpoolFinalRemarkPayload(input: {
+  state: string
+  taskInfoId: string
+  poolId: string
+  publisherRemark: string
+  remarkTaskIds: string[]
+  assigneeRemarks: string[]
+}): Promise<{ payload_id: string; expires_in_seconds?: number }> {
+  const base = semiBackendBaseUrl()
+  const url = `${base}/taskpool_final_remark_payloads`
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      state: input.state,
+      task_info_id: input.taskInfoId,
+      pool_id: input.poolId,
+      publisher_remark: input.publisherRemark,
+      remark_task_ids: input.remarkTaskIds,
+      assignee_remarks: input.assigneeRemarks,
+    }),
+  })
+  const data = (await resp.json().catch(() => ({}))) as any
+  if (!resp.ok || data?.result !== 'ok' || !data?.payload_id) {
+    const msg = String(data?.message || data?.error || `semi-backend 创建 payload 失败（HTTP ${resp.status}）`)
+    throw new Error(msg)
+  }
+  return { payload_id: String(data.payload_id), expires_in_seconds: data.expires_in_seconds }
+}
 
 type TaskInfoSubtaskRow = {
   id: string
@@ -300,6 +335,126 @@ export const createSubtask = async (req: AuthRequest, res: Response) => {
   } catch (e: any) {
     console.error('[createSubtask]', e)
     res.status(500).json({ error: e?.message || '创建子任务失败' })
+  }
+}
+
+/**
+ * POST /api/task-info/:taskInfoId/taskpool/final-remark-payload-intent
+ * 为 Semi finalApprovePool 提供 remark batch（短 token + 临时存储）。
+ */
+export const getTaskpoolFinalRemarkPayloadIntent = async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskInfoId } = req.params
+    const userId = req.user?.id
+    if (!userId) return res.status(401).json({ error: '未授权' })
+    const id = String(taskInfoId || '').trim()
+    if (!id) return res.status(400).json({ error: '缺少 taskInfoId' })
+
+    const body = req.body || {}
+    const state = typeof body.state === 'string' ? body.state.trim() : ''
+    const publisherRemark = typeof body.publisher_remark === 'string' ? body.publisher_remark.trim().slice(0, 32) : ''
+    const includeTaskIdsRaw = Array.isArray(body.include_task_ids) ? body.include_task_ids : []
+    const includeTaskIds = includeTaskIdsRaw
+      .map((x: any) => String(x || '').trim())
+      .filter(Boolean)
+
+    if (state.length < 8) return res.status(400).json({ error: 'state 无效' })
+
+    const { data: taskInfo, error: infoErr } = await supabase
+      .from('task_info')
+      .select('id, creator_id, manager_user_id, use_taskpool')
+      .eq('id', id)
+      .single()
+    if (infoErr) throw infoErr
+    if (!taskInfo) return res.status(404).json({ error: '任务信息不存在' })
+    if ((taskInfo as any).use_taskpool !== true) {
+      return res.status(400).json({ error: '非任务池任务' })
+    }
+
+    const creatorId = String((taskInfo as any).creator_id || '')
+    const managerUserId = String((taskInfo as any).manager_user_id || '')
+    if (userId !== creatorId && (!managerUserId || userId !== managerUserId)) {
+      return res.status(403).json({ error: '无权限生成终审 remark payload' })
+    }
+
+    const poolId = uuidToTaskPoolUint256(id).toString()
+    const forced = new Set(includeTaskIds)
+
+    const { data: allTasks, error: listErr } = await supabase
+      .from('tasks')
+      .select('id, status, listing_kind')
+      .eq('task_info_id', id)
+    if (listErr) throw listErr
+
+    const hasNonPool =
+      Array.isArray(allTasks) &&
+      allTasks.some((t: any) => String(t?.listing_kind || '').trim() !== 'taskpool_pool')
+
+    const selected = (allTasks || []).filter((t: any) => {
+      const tid = String(t?.id || '').trim()
+      if (!tid) return false
+      const listingKind = String(t?.listing_kind || '').trim()
+      if (hasNonPool && listingKind === 'taskpool_pool') return false
+      if (forced.has(tid)) return true
+      return String(t?.status || '') === 'completed'
+    })
+
+    let selectedIds = selected.map((t: any) => String(t.id))
+    if (selectedIds.length === 0) {
+      // 方案 S：若池内不存在任何非 pool 行，则允许 pool 行作为唯一 remark 目标
+      if (!hasNonPool) {
+        const poolRow = (allTasks || []).find(
+          (t: any) => String(t?.listing_kind || '').trim() === 'taskpool_pool'
+        )
+        const pid = String((poolRow as any)?.id || '').trim()
+        if (pid) selectedIds = [pid]
+      }
+      if (selectedIds.length === 0) {
+        return res.status(409).json({ error: '未找到可用于终审上链备注的已完成任务行（completed）' })
+      }
+    }
+
+    const { data: proofs, error: proofErr } = await supabase
+      .from('task_proofs')
+      .select('task_id, receiver_remark')
+      .in('task_id', selectedIds)
+    if (proofErr) throw proofErr
+
+    const remarkByTaskId = new Map<string, string>()
+    for (const p of proofs || []) {
+      const tid = String((p as any).task_id || '').trim()
+      if (!tid) continue
+      const rr = String((p as any).receiver_remark || '').trim().slice(0, 32)
+      remarkByTaskId.set(tid, rr)
+    }
+
+    selectedIds.sort()
+    const remarkTaskIds: string[] = []
+    const assigneeRemarks: string[] = []
+    for (const tid of selectedIds) {
+      remarkTaskIds.push(uuidToTaskPoolUint256(tid).toString())
+      assigneeRemarks.push(String(remarkByTaskId.get(tid) || '').trim().slice(0, 32))
+    }
+
+    const r = await createSemiTaskpoolFinalRemarkPayload({
+      state,
+      taskInfoId: id,
+      poolId,
+      publisherRemark,
+      remarkTaskIds,
+      assigneeRemarks,
+    })
+
+    res.json({
+      ok: true,
+      payload_id: r.payload_id,
+      expires_in_seconds: r.expires_in_seconds ?? null,
+      pool_id: poolId,
+      remark_count: remarkTaskIds.length,
+    })
+  } catch (e: any) {
+    console.error('[getTaskpoolFinalRemarkPayloadIntent(taskInfo)]', e)
+    res.status(500).json({ error: e?.message || '生成 final remark payload 失败' })
   }
 }
 
@@ -1311,7 +1466,7 @@ export const completeTaskpoolFinalApprove = async (req: AuthRequest, res: Respon
       .single()
     if (infoErr) throw infoErr
     if (!info || (info as any).use_taskpool !== true) return res.status(400).json({ error: '非任务池任务' })
-    if ((info as any).creator_id !== userId) return res.status(403).json({ error: '仅创建者可终审' })
+    // 回跳同步：以链上交易验真为准（permissionless），避免“发起交易者/回跳账号”不一致导致链下不同步
 
     const { verifyTaskpoolPoolFinalApprovedByTx } = await import('../services/taskpoolOnchainVerifyPoolFinal')
     const v = await verifyTaskpoolPoolFinalApprovedByTx({ taskInfoId, txHash })
@@ -1346,7 +1501,7 @@ export const completeTaskpoolDistribute = async (req: AuthRequest, res: Response
       .single()
     if (infoErr) throw infoErr
     if (!info || (info as any).use_taskpool !== true) return res.status(400).json({ error: '非任务池任务' })
-    if ((info as any).creator_id !== userId) return res.status(403).json({ error: '仅创建者可同步结算' })
+    // 回跳同步：以链上交易验真为准（permissionless），避免“触发结算者/回跳账号”不一致导致链下不同步
 
     const { verifyTaskpoolDistributedByTx } = await import('../services/taskpoolOnchainVerifyDistribute')
     const v = await verifyTaskpoolDistributedByTx({ taskInfoId, txHash })

@@ -26,6 +26,32 @@ function ensureBrowserEthereum() {
  * 阶段 B：单池单子任务竖切（同一钱包可同时扮演 Publisher / Manager / Claimer 做冒烟）。
  */
 export function useTaskPoolVerticalSlice() {
+  const POOLS_SELECTOR = '0xac4afa38' as const
+  function uint256ToHex32(v: bigint): Hex {
+    const hex = v.toString(16).padStart(64, '0')
+    return (`0x${hex}`) as Hex
+  }
+  function encodePoolsCalldata(poolId: bigint): Hex {
+    const arg = uint256ToHex32(poolId).slice(2)
+    return (`${POOLS_SELECTOR}${arg}`) as Hex
+  }
+  function readUint256At(result: Hex, slotIndex: number): bigint {
+    const hex = String(result || '')
+    if (!hex.startsWith('0x')) throw new Error('invalid eth_call result')
+    if (hex === '0x') throw new Error('eth_call 返回空结果（0x），可能是合约 revert/地址不对')
+    const body = hex.slice(2)
+    if (body.length < (slotIndex + 1) * 64) {
+      const sel = body.slice(0, 8)
+      if (sel === '08c379a0') throw new Error('eth_call reverted: Error(string)')
+      if (sel === '4e487b71') throw new Error('eth_call reverted: Panic(uint256)')
+      if (sel) throw new Error(`eth_call reverted: CustomError(0x${sel})`)
+      throw new Error('eth_call result too short')
+    }
+    const start = slotIndex * 64
+    const w = body.slice(start, start + 64)
+    if (w.length !== 64) throw new Error('eth_call result too short')
+    return BigInt(`0x${w}`)
+  }
   const config = useRuntimeConfig()
   const logs = ref<string[]>([])
 
@@ -320,17 +346,40 @@ export function useTaskPoolVerticalSlice() {
 
   async function distributeFlow(account: Address, poolId: bigint) {
     const wc = walletClient()
-    const pool = (await publicClient().readContract({
-      address: proxyAddress.value,
-      abi: taskPoolAbi,
-      functionName: 'pools',
-      args: [poolId],
-    })) as readonly unknown[]
-    const endsAt = pool[6] as bigint
+    const data = encodePoolsCalldata(poolId)
+    const result = await (async () => {
+      const url = String(rpcUrl.value || '').trim()
+      if (!url) throw new Error('缺少 opRpcUrl')
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10_000)
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: Date.now(),
+            method: 'eth_call',
+            params: [{ to: proxyAddress.value, data }, 'latest'],
+          }),
+        })
+        const json = (await resp.json()) as { result?: Hex; error?: { message?: string } }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+        if (json.error) throw new Error(json.error.message || 'RPC error')
+        if (!json.result) throw new Error('RPC missing result')
+        return json.result
+      } finally {
+        clearTimeout(timeout)
+      }
+    })()
+    // Only need publicizeEndsAt (slot 6) for the dev gate; avoid full ABI decoding.
+    const endsAt = readUint256At(result as Hex, 6)
     const now = BigInt(Math.floor(Date.now() / 1000))
     if (now < endsAt) {
+      const waitSec = endsAt - now
       throw new Error(
-        `公示未结束：请在 ${Number(endsAt) - Number(now)} 秒后再试 distribute`
+        `公示未结束：请在 ${waitSec.toString()} 秒后再试 distribute`
       )
     }
     const hash = await wc.writeContract({

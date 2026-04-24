@@ -387,7 +387,7 @@ import { getCurrentBeijingTime } from '~/utils/time'
 import { useCommunityStore } from '~/stores/community'
 import {
   buildSemiTaskpoolPrepayUrl,
-  SEMI_TASKPOOL_PREPAY_STATE_KEY,
+  semiTaskpoolStateStorageKey,
 } from '~/utils/semiTaskpoolPrepay'
 import { parseNtToWei, uuidToTaskPoolUint256 } from '~/utils/taskpool'
 
@@ -724,7 +724,7 @@ const publishTask = async () => {
           draft: taskParams,
         })
       )
-      sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+      sessionStorage.setItem(semiTaskpoolStateStorageKey('prepay', taskInfoId), state)
     } catch {
       // ignore
     }
@@ -791,6 +791,14 @@ const publishTask = async () => {
     const w = window.open('about:blank', '_blank')
     if (!w) {
       throw new Error('浏览器阻止了弹窗，请允许弹窗后重试')
+    }
+    // 回跳页在弹窗上下文读取 sessionStorage：写入弹窗窗口，避免旧 state 残留造成 mismatch
+    try {
+      const key = semiTaskpoolStateStorageKey('prepay', taskInfoId)
+      w.sessionStorage.setItem(key, state)
+      w.sessionStorage.removeItem('semi_taskpool_prepay_state')
+    } catch {
+      /* ignore */
     }
     try {
       w.document.title = '正在跳转…'

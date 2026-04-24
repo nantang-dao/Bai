@@ -198,6 +198,24 @@
                     :readonly="!canReview"
                   />
                 </div>
+
+                <!-- 通过时展示：发包者链上备注（写入 finalApprovePool.publisherRemark） -->
+                <div v-if="reviewResult.decision === 'approved'">
+                  <label class="block font-bold text-xs uppercase text-black mb-2">
+                    链上备注（可选）
+                    <span class="text-black/60 font-normal normal-case">· 仅用于 TaskPool 终审公示</span>
+                  </label>
+                  <textarea
+                    v-model="reviewResult.publisherRemark"
+                    placeholder="例如：审核通过，开启公示"
+                    rows="2"
+                    maxlength="32"
+                    class="w-full px-4 py-3 bg-card border border-border rounded-2xl shadow-soft  text-base text-black focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-none"
+                    :disabled="!canReview"
+                    :readonly="!canReview"
+                  />
+                  <p class="mt-1 text-xs text-black/50">最多 32 字符（与链上 remark 口径一致），会自动预填到 Semi（仍可在 Semi 修改）。</p>
+                </div>
               </div>
             </div>
 
@@ -254,53 +272,19 @@
                 <p v-else class="text-sm text-warning">缺少 taskInfoId，无法跳转管理页，请从任务详情重新进入。</p>
               </div>
 
-              <!-- 普通任务：Semi P2P + 可选标记 -->
+              <!-- 普通任务：移除旧版 Semi P2P 转账入口，避免干扰新版本链上流程 -->
               <template v-else>
-                <div class="bg-success/20 border border-success shadow-soft p-4 mb-4">
+                <div class="bg-success/20 border border-success shadow-soft p-4">
                   <p class=" text-base text-black mb-2">
-                    <span class="font-bold text-xs">✅</span> 审核已通过！
+                    <span class="font-bold text-xs">✅</span> 审核已通过（链下记录已更新）
                   </p>
                   <p class=" text-sm text-black/70 mb-2">
                     奖励金额：{{ transferData?.reward || 0 }} {{ taskRewardSymbol }}
                   </p>
-                  <p v-if="(currentSubmission as any).transferredAt" class=" text-sm text-primary">
-                    <span class="font-bold text-xs">✓</span> 已转账（{{ formatBeijingTime((currentSubmission as any).transferredAt) }}）
-                  </p>
-                  <p v-else class=" text-sm text-warning">
-                    <span class="font-bold text-xs">⚠</span> 待转账
+                  <p class="text-sm text-black/80 leading-relaxed">
+                    新版本奖励发放以链上/系统结算流程为准，本页不再提供「Semi 钱包间转账」入口。
                   </p>
                 </div>
-                <template v-if="!(currentSubmission as any).transferredAt">
-                  <PixelButton
-                    @click="handleTransferToSemi"
-                    variant="primary"
-                    size="lg"
-                    :block="true"
-                    :disabled="isTransferring"
-                    class="mb-3"
-                  >
-                    {{ isTransferring ? '处理中...' : '跳转到Semi转账' }}
-                  </PixelButton>
-                  <PixelButton
-                    @click="handleMarkTransferCompleted"
-                    variant="secondary"
-                    size="lg"
-                    :block="true"
-                    :disabled="isMarkingTransfer"
-                  >
-                    {{ isMarkingTransfer ? '标记中...' : '标记为已转账' }}
-                  </PixelButton>
-                </template>
-                <PixelButton
-                  v-else
-                  @click="handleUnmarkTransfer"
-                  variant="success"
-                  size="lg"
-                  :block="true"
-                  :disabled="isMarkingTransfer"
-                >
-                  {{ isMarkingTransfer ? '处理中...' : '已完成转账' }}
-                </PixelButton>
               </template>
             </div>
             
@@ -454,7 +438,13 @@
 </template>
 
 <script setup lang="ts">
-import { getTaskById, approveTask, rejectTask, getApiBaseUrl, buildSemiTransferUrl, getWalletAddressByUserId, markTransferCompleted } from '~/utils/api'
+import {
+  getTaskById,
+  approveTask,
+  rejectTask,
+  getApiBaseUrl,
+  getTaskpoolFinalRemarkPayloadIntent,
+} from '~/utils/api'
 import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
 import PixelCard from '~/components/pixel/PixelCard.vue'
@@ -465,7 +455,8 @@ import { formatBeijingTime, parseBeijingTime } from '~/utils/time'
 import { watch } from 'vue'
 import {
   buildSemiTaskpoolApproveUrl,
-  SEMI_TASKPOOL_PREPAY_STATE_KEY,
+  buildSemiTaskpoolApproveAndFinalizeUrl,
+  semiTaskpoolStateStorageKey,
   taskpoolManagePath,
 } from '~/utils/semiTaskpoolPrepay'
 import { uuidToTaskPoolUint256 } from '~/utils/taskpool'
@@ -483,9 +474,11 @@ const userStore = useUserStore()
 const reviewResult = ref<{
   decision: string
   comments: string
+  publisherRemark: string
 }>({
   decision: '',
-  comments: ''
+  comments: '',
+  publisherRemark: '',
 })
 const isSubmitting = ref(false)
 const taskRewardSymbol = ref('积分') // 任务奖励的积分符号
@@ -500,11 +493,7 @@ const transferData = ref<{
   reward: number
   creatorId: string
 } | null>(null)
-const isTransferring = ref(false)
 const previewImageUrl = ref<string | null>(null)
-
-// 标记转账相关状态
-const isMarkingTransfer = ref(false)
 
 // 任务数据
 const task = ref<{
@@ -580,6 +569,8 @@ const allSubmissions = ref<Array<{
 const currentSubmissionIndex = ref(0)
 const currentSubmission = computed(() => allSubmissions.value[currentSubmissionIndex.value] || null)
 
+const currentTargetTaskId = computed(() => currentSubmission.value?.taskId || taskId)
+
 // 监听当前参与者的变化，自动更新转账数据
 watch(
   [currentSubmission, canReview],
@@ -595,6 +586,21 @@ watch(
     }
   },
   { immediate: true }
+)
+
+// 通过/拒绝切换时：拒绝则清空链上备注（避免残留误带到 Semi）
+watch(
+  () => reviewResult.value.decision,
+  (d) => {
+    if (d !== 'approved') {
+      reviewResult.value.publisherRemark = ''
+      return
+    }
+    // 切到“通过”时：若用户还没填，自动预填（任务名 + 日期）
+    if (!String(reviewResult.value.publisherRemark || '').trim()) {
+      reviewResult.value.publisherRemark = buildDefaultPublisherRemark()
+    }
+  }
 )
 
 // 向后兼容：单个提交数据（用于单人任务）
@@ -646,6 +652,20 @@ const requiresDescription = computed(() => {
 const canSubmit = computed(() => {
   return reviewResult.value.decision && reviewResult.value.comments.trim().length > 0
 })
+
+/** 生成发包者链上备注默认值：任务名 + 当前日期（北京时间） */
+function buildDefaultPublisherRemark(): string {
+  // 对齐接包者默认备注格式（pages/tasks/submit.vue）："完成任务：《标题》MMDD-HH:MM"
+  const title = String(task.value?.title || '').trim()
+  const now = new Date()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mi = String(now.getMinutes()).padStart(2, '0')
+  const shortTime = `${mm}${dd}-${hh}:${mi}`
+  // 发包者口径：审核通过 + 同样的《标题》+ 时间格式
+  return `审核通过：《${title || '任务'}》${shortTime}`.slice(0, 32)
+}
 
 // 格式化日期
 // 统一使用 UTC+8 北京时间显示，不受机器时区影响
@@ -1072,7 +1092,7 @@ const submitReview = async () => {
     // 使用当前选中提交的任务ID
     const targetTaskId = currentSubmission.value?.taskId || taskId
 
-    // TaskPool 普通任务：先走链上 approveSubtask，再回跳由后端确权并落库 completed
+    // TaskPool：链上路径因池类型而异；薄池 V4 为单笔终局，普通子任务仍为 approveSubtask
     if ((task.value as any)?.useTaskpool) {
       const config = useRuntimeConfig()
       const semiAppUrl = String((config.public as any).semiAppUrl || '')
@@ -1080,38 +1100,90 @@ const submitReview = async () => {
       const proxy = String((config.public as any).taskpoolProxyAddress || '')
       if (!semiAppUrl) throw new Error('未配置 NUXT_PUBLIC_SEMI_APP_URL')
       if (!proxy) throw new Error('未配置 NUXT_PUBLIC_TASKPOOL_PROXY_ADDRESS')
+      /** 单参与者薄池：与 createTaskPoolSelf 建池配套，一次 Semi 完成 approve + finalApprove */
+      const thinPool = (task.value.participantLimit ?? 1) === 1
       const state =
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(16).slice(2)}`
       try {
-        sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+        const flow = thinPool ? 'approve_finalize' : 'approve'
+        sessionStorage.setItem(semiTaskpoolStateStorageKey(flow, targetTaskId), state)
       } catch {}
 
       const poolId = uuidToTaskPoolUint256((task.value as any).taskInfoId || '').toString()
       const onchainTaskId = uuidToTaskPoolUint256(targetTaskId).toString()
       const infoId = String((task.value as any)?.taskInfoId || '')
-      const returnUrl = `${window.location.origin}/wallet/semi-approve-callback?taskId=${encodeURIComponent(
+      const callbackPath = thinPool ? 'semi-approve-finalize-callback' : 'semi-approve-callback'
+      const returnUrl = `${window.location.origin}/wallet/${callbackPath}?taskId=${encodeURIComponent(
         targetTaskId
       )}&comments=${encodeURIComponent(reviewResult.value.comments || '')}${
         infoId ? `&taskInfoId=${encodeURIComponent(infoId)}` : ''
       }`
-      const url = buildSemiTaskpoolApproveUrl({
-        semiAppBaseUrl: semiAppUrl,
-        returnUrl,
-        state,
-        chainId,
-        taskpoolProxyAddress: proxy,
-        poolId,
-        taskId: onchainTaskId,
-      })
+      const publisherRemark = String(reviewResult.value.publisherRemark || '').trim().slice(0, 32)
+      let url = thinPool
+        ? buildSemiTaskpoolApproveAndFinalizeUrl({
+            semiAppBaseUrl: semiAppUrl,
+            returnUrl,
+            state,
+            chainId,
+            taskpoolProxyAddress: proxy,
+            poolId,
+            taskId: onchainTaskId,
+          })
+        : buildSemiTaskpoolApproveUrl({
+            semiAppBaseUrl: semiAppUrl,
+            returnUrl,
+            state,
+            chainId,
+            taskpoolProxyAddress: proxy,
+            poolId,
+            taskId: onchainTaskId,
+          })
+      // 仅预填：Semi 仍可手动修改；无此参数时不影响 Semi 页面使用
+      if (publisherRemark) {
+        url += `&publisher_remark=${encodeURIComponent(publisherRemark)}`
+      }
       const w = window.open('about:blank', '_blank')
       if (!w) throw new Error('浏览器阻止了弹窗，请允许弹窗后重试')
+      // 回跳页在弹窗上下文读取 sessionStorage，需把 state 写入弹窗窗口（避免残留旧 state 导致 mismatch）
+      try {
+        const flow = thinPool ? 'approve_finalize' : 'approve'
+        const key = semiTaskpoolStateStorageKey(flow, targetTaskId)
+        w.sessionStorage.setItem(key, state)
+        w.sessionStorage.removeItem('semi_taskpool_prepay_state')
+      } catch {
+        /* ignore */
+      }
       try {
         w.document.title = '正在跳转…'
       } catch {}
+      // C1：终审备注 batch 用短 token 传递（避免 URL 塞数组）
+      if (thinPool) {
+        try {
+          const r = await getTaskpoolFinalRemarkPayloadIntent(
+            targetTaskId,
+            { state, publisher_remark: publisherRemark || null, include_task_ids: [targetTaskId] },
+            baseUrl
+          )
+          if (r?.payload_id) {
+            url += `&payload_id=${encodeURIComponent(r.payload_id)}`
+          }
+        } catch (e) {
+          try {
+            w.close()
+          } catch {}
+          throw e
+        }
+      }
       w.location.href = url
-      toast.add({ title: '已打开 Semi', description: '请在 Semi 完成链上审核通过', color: 'green' })
+      toast.add({
+        title: '已打开 Semi',
+        description: thinPool
+          ? '请在 Semi 完成链上终局（开启公示；V4 为单笔交易）'
+          : '请在 Semi 完成链上审核通过',
+        color: 'green',
+      })
       return
     }
     
@@ -1253,268 +1325,6 @@ function goToTaskpoolManage() {
     return
   }
   router.push(`${taskpoolManagePath(id)}#taskpool-settlement-steps`)
-}
-
-// 跳转到Semi转账页面
-const handleTransferToSemi = async () => {
-  if (!transferData.value) {
-    console.error('转账数据不存在')
-    toast.add({
-      title: '无法转账',
-      description: '转账数据不存在，请重新审核',
-      color: 'red'
-    })
-    return
-  }
-
-  isTransferring.value = true
-  
-  // 先同步打开空白页，避免异步后 window.open 被拦截
-  const newWindow = window.open('about:blank', '_blank')
-  if (!newWindow) {
-    console.error('浏览器阻止了弹窗')
-    toast.add({
-      title: '无法打开转账页面',
-      description: '浏览器阻止了弹窗，请允许弹窗后重试',
-      color: 'orange'
-    })
-    isTransferring.value = false
-    return
-  }
-
-  try {
-    // 给空白页一个轻提示，减少“白屏感”
-    newWindow.document.title = '正在跳转…'
-    newWindow.document.body.innerHTML = `
-      <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; color: #111;">
-        <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">正在跳转到 Semi…</div>
-        <div style="font-size: 13px; color: #555;">请稍候，如果没有自动跳转请返回重试。</div>
-      </div>
-    `
-  } catch (e) {
-    // 某些浏览器策略下可能不允许操作新窗口 document，忽略即可
-  }
-
-  try {
-    const config = useRuntimeConfig()
-    const semiAppUrl = config.public.semiAppUrl as string
-    const baseUrl = getApiBaseUrl()
-    const { claimerId, reward, creatorId } = transferData.value
-    
-    console.log('=== 开始处理转账跳转 ===')
-    console.log('claimerId:', claimerId, 'reward:', reward, 'creatorId:', creatorId)
-
-    // 并行获取创建者/参与者钱包地址（更快，也更不容易被弹窗策略影响）
-    const [creatorAddress, claimerAddress] = await Promise.all([
-      getWalletAddressByUserId(creatorId, baseUrl),
-      getWalletAddressByUserId(claimerId, baseUrl),
-    ])
-    console.log('创建者钱包地址:', creatorAddress)
-    console.log('参与者钱包地址:', claimerAddress)
-
-    // 检查钱包地址
-    if (!creatorAddress) {
-      console.warn('创建者未绑定钱包')
-      toast.add({
-        title:'无法转账',
-        description: '创建者未绑定钱包，无法转账',
-        color: 'orange'
-      })
-      try { newWindow.close() } catch (e) {}
-      return
-    }
-    
-    if (!claimerAddress) {
-      console.warn('参与者未绑定钱包')
-      toast.add({
-        title: '无法转账',
-        description: '参与者未绑定钱包，无法转账',
-        color: 'orange'
-      })
-      try { newWindow.close() } catch (e) {}
-      return
-    }
-
-    // 生成默认 memo（公开上链，最多 32 字，可修改）
-    const now = new Date()
-    const mm = String(now.getMonth() + 1).padStart(2, '0')
-    const dd = String(now.getDate()).padStart(2, '0')
-    const hh = String(now.getHours()).padStart(2, '0')
-    const mi = String(now.getMinutes()).padStart(2, '0')
-    const shortTime = `${mm}${dd}-${hh}:${mi}`
-    const defaultMemo = `任务：《${task.value.title || ''}》${shortTime}`.slice(0, 32)
-    // 不再弹窗；直接带默认 memo 到 semi，再由用户在 semi 页面修改
-    const memo = defaultMemo.trim().slice(0, 32)
-
-    const targetTaskId = currentSubmission.value?.taskId || taskId
-    let receiverRemark = (currentSubmission.value as any)?.receiverRemark?.trim().slice(0, 32) || ''
-    if (!receiverRemark) {
-      const latestTask = await getTaskById(targetTaskId, baseUrl)
-      const rootRemark = (((latestTask as any)?.receiverRemark ?? (latestTask as any)?.receiver_remark ?? '') as string).trim().slice(0, 32)
-      if (rootRemark) {
-        receiverRemark = rootRemark
-      } else {
-        const matchedParticipant = Array.isArray((latestTask as any)?.participantsList)
-          ? (latestTask as any).participantsList.find((p: any) => String(p?.id || p?.taskId || '') === String(targetTaskId))
-          : null
-        receiverRemark = (((matchedParticipant?.receiverRemark ?? matchedParticipant?.receiver_remark ?? '') as string).trim().slice(0, 32))
-      }
-    }
-    const poolUuid = ((task.value as any)?.taskInfoId || '').toString()
-
-    // 构造并跳转到semi转账页面
-    const transferUrl = buildSemiTransferUrl(
-      claimerAddress, // 接收方：参与者的钱包地址
-      reward.toString(), // 转账金额
-      {
-        semiAppUrl,
-        // scheme A: semi 用 pool_uuid/task_uuid 来派生 uint256 poolId/taskId
-        pool_uuid: poolUuid || undefined,
-        task_uuid: targetTaskId,
-        // backward compat: 保留旧参数（不依赖，但不破坏旧逻辑）
-        task_id: targetTaskId,
-        memo,
-        receiver_remark: receiverRemark,
-      }
-    )
-    console.log('转账URL:', transferUrl)
-    
-    // 使用已打开的窗口跳转到 semi
-    try {
-      newWindow.location.href = transferUrl
-    } catch (e) {
-      // 兜底：如果被浏览器限制，尝试直接打开
-      window.open(transferUrl, '_blank')
-    }
-    console.log('✅ 已打开转账页面')
-    toast.add({
-      title: '已打开转账页面',
-      description: '请在 Semi 页面完成转账后，返回标记为已转账',
-      color: 'green'
-    })
-  } catch (error) {
-    console.error('获取钱包地址失败：', error)
-    toast.add({
-      title:'无法转账',
-      description: '获取钱包地址失败，请稍后重试',
-      color: 'orange'
-    })
-    try { newWindow.close() } catch (e) {}
-  } finally {
-    isTransferring.value = false
-  }
-}
-
-// 标记转账完成
-const handleMarkTransferCompleted = async () => {
-  if (!currentSubmission.value) {
-    console.error('当前参与者不存在')
-    return
-  }
-
-  console.log('=== 标记转账调试 ===')
-  console.log('1. 更新前 currentSubmission:', currentSubmission.value)
-  console.log('2. 更新前 transferredAt:', (currentSubmission.value as any).transferredAt)
-  console.log('3. currentIndex:', currentSubmissionIndex.value)
-  console.log('4. allSubmissions.length:', allSubmissions.value.length)
-
-  isMarkingTransfer.value = true
-  
-  try {
-    const baseUrl = getApiBaseUrl()
-    const targetTaskId = currentSubmission.value.taskId || taskId
-    
-    console.log('5. 调用API，taskId:', targetTaskId, 'baseUrl:', baseUrl)
-    const result = await markTransferCompleted(targetTaskId, baseUrl)
-    
-    console.log('6. API返回结果:', result)
-    console.log('7. result.success:', result.success)
-    console.log('8. result.data:', result.data)
-    console.log('9. result.data?.transferredAt:', result.data?.transferredAt)
-    
-    if (result.success) {
-      toast.add({
-        title: '标记成功',
-        description: result.message,
-        color: 'green'
-      })
-      
-      // 自动跳转到任务详情页面，并弹出“分享到社区圈”
-      router.push(`/tasks/${targetTaskId}?reviewed=true&share=reviewer`)
-    } else {
-      console.error('❌ 标记失败:', result.message)
-      toast.add({
-        title: '标记失败',
-        description: result.message,
-        color: 'red'
-      })
-    }
-  } catch (error) {
-    console.error('❌ 标记转账完成失败：', error)
-    toast.add({
-      title: '标记失败',
-      description: '网络错误，请稍后重试',
-      color: 'red'
-    })
-  } finally {
-    isMarkingTransfer.value = false
-  }
-}
-
-// 取消标记转账（将transferredAt设为null）
-const handleUnmarkTransfer = async () => {
-  if (!currentSubmission.value) {
-    console.error('当前参与者不存在')
-    return
-  }
-
-  console.log('=== 取消标记转账调试 ===')
-  console.log('1. 取消前 currentSubmission:', currentSubmission.value)
-  console.log('2. 取消前 transferredAt:', (currentSubmission.value as any).transferredAt)
-  console.log('3. currentIndex:', currentSubmissionIndex.value)
-
-  isMarkingTransfer.value = true
-  
-  try {
-    // 获取当前提交的 taskId
-    const targetTaskId = currentSubmission.value.taskId || taskId
-    
-    // 使用 taskId 查找对应的提交，而不是使用索引
-    // 这样可以避免 loadTask() 重新创建数组后索引不匹配的问题
-    const targetSubmissionIndex = allSubmissions.value.findIndex(
-      s => s.taskId === targetTaskId
-    )
-    console.log('4. 准备取消标记，targetTaskId:', targetTaskId, 'targetSubmissionIndex:', targetSubmissionIndex)
-    
-    if (targetSubmissionIndex >= 0) {
-      (allSubmissions.value[targetSubmissionIndex] as any).transferredAt = undefined
-      
-      // 确保 currentSubmissionIndex 指向正确的索引，这样 UI 才会更新
-      if (targetSubmissionIndex !== currentSubmissionIndex.value) {
-        currentSubmissionIndex.value = targetSubmissionIndex
-      }
-      
-      console.log('5. 取消后的 submission taskId:', allSubmissions.value[targetSubmissionIndex]?.taskId, 'transferredAt:', (allSubmissions.value[targetSubmissionIndex] as any)?.transferredAt)
-      console.log('6. 取消后的 currentSubmission taskId:', currentSubmission.value?.taskId, 'transferredAt:', (currentSubmission.value as any)?.transferredAt)
-    } else {
-      console.error('❌ 找不到对应的提交，targetTaskId:', targetTaskId)
-    }
-    
-    toast.add({
-      title: '已取消标记',
-      description: '转账标记已取消',
-      color: 'green'
-    })
-  } catch (error) {
-    console.error('❌ 取消标记转账失败：', error)
-    toast.add({
-      title: '取消标记失败',
-      description: '网络错误，请稍后重试',
-      color: 'red'
-    })
-  } finally {
-    isMarkingTransfer.value = false
-  }
 }
 
 // 导航函数

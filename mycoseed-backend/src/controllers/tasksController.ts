@@ -3,7 +3,9 @@ import { supabase } from '../services/supabase'
 import { Task, CreateTaskParams, TaskStatus, TimelineStatus, TaskpoolPhase } from '../types/task'
 import { checkTaskApproveRejectPermission } from '../utils/taskReviewPermission'
 import { buildTaskpoolClaimIntent } from '../services/taskpoolClaimIntent'
-import { isAddress } from 'viem'
+import { isAddress, isHex } from 'viem'
+import { jsonSafe } from '../utils/jsonSafe'
+import { uuidToTaskPoolUint256 } from '../utils/taskpool/ids'
 
 /** C1：计划锁入 TaskPool 的 NT 总额（与链下预留一致；未传 plannedLockNt 时自动算） */
 function computePlannedLockNt(params: CreateTaskParams): number {
@@ -20,6 +22,40 @@ function computePlannedLockNt(params: CreateTaskParams): number {
   return params.reward * limit
 }
 import { AuthRequest } from '../middleware/auth'
+
+function semiBackendBaseUrl(): string {
+  return String(process.env.SEMI_BACKEND_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '')
+}
+
+async function createSemiTaskpoolFinalRemarkPayload(input: {
+  state: string
+  taskInfoId: string
+  poolId: string
+  publisherRemark: string
+  remarkTaskIds: string[]
+  assigneeRemarks: string[]
+}): Promise<{ payload_id: string; expires_in_seconds?: number }> {
+  const base = semiBackendBaseUrl()
+  const url = `${base}/taskpool_final_remark_payloads`
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      state: input.state,
+      task_info_id: input.taskInfoId,
+      pool_id: input.poolId,
+      publisher_remark: input.publisherRemark,
+      remark_task_ids: input.remarkTaskIds,
+      assignee_remarks: input.assigneeRemarks,
+    }),
+  })
+  const data = (await resp.json().catch(() => ({}))) as any
+  if (!resp.ok || data?.result !== 'ok' || !data?.payload_id) {
+    const msg = String(data?.message || data?.error || `semi-backend 创建 payload 失败（HTTP ${resp.status}）`)
+    throw new Error(msg)
+  }
+  return { payload_id: String(data.payload_id), expires_in_seconds: data.expires_in_seconds }
+}
 
 /** tasks 行统一 select（含 migration 028：listing_kind / pool_subtask_id） */
 const TASKS_ROW_SELECT_WITH_TRANSFER =
@@ -398,6 +434,7 @@ const mapDbTaskToTask = (
       title: taskInfo.title,
       description: taskInfo.description,
       activityId: taskInfo.activity_id || 0,
+      communityId: taskInfo.community_id || null,
       startDate: formatLocalDateTime(taskInfo.start_date),
       deadline: formatLocalDateTime(taskInfo.deadline),
       submitDeadline: formatLocalDateTime(taskInfo.submit_deadline),
@@ -455,6 +492,7 @@ const mapDbTaskToTask = (
     proofConfig: info.proof_config,
     submissionInstructions: info.submission_instructions,
     assignedUserId: info.assigned_user_id || null,  // 指定参与人员ID（向后兼容）
+    communityId: info.community_id || null,
     allowSplit: info.allow_split === true,
     useTaskpool: info.use_taskpool === true,
     plannedLockNt: info.planned_lock_nt != null ? parseFloat(String(info.planned_lock_nt)) : null,
@@ -1168,6 +1206,29 @@ export const getTaskById = async (req: Request, res: Response) => {
         dbTask.task_timeline, 
         dbTask.task_proof
       )
+
+      // TaskPool 池主入口行：终审上链备注通常写在同池的非 pool 行上（与终审 payload 选择规则一致）
+      // 为前端读取 getRemarks(poolId, taskId) 提供一个稳定的 taskRowId（避免误读 pool 行 taskId 槽位）
+      try {
+        const listingKind = String((dbTask as any).listing_kind || '').trim()
+        const taskInfoId = String((dbTask as any).task_info_id || '').trim()
+        if (listingKind === 'taskpool_pool' && taskInfoId) {
+          const { data: rows } = await supabase
+            .from('tasks')
+            .select('id, status, claimer_id, created_at')
+            .eq('task_info_id', taskInfoId)
+            .neq('listing_kind', 'taskpool_pool')
+            .order('created_at', { ascending: true })
+
+          const pick =
+            (rows || []).find((r: any) => String(r?.status || '') === 'completed') ||
+            (rows || []).find((r: any) => !!r?.claimer_id) ||
+            (rows || [])[0]
+          if (pick?.id) (task as any).remarkTaskRowId = String(pick.id)
+        }
+      } catch {
+        // ignore: best-effort helper field
+      }
       
       // 如果是多人任务，添加 participantsList
       if (participantsList.length > 0) {
@@ -1907,6 +1968,143 @@ export const getTaskpoolClaimIntent = async (req: AuthRequest, res: Response) =>
 }
 
 /**
+ * Step4.x：POST /api/tasks/:id/taskpool-final-remark-payload-intent
+ * 为 Semi finalApprovePool 提供 remark batch（短 token + 临时存储），避免把数组塞进 URL。
+ *
+ * - state：由前端生成并用于 Semi 回跳校验；payload 读取也会校验该 state。
+ * - include_task_ids：可选，强制把某些 task 行也纳入 batch（如单参与者薄池：当前待审核 task）。
+ */
+export const getTaskpoolFinalRemarkPayloadIntent = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ error: '未授权' })
+    const taskId = String(req.params.id || '').trim()
+    if (!taskId) return res.status(400).json({ error: '缺少 taskId' })
+
+    const body = req.body || {}
+    const state = typeof body.state === 'string' ? body.state.trim() : ''
+    const publisherRemark = typeof body.publisher_remark === 'string' ? body.publisher_remark.trim().slice(0, 32) : ''
+    const includeTaskIdsRaw = Array.isArray(body.include_task_ids) ? body.include_task_ids : []
+    const includeTaskIds = includeTaskIdsRaw
+      .map((x: any) => String(x || '').trim())
+      .filter(Boolean)
+
+    if (state.length < 8) return res.status(400).json({ error: 'state 无效' })
+
+    const task = await getTaskFromDb(taskId)
+    const taskInfoId = (task as any).task_info_id as string | undefined
+    if (!taskInfoId) return res.status(400).json({ error: '缺少 task_info_id' })
+
+    const { data: taskInfo, error: infoErr } = await supabase
+      .from('task_info')
+      .select('id, creator_id, manager_user_id, use_taskpool')
+      .eq('id', taskInfoId)
+      .single()
+    if (infoErr) throw infoErr
+    if (!taskInfo || (taskInfo as any).use_taskpool !== true) {
+      return res.status(400).json({ error: '非任务池任务' })
+    }
+
+    const creatorId = String((taskInfo as any).creator_id || '')
+    const managerUserId = String((taskInfo as any).manager_user_id || '')
+    if (user.id !== creatorId && (!managerUserId || user.id !== managerUserId)) {
+      return res.status(403).json({ error: '无权限生成终审 remark payload' })
+    }
+
+    const poolId = uuidToTaskPoolUint256(taskInfoId).toString()
+
+    const { data: allTasks, error: listErr } = await supabase
+      .from('tasks')
+      .select('id, status, listing_kind')
+      .eq('task_info_id', taskInfoId)
+    if (listErr) throw listErr
+
+    const thisListingKind = String((task as any).listing_kind || '').trim()
+    const hasNonPool =
+      Array.isArray(allTasks) &&
+      allTasks.some((t: any) => String(t?.listing_kind || '').trim() !== 'taskpool_pool')
+
+    // 方案 S：
+    // - 若池内存在非 pool 行：仍视 taskpool_pool 为代表行，排除它，forced 也不塞入 pool 行
+    // - 若池内不存在非 pool 行（单人薄池常见）：允许使用 pool 行作为唯一 remark 目标
+    const forced = new Set(
+      (hasNonPool && thisListingKind === 'taskpool_pool' ? [] : [taskId]).concat(
+        includeTaskIds
+      )
+    )
+
+    const selected = (allTasks || []).filter((t: any) => {
+      const id = String(t?.id || '').trim()
+      if (!id) return false
+      const listingKind = String(t?.listing_kind || '').trim()
+      if (hasNonPool && listingKind === 'taskpool_pool') return false
+      if (forced.has(id)) return true
+      return String(t?.status || '') === 'completed'
+    })
+
+    let selectedIds = selected.map((t: any) => String(t.id))
+    if (selectedIds.length === 0) {
+      // 兜底：如果是误传 pool 行且没有 completed（或 include_task_ids 为空），自动回退到同池第一条非 pool 行
+      // 这样薄池组合流仍能继续（approve 之后立刻 finalApprove），避免闪退。
+      if (hasNonPool && thisListingKind === 'taskpool_pool') {
+        const fallback = (allTasks || []).find((t: any) => String(t?.listing_kind || '').trim() !== 'taskpool_pool')
+        const fid = String((fallback as any)?.id || '').trim()
+        if (fid) {
+          selectedIds = [fid]
+        }
+      }
+      if (selectedIds.length === 0) {
+        return res.status(409).json({ error: '未找到可用于终审上链备注的已完成任务行（completed）' })
+      }
+    }
+
+    const { data: proofs, error: proofErr } = await supabase
+      .from('task_proofs')
+      .select('task_id, receiver_remark')
+      .in('task_id', selectedIds)
+    if (proofErr) throw proofErr
+
+    const remarkByTaskId = new Map<string, string>()
+    for (const p of proofs || []) {
+      const tid = String((p as any).task_id || '').trim()
+      if (!tid) continue
+      const rr = String((p as any).receiver_remark || '').trim().slice(0, 32)
+      remarkByTaskId.set(tid, rr)
+    }
+
+    // deterministic order: by task_id string
+    selectedIds.sort()
+    const remarkTaskIds: string[] = []
+    const assigneeRemarks: string[] = []
+    for (const tid of selectedIds) {
+      const chainTaskId = uuidToTaskPoolUint256(tid).toString()
+      remarkTaskIds.push(chainTaskId)
+      assigneeRemarks.push(String(remarkByTaskId.get(tid) || '').trim().slice(0, 32))
+    }
+
+    const r = await createSemiTaskpoolFinalRemarkPayload({
+      state,
+      taskInfoId,
+      poolId,
+      publisherRemark,
+      remarkTaskIds,
+      assigneeRemarks,
+    })
+
+    res.json({
+      ok: true,
+      payload_id: r.payload_id,
+      expires_in_seconds: r.expires_in_seconds ?? null,
+      pool_id: poolId,
+      remark_count: remarkTaskIds.length,
+    })
+  } catch (e: any) {
+    console.error('[getTaskpoolFinalRemarkPayloadIntent]', e)
+    res.status(500).json({ error: e?.message || '生成 final remark payload 失败' })
+  }
+}
+
+/**
  * Step4：POST /api/tasks/:id/taskpool-claim-complete
  * Semi 回跳后：验链 TaskClaimed，并将对应 tasks 行标记为 claimed（幂等）
  */
@@ -1980,6 +2178,88 @@ export const completeTaskpoolClaim = async (req: AuthRequest, res: Response) => 
   } catch (e: any) {
     console.error('[completeTaskpoolClaim]', e)
     res.status(500).json({ error: e?.message || 'claim complete 失败' })
+  }
+}
+
+/**
+ * 链上补同步领取：Semi 回跳失败但链上已 TaskClaimed 时，按日志找回 tx 并落库（幂等）
+ */
+export const reconcileTaskpoolClaim = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ error: '未授权' })
+    const taskId = String(req.params.id || '').trim()
+    if (!taskId) return res.status(400).json({ error: '缺少 taskId' })
+
+    const task = await getTaskFromDb(taskId)
+    const taskInfoId = (task as any).task_info_id as string | undefined
+    if (!taskInfoId) return res.status(400).json({ error: '缺少 task_info_id' })
+
+    if ((task as any).claimer_id) {
+      return res.json({ ok: true, alreadyClaimed: true })
+    }
+
+    const claimer = (user.evm_chain_address || user.evm_chain_active_key || '').trim()
+    if (!claimer || !isAddress(claimer)) {
+      return res.status(400).json({
+        error: '用户缺少有效链上领取地址（需 Semi 智能账户 evm_chain_address）',
+      })
+    }
+
+    const taskInfo = (task as any).task_info as Record<string, unknown> | null | undefined
+    if (!taskInfo || taskInfo.use_taskpool !== true) {
+      return res.status(400).json({ error: '非任务池任务' })
+    }
+
+    const createTx = typeof taskInfo.taskpool_create_tx_hash === 'string' ? taskInfo.taskpool_create_tx_hash.trim() : ''
+    if (!createTx || !isHex(createTx) || createTx.length !== 66) {
+      return res.status(409).json({
+        error: '缺少有效建池交易哈希，无法确定链上扫描起点（请等待建池确认后再试）',
+      })
+    }
+
+    const { taskpoolReadPublicClient } = await import('../services/taskpoolReadClient')
+    const receipt = await taskpoolReadPublicClient.getTransactionReceipt({ hash: createTx as `0x${string}` })
+    const fromBlock = receipt.blockNumber
+
+    const { findTaskClaimedTransactionHash, verifyTaskpoolTaskClaimedByTx } = await import(
+      '../services/taskpoolOnchainVerifyClaim'
+    )
+    const txHash = await findTaskClaimedTransactionHash({
+      taskInfoId,
+      taskRowId: taskId,
+      assignee: claimer as `0x${string}`,
+      fromBlock,
+    })
+    if (!txHash) {
+      return res.status(404).json({ error: '链上未找到与当前账户匹配的 TaskClaimed 记录' })
+    }
+
+    const rewardNtHuman = String((task as any).reward || '0')
+    const v = await verifyTaskpoolTaskClaimedByTx({
+      taskInfoId,
+      taskRowId: taskId,
+      txHash,
+      claimerAddress: claimer as `0x${string}`,
+      rewardNtHuman,
+    })
+    if (!v.ok) return res.status(409).json({ error: v.error })
+
+    const now = new Date().toISOString()
+    const { error: updErr } = await supabase
+      .from('tasks')
+      .update({ claimer_id: user.id, status: 'claimed', updated_at: now })
+      .eq('id', taskId)
+      .is('claimer_id', null)
+    if (updErr) throw updErr
+
+    const userName = user.name || '未知用户'
+    await appendStatusToTimeline(taskId, 'claimed', user.id, userName, '领取任务（链上补同步）')
+
+    res.json({ ok: true, reconciled: true, tx_hash: txHash })
+  } catch (e: any) {
+    console.error('[reconcileTaskpoolClaim]', e)
+    res.status(500).json({ error: e?.message || 'claim reconcile 失败' })
   }
 }
 
@@ -2060,6 +2340,163 @@ export const completeTaskpoolApprove = async (req: AuthRequest, res: Response) =
   } catch (e: any) {
     console.error('[completeTaskpoolApprove]', e)
     res.status(500).json({ error: e?.message || 'approve complete 失败' })
+  }
+}
+
+/**
+ * Semi 组合流：单参与者薄池（participant_limit=1）。
+ * - **V4（TaskPoolLogicV4）**：一笔 `finalApprovePool` 同时完成子任务链上 Completed + 开启公示；回跳可只带 `final_tx_hash`（或 `tx_hash`）。
+ * - **V3 兼容**：仍支持 approve + final 两笔哈希（不同交易），按顺序与事件分别校验。
+ */
+export const completeTaskpoolApproveAndFinalize = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ error: '未授权' })
+    const taskId = String(req.params.id || '').trim()
+    if (!taskId) return res.status(400).json({ error: '缺少 taskId' })
+
+    const body = req.body || {}
+    const state = typeof body.state === 'string' ? body.state.trim() : ''
+    const status = body.status
+    const approveTxHashRaw = typeof body.approve_tx_hash === 'string' ? body.approve_tx_hash.trim() : ''
+    const finalTxHashRaw =
+      typeof body.final_tx_hash === 'string'
+        ? body.final_tx_hash.trim()
+        : typeof (body as any).tx_hash === 'string'
+          ? String((body as any).tx_hash).trim()
+          : ''
+    const comments = typeof body.comments === 'string' ? body.comments.trim() : ''
+    if (state.length < 8) return res.status(400).json({ error: 'state 无效' })
+    if (status !== 'success' && status !== 'failed' && status !== 'cancelled') {
+      return res.status(400).json({ error: 'status 无效' })
+    }
+    if (status !== 'success') return res.json({ ok: true, skipped: true })
+    if (!finalTxHashRaw) return res.status(400).json({ error: '缺少 final_tx_hash（或 tx_hash）' })
+    if (!isHex(finalTxHashRaw) || finalTxHashRaw.length !== 66) {
+      return res.status(400).json({ error: 'final_tx_hash 格式非法' })
+    }
+    const finalTxHash = finalTxHashRaw as `0x${string}`
+    const approveTxHash =
+      approveTxHashRaw && isHex(approveTxHashRaw) && approveTxHashRaw.length === 66
+        ? (approveTxHashRaw as `0x${string}`)
+        : null
+
+    const task = await getTaskFromDb(taskId)
+    const taskInfoId = (task as any).task_info_id as string | undefined
+    if (!taskInfoId) return res.status(400).json({ error: '缺少 task_info_id' })
+
+    if ((task as any).status === 'completed') return res.json({ ok: true, alreadyCompleted: true })
+
+    const taskInfoRow = (task as any).task_info as Record<string, unknown> | null | undefined
+    const participantLimit = (taskInfoRow?.participant_limit as number | null | undefined) ?? 1
+    if (participantLimit !== 1) {
+      return res.status(400).json({ error: '该接口仅用于单参与者任务（task_info.participant_limit=1）' })
+    }
+
+    const { data: taskInfo, error: infoErr } = await supabase
+      .from('task_info')
+      .select('id, creator_id, manager_user_id, use_taskpool, taskpool_create_tx_hash')
+      .eq('id', taskInfoId)
+      .single()
+    if (infoErr) throw infoErr
+    if (!taskInfo || (taskInfo as any).use_taskpool !== true) return res.status(400).json({ error: '非任务池任务' })
+
+    const listingKind = (task as any).listing_kind as string | null | undefined
+    const perm = checkTaskApproveRejectPermission(listingKind, taskInfo as any, user.id)
+    if (!perm.ok) return res.status(403).json({ error: perm.message })
+
+    const { verifyTaskpoolSubtaskApprovedByTx } = await import('../services/taskpoolOnchainVerifyApprove')
+    const { verifyTaskpoolPoolFinalApprovedByTx } = await import('../services/taskpoolOnchainVerifyPoolFinal')
+    const { taskpoolReadPublicClient } = await import('../services/taskpoolReadClient')
+
+    const v4SingleTx =
+      !approveTxHash || approveTxHash.toLowerCase() === finalTxHash.toLowerCase()
+
+    if (v4SingleTx) {
+      const recFinal = await taskpoolReadPublicClient.getTransactionReceipt({ hash: finalTxHash })
+      if (recFinal.status !== 'success') return res.status(409).json({ error: '终审链上交易未成功' })
+      const v2 = await verifyTaskpoolPoolFinalApprovedByTx({
+        taskInfoId,
+        txHash: finalTxHash,
+        expectedCompletedTaskRowId: taskId,
+      })
+      if (!v2.ok) return res.status(409).json({ error: v2.error })
+
+      const now = new Date().toISOString()
+      const { error: updErr } = await supabase
+        .from('tasks')
+        .update({ status: 'completed', completed_at: now, updated_at: now })
+        .eq('id', taskId)
+      if (updErr) throw updErr
+
+      if (comments) {
+        await supabase.from('task_proofs').upsert(
+          {
+            task_id: taskId,
+            reject_reason: comments,
+            reject_option: null,
+            updated_at: now,
+          },
+          { onConflict: 'task_id' }
+        )
+      }
+
+      const userName = user.name || '未知用户'
+      await appendStatusToTimeline(taskId, 'completed', user.id, userName, '审核通过', comments || undefined)
+
+      return res.json({
+        ok: true,
+        mode: 'v4_single_final',
+        final: jsonSafe(v2),
+      })
+    }
+
+    if (!approveTxHash) return res.status(400).json({ error: '缺少 approve_tx_hash' })
+
+    const recApprove = await taskpoolReadPublicClient.getTransactionReceipt({ hash: approveTxHash })
+    const recFinal = await taskpoolReadPublicClient.getTransactionReceipt({ hash: finalTxHash })
+    if (recApprove.status !== 'success') return res.status(409).json({ error: 'approve 链上交易未成功' })
+    if (recFinal.status !== 'success') return res.status(409).json({ error: '终审链上交易未成功' })
+    if (recApprove.blockNumber >= recFinal.blockNumber) {
+      return res.status(409).json({ error: '交易顺序无效：终审必须发生在子任务审核之后' })
+    }
+
+    const v1 = await verifyTaskpoolSubtaskApprovedByTx({ taskInfoId, taskRowId: taskId, txHash: approveTxHash })
+    if (!v1.ok) return res.status(409).json({ error: v1.error })
+    const v2 = await verifyTaskpoolPoolFinalApprovedByTx({ taskInfoId, txHash: finalTxHash })
+    if (!v2.ok) return res.status(409).json({ error: v2.error })
+
+    const now = new Date().toISOString()
+    const { error: updErr } = await supabase
+      .from('tasks')
+      .update({ status: 'completed', completed_at: now, updated_at: now })
+      .eq('id', taskId)
+    if (updErr) throw updErr
+
+    if (comments) {
+      await supabase.from('task_proofs').upsert(
+        {
+          task_id: taskId,
+          reject_reason: comments,
+          reject_option: null,
+          updated_at: now,
+        },
+        { onConflict: 'task_id' }
+      )
+    }
+
+    const userName = user.name || '未知用户'
+    await appendStatusToTimeline(taskId, 'completed', user.id, userName, '审核通过', comments || undefined)
+
+    res.json({
+      ok: true,
+      mode: 'v3_two_tx',
+      approve: jsonSafe(v1),
+      final: jsonSafe(v2),
+    })
+  } catch (e: any) {
+    console.error('[completeTaskpoolApproveAndFinalize]', e)
+    res.status(500).json({ error: e?.message || 'approve-finalize complete 失败' })
   }
 }
 

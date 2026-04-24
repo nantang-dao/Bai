@@ -171,7 +171,7 @@ test('普通任务=单子任务池（Semi 手动签名辅助）@slow', async () 
     await expect(claimPopup.getByText('已同步领取结果到服务端。')).toBeVisible({ timeout: 240_000 })
 
     // ================
-    // Step5：candidate 提交链下凭证 → publisher 走 Semi 链上审核 approveSubtask → 回跳确权
+    // Step5：candidate 提交链下凭证 → publisher 走 Semi 薄池页（V4：单笔 finalApprovePool）→ 回跳确权
     // ================
     await candPage.goto(`${baseURL}/tasks/${encodeURIComponent(taskId)}`, { waitUntil: 'domcontentloaded' })
     await expect(candPage.getByRole('button', { name: /提交任务/ })).toBeVisible({ timeout: 60_000 })
@@ -204,28 +204,17 @@ test('普通任务=单子任务池（Semi 手动签名辅助）@slow', async () 
     await approveBtn.click({ force: true })
     const approvePopup = await approvePopupPromise
 
-    await waitForReturnCallback(approvePopup, '/wallet/semi-approve-callback', 1_200_000)
-    await expect(approvePopup.getByRole('heading', { name: 'Semi 审核结果' })).toBeVisible({ timeout: 60_000 })
-    await expect(approvePopup.getByText('审核已提交（success）')).toBeVisible({ timeout: 240_000 })
-    await expect(approvePopup.getByText('已同步审核结果到服务端。')).toBeVisible({ timeout: 240_000 })
+    await waitForReturnCallback(approvePopup, '/wallet/semi-approve-finalize-callback', 1_200_000)
+    await expect(approvePopup.getByRole('heading', { name: 'Semi 审核并终审结果' })).toBeVisible({ timeout: 60_000 })
+    await expect(approvePopup.getByText('链上流程已完成（success）')).toBeVisible({ timeout: 240_000 })
+    await expect(approvePopup.getByText('已同步链上审核与终审到服务端。')).toBeVisible({ timeout: 240_000 })
 
     // ================
-    // Step6：publisher 终审（finalApprovePool，Semi）→ 回跳确权
+    // Step6：participant_limit=1 时已在 Step5 组合流中完成终审，此处仅打开管理页确认可访问（不再重复 Semi 终审）
     // Step7 distribute：OP 主网 24h 公示期较长，默认不在 E2E 里强行执行（避免你等/花 gas 触发 revert）
     // ================
     await pubPage.goto(`${baseURL}/tasks/pool/${encodeURIComponent(taskInfoId)}/manage`, { waitUntil: 'domcontentloaded' })
     await expect(pubPage.getByRole('heading', { name: '任务池管理' })).toBeVisible({ timeout: 60_000 })
-
-    const finalApproveBtn = pubPage.getByRole('button', { name: /终审（finalApprovePool）/ })
-    await expect(finalApproveBtn).toBeVisible({ timeout: 60_000 })
-    const finalPopupPromise = pubPage.waitForEvent('popup', { timeout: 30_000 })
-    await finalApproveBtn.click({ force: true })
-    const finalPopup = await finalPopupPromise
-
-    await waitForReturnCallback(finalPopup, '/wallet/semi-final-approve-callback', 1_200_000)
-    await expect(finalPopup.getByRole('heading', { name: 'Semi 终审结果' })).toBeVisible({ timeout: 60_000 })
-    await expect(finalPopup.getByText('终审已提交（success）')).toBeVisible({ timeout: 240_000 })
-    await expect(finalPopup.getByText('已同步终审结果到服务端。')).toBeVisible({ timeout: 240_000 })
 
     if (process.env.E2E_ALLOW_DISTRIBUTE === 'true') {
       const distributeBtn = pubPage.getByRole('button', { name: /结算（distribute）/ })

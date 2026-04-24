@@ -3,20 +3,31 @@ import { taskpoolConfig } from '../config/taskpool'
 import { taskpoolReadPublicClient } from './taskpoolReadClient'
 import { uuidToTaskPoolUint256 } from '../utils/taskpool/ids'
 
+/** 必须与链上 TaskPoolLogic V2/V3/V4 一致：`Distributed(uint256,uint256,uint256,bool)` */
 const distributedEventAbi = [
   {
     type: 'event',
     name: 'Distributed',
     inputs: [
       { indexed: true, name: 'poolId', type: 'uint256' },
-      { indexed: false, name: 'totalPaid', type: 'uint256' },
+      { indexed: false, name: 'paidOut', type: 'uint256' },
       { indexed: false, name: 'refund', type: 'uint256' },
+      { indexed: false, name: 'refundToCredit', type: 'bool' },
     ],
   },
 ] as const
 
 export type VerifyTaskpoolDistributeByTxResult =
-  | { ok: true; txHash: `0x${string}`; poolId: bigint; totalPaid: bigint; refund: bigint }
+  | {
+      ok: true
+      txHash: `0x${string}`
+      poolId: bigint
+      /** 合约字段 `paidOut`（历史字段名 totalPaid 兼容） */
+      paidOut: bigint
+      refund: bigint
+      refundToCredit: boolean
+      totalPaid: bigint
+    }
   | { ok: false; txHash: `0x${string}` | null; error: string }
 
 export async function verifyTaskpoolDistributedByTx(opts: {
@@ -41,7 +52,18 @@ export async function verifyTaskpoolDistributedByTx(opts: {
         const args = decoded.args as any
         const poolId = args.poolId as bigint
         if (poolId !== expectedPoolId) continue
-        return { ok: true, txHash, poolId, totalPaid: args.totalPaid as bigint, refund: args.refund as bigint }
+        const paidOut = args.paidOut as bigint
+        const refund = args.refund as bigint
+        const refundToCredit = Boolean(args.refundToCredit)
+        return {
+          ok: true,
+          txHash,
+          poolId,
+          paidOut,
+          refund,
+          refundToCredit,
+          totalPaid: paidOut,
+        }
       } catch {
         // ignore
       }

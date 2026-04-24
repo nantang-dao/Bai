@@ -48,7 +48,7 @@
         <ol class="text-sm text-text-body list-decimal pl-5 space-y-2">
           <li>
             <span class="font-medium text-text-title">子任务审核</span>：参与者在任务详情提交凭证 → 创建者在
-            <strong>审核页</strong>通过，并在 Semi 完成 <code class="text-xs">approveSubtask</code>（链上确认子任务完成）。
+            <strong>审核页</strong>通过，并在 Semi 完成链上终局（V4：<code class="text-xs">finalApprovePool</code>，含子任务链上 Completed + 开启公示）。
           </li>
           <li>
             <span class="font-medium text-text-title">整单提交</span>：负责人提交总凭证；创建者在本页下方「整单提交」区块审核通过（链下）。
@@ -307,7 +307,7 @@
         <h2 class="font-bold text-text-title mb-2">链上终审与结算（Semi）</h2>
         <p class="text-xs text-text-placeholder mb-3">
           先由发布者在 Semi 完成<strong>终审</strong>，合约进入约 <strong>24 小时公示</strong>；公示结束后由<strong>领取者在任务详情页</strong>优先发起<strong>结算</strong>（同一套 Semi TaskPool 路径）。
-          此处「备用结算」仅作补位。若在公示期内点结算，链上通常会失败，属正常限制。
+          此处「备用结算」仅作补位，且为<strong>任何登录用户</strong>开放（触发合约按规则给所有领取者发放）。若在公示期内点结算，链上通常会失败，属正常限制。
         </p>
         <div class="flex flex-wrap items-center gap-2">
           <PixelButton
@@ -509,6 +509,7 @@ import {
   startTaskpoolPrepayIntent,
   getTaskpoolPrepayIntentLatest,
   listTaskpoolPrepayIntents,
+  getTaskInfoTaskpoolFinalRemarkPayloadIntent,
   type Task,
   type TaskpoolPrepayIntent,
   type TaskSubtaskDraft,
@@ -519,7 +520,7 @@ import {
   buildSemiTaskpoolDistributeUrl,
   buildSemiTaskpoolFinalApproveUrl,
   buildSemiTaskpoolPrepayUrl,
-  SEMI_TASKPOOL_PREPAY_STATE_KEY,
+  semiTaskpoolStateStorageKey,
 } from '~/utils/semiTaskpoolPrepay'
 import { useToast } from '~/composables/useToast'
 import { useCommunityStore } from '~/stores/community'
@@ -702,8 +703,9 @@ const canFinalApproveOnchain = computed(() => {
 
 const canDistributeOnchain = computed(() => {
   if (!taskMeta.value?.useTaskpool) return false
-  // 本页先仅给创建者入口（避免误操作）；合约上任何人都可 distribute
-  if (!canReviewOverall.value) return false
+  // 合约上任何人都可 distribute；本页也允许任何登录用户触发结算（permissionless）。
+  // 资金去向由合约固定（按 assignee/amount 发放），触发者不影响收款人。
+  if (!me.value?.id) return false
   if (!taskMeta.value?.taskpoolCreateTxHash) return false
   if (taskMeta.value?.taskpoolPhase === 'closed') return false
   return true
@@ -736,9 +738,6 @@ const distributeDisabledHint = computed(() => {
   if (!taskMeta.value?.useTaskpool) return ''
   if (canDistributeOnchain.value) return ''
   if (!me.value?.id) return '请先登录'
-  if (taskMeta.value.creatorId && me.value.id !== taskMeta.value.creatorId) {
-    return '仅发布者可在本页使用备用结算；领取者优先在任务详情页发起'
-  }
   if (!taskMeta.value.taskpoolCreateTxHash) return '需先完成链上建池'
   if (taskMeta.value.taskpoolPhase === 'closed') return '本任务池已结算关闭'
   return ''
@@ -943,7 +942,7 @@ async function onSemiPrepay() {
   } finally {
     prepayOpening.value = false
   }
-  sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+  sessionStorage.setItem(semiTaskpoolStateStorageKey('prepay', taskInfoId.value), state)
   const returnUrl = `${window.location.origin}/wallet/semi-prepay-callback`
   const url = buildSemiTaskpoolPrepayUrl({
     semiAppBaseUrl: base,
@@ -966,6 +965,14 @@ async function onSemiPrepay() {
     if (!w) {
       toast.add({ title: '无法打开窗口', description: '请允许弹窗后重试', color: 'orange' })
       return
+    }
+    // 回跳页在弹窗上下文读取 sessionStorage：写入弹窗窗口，避免旧 state 残留造成 mismatch
+    try {
+      const key = semiTaskpoolStateStorageKey('prepay', taskInfoId.value)
+      w.sessionStorage.setItem(key, state)
+      w.sessionStorage.removeItem('semi_taskpool_prepay_state')
+    } catch {
+      /* ignore */
     }
     try {
       w.document.title = '正在跳转…'
@@ -1356,11 +1363,33 @@ async function onFinalApproveOnchain() {
   try {
     const state = generateRandomState()
     try {
-      sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+      sessionStorage.setItem(semiTaskpoolStateStorageKey('final_approve', id), state)
     } catch {}
     const poolId = uuidToTaskPoolUint256(id).toString()
-    const returnUrl = `${window.location.origin}/wallet/semi-final-approve-callback?taskInfoId=${encodeURIComponent(id)}`
-    const url = buildSemiTaskpoolFinalApproveUrl({
+    // 终审成功后，自动回跳任务详情并弹「一键分享到社区圈」需要 taskId（池列表行 id）
+    let detailTaskId = String(taskMeta.value?.id || '').trim()
+    try {
+      const baseUrl = getApiBaseUrl()
+      const cid = communityStore.currentCommunityId || undefined
+      let tasks: Task[]
+      try {
+        tasks = await getAllTasks(baseUrl, cid)
+      } catch {
+        tasks = await getAllTasks(baseUrl)
+      }
+      const pick = (tasks || []).find((t) => {
+        if (t.taskInfoId !== id) return false
+        const lk = ((t as any).listingKind ?? (t as any).listing_kind ?? '') as string
+        return lk === 'taskpool_pool'
+      })
+      if (pick?.id) detailTaskId = String(pick.id).trim()
+    } catch {
+      /* ignore */
+    }
+    const returnUrl = `${window.location.origin}/wallet/semi-final-approve-callback?taskInfoId=${encodeURIComponent(id)}${
+      detailTaskId ? `&taskId=${encodeURIComponent(detailTaskId)}` : ''
+    }`
+    let url = buildSemiTaskpoolFinalApproveUrl({
       semiAppBaseUrl: semiAppUrl,
       returnUrl,
       state,
@@ -1371,8 +1400,32 @@ async function onFinalApproveOnchain() {
     const w = window.open('about:blank', '_blank')
     if (!w) throw new Error('浏览器阻止了弹窗，请允许弹窗后重试')
     try {
+      const key = semiTaskpoolStateStorageKey('final_approve', id)
+      w.sessionStorage.setItem(key, state)
+      w.sessionStorage.removeItem('semi_taskpool_prepay_state')
+    } catch {
+      /* ignore */
+    }
+    try {
       w.document.title = '正在跳转…'
     } catch {}
+    // C1：终审备注 batch 用短 token 传递（避免 URL 塞数组）
+    try {
+      const baseUrl = getApiBaseUrl()
+      const r = await getTaskInfoTaskpoolFinalRemarkPayloadIntent(
+        id,
+        { state, publisher_remark: null },
+        baseUrl
+      )
+      if (r?.payload_id) {
+        url += `&payload_id=${encodeURIComponent(r.payload_id)}`
+      }
+    } catch (e) {
+      try {
+        w.close()
+      } catch {}
+      throw e
+    }
     w.location.href = url
     toast.add({ title: '已打开 Semi', description: '请在 Semi 完成终审（开启约 24 小时公示）', color: 'green' })
   } catch (e) {
@@ -1401,7 +1454,7 @@ async function onDistributeOnchain() {
   try {
     const state = generateRandomState()
     try {
-      sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+      sessionStorage.setItem(semiTaskpoolStateStorageKey('distribute', id), state)
     } catch {}
     const poolId = uuidToTaskPoolUint256(id).toString()
     const returnUrl = `${window.location.origin}/wallet/semi-distribute-callback?taskInfoId=${encodeURIComponent(id)}`
@@ -1415,6 +1468,13 @@ async function onDistributeOnchain() {
     })
     const w = window.open('about:blank', '_blank')
     if (!w) throw new Error('浏览器阻止了弹窗，请允许弹窗后重试')
+    try {
+      const key = semiTaskpoolStateStorageKey('distribute', id)
+      w.sessionStorage.setItem(key, state)
+      w.sessionStorage.removeItem('semi_taskpool_prepay_state')
+    } catch {
+      /* ignore */
+    }
     try {
       w.document.title = '正在跳转…'
     } catch {}

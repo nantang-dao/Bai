@@ -63,6 +63,7 @@ import PixelButton from '~/components/pixel/PixelButton.vue'
 import {
   parseSemiPrepayCallback,
   SEMI_TASKPOOL_PREPAY_STATE_KEY,
+  semiTaskpoolStateStorageKey,
   optimismTxExplorerUrl,
 } from '~/utils/semiTaskpoolPrepay'
 import { completeTaskpoolDistribute, getApiBaseUrl } from '~/utils/api'
@@ -78,6 +79,7 @@ const serverError = ref('')
 const parsed = ref(parseSemiPrepayCallback(''))
 
 const taskInfoId = computed(() => (typeof route.query.taskInfoId === 'string' ? route.query.taskInfoId : ''))
+const taskId = computed(() => (typeof route.query.taskId === 'string' ? route.query.taskId : ''))
 
 const recoveryHint = computed(() => {
   const st = parsed.value.status
@@ -93,10 +95,14 @@ const recoveryHint = computed(() => {
 onMounted(async () => {
   try {
     parsed.value = parseSemiPrepayCallback(window.location.search || '')
-    const saved = sessionStorage.getItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
+    const key = semiTaskpoolStateStorageKey('distribute', taskInfoId.value || undefined)
+    const saved = sessionStorage.getItem(key) ?? sessionStorage.getItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
     const received = parsed.value.state
     if (received && saved && saved !== received) stateMismatch.value = true
-    else if (received && saved && saved === received) sessionStorage.removeItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
+    else if (received && saved && saved === received) {
+      sessionStorage.removeItem(key)
+      sessionStorage.removeItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
+    }
 
     const st = parsed.value.status
     if (!stateMismatch.value && taskInfoId.value && parsed.value.state && st) {
@@ -110,6 +116,12 @@ onMounted(async () => {
       } catch (e) {
         serverError.value = e instanceof Error ? e.message : String(e)
       }
+    }
+    // success 且已同步服务端：自动回到任务详情，并触发领取者分享弹窗（tasks/[id].vue）
+    if (!stateMismatch.value && parsed.value.status === 'success' && serverOk.value && taskId.value) {
+      await nextTick()
+      router.replace(`/tasks/${encodeURIComponent(taskId.value)}?share=claimer`)
+      return
     }
     window.history.replaceState({}, document.title, route.path)
   } finally {

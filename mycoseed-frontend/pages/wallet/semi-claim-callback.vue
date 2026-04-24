@@ -71,6 +71,7 @@ import PixelButton from '~/components/pixel/PixelButton.vue'
 import {
   parseSemiPrepayCallback,
   SEMI_TASKPOOL_PREPAY_STATE_KEY,
+  semiTaskpoolStateStorageKey,
   optimismTxExplorerUrl,
 } from '~/utils/semiTaskpoolPrepay'
 import { completeTaskpoolClaim, getApiBaseUrl } from '~/utils/api'
@@ -110,11 +111,13 @@ onMounted(async () => {
   try {
     const search = window.location.search || ''
     parsed.value = parseSemiPrepayCallback(search)
-    const saved = sessionStorage.getItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
+    const key = semiTaskpoolStateStorageKey('claim', taskId.value || undefined)
+    const saved = sessionStorage.getItem(key) ?? sessionStorage.getItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
     const received = parsed.value.state
     if (received && saved && saved !== received) {
       stateMismatch.value = true
     } else if (received && saved && saved === received) {
+      sessionStorage.removeItem(key)
       sessionStorage.removeItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
     }
 

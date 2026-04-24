@@ -1,4 +1,4 @@
-import { decodeEventLog, isHex } from 'viem'
+import { decodeEventLog, isHex, parseAbiItem } from 'viem'
 import { taskpoolConfig } from '../config/taskpool'
 import { taskpoolReadPublicClient } from './taskpoolReadClient'
 import { uuidToTaskPoolUint256 } from '../utils/taskpool/ids'
@@ -16,6 +16,10 @@ const taskClaimedEventAbi = [
     ],
   },
 ] as const
+
+const taskClaimedParsed = parseAbiItem(
+  'event TaskClaimed(uint256 indexed poolId, uint256 indexed taskId, address indexed assignee, uint256 amount)',
+)
 
 export type VerifyTaskpoolClaimByTxResult =
   | {
@@ -79,5 +83,51 @@ export async function verifyTaskpoolTaskClaimedByTx(opts: {
   } catch (e: any) {
     return { ok: false, txHash: isHex(opts.txHash) ? (opts.txHash as `0x${string}`) : null, error: e?.message || 'verify failed' }
   }
+}
+
+/**
+ * 在未持有 tx_hash 时，从代理合约按索引参数扫描 TaskClaimed 日志，返回最近一次匹配的链上交易哈希。
+ * 用于 Semi 回跳失败但链上已领取后的补同步（分块查询，避免单次范围过大被 RPC 拒绝）。
+ */
+export async function findTaskClaimedTransactionHash(opts: {
+  taskInfoId: string
+  taskRowId: string
+  assignee: `0x${string}`
+  /** 从该区块起扫（通常为 PoolCreated / 建池交易所在块） */
+  fromBlock: bigint
+}): Promise<`0x${string}` | null> {
+  const poolId = uuidToTaskPoolUint256(opts.taskInfoId)
+  const taskId = uuidToTaskPoolUint256(opts.taskRowId)
+  const proxy = taskpoolConfig.proxyAddress
+  const assignee = opts.assignee
+
+  const latest = await taskpoolReadPublicClient.getBlockNumber()
+  let start = opts.fromBlock > latest ? latest : opts.fromBlock
+
+  while (start <= latest) {
+    let chunk = 40_000n
+    while (chunk >= 2_000n) {
+      const end = start + chunk - 1n > latest ? latest : start + chunk - 1n
+      try {
+        const logs = await taskpoolReadPublicClient.getLogs({
+          address: proxy,
+          event: taskClaimedParsed,
+          args: { poolId, taskId, assignee },
+          fromBlock: start,
+          toBlock: end,
+        })
+        if (logs.length > 0) {
+          return logs[logs.length - 1].transactionHash
+        }
+        start = end + 1n
+        break
+      } catch (e) {
+        if (chunk <= 2_000n) throw e
+        chunk = chunk / 2n
+      }
+    }
+  }
+
+  return null
 }
 

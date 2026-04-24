@@ -20,7 +20,8 @@
     "test:taskpool-step0": "tsx scripts/testTaskpoolStep0.ts",
     "test:taskpool-proxy-impl": "tsx scripts/checkTaskpoolProxyImplementation.ts",
     "diagnose:taskpool-pool-created": "tsx scripts/diagnoseTaskpoolPoolCreated.ts",
-    "diagnose:taskpool-prepay-gap": "tsx scripts/diagnoseTaskpoolPrepayGap.ts"
+    "diagnose:taskpool-prepay-gap": "tsx scripts/diagnoseTaskpoolPrepayGap.ts",
+    "test:distributed-event-decode": "tsx scripts/verifyDistributedEventDecode.ts"
   },
   "keywords": [],
   "author": "",

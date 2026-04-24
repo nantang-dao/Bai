@@ -146,6 +146,8 @@ export interface Task {
   taskpoolCreateLastError?: string | null
   taskpoolCreateUpdatedAt?: string | null
   subtasksFinalized?: boolean
+  /** 读链上接包者备注时用的任务行 UUID（当前页 `id` 为池列表行时与链上 taskId 可能不同，需以后端为准） */
+  remarkTaskRowId?: string | null
   /** 链上 poolId 由该 UUID 派生（通常等于 task_info.id） */
   taskInfoIdForPool?: string
 }
@@ -169,6 +171,7 @@ function normalizeTaskRow(raw: any): Task {
   if (t.taskpoolCreateUpdatedAt == null && t.taskpool_create_updated_at != null) t.taskpoolCreateUpdatedAt = t.taskpool_create_updated_at
   if (t.managerUserId == null && t.manager_user_id != null) t.managerUserId = t.manager_user_id
   if (t.subtasksFinalized == null && t.subtasks_finalized != null) t.subtasksFinalized = t.subtasks_finalized
+  if (t.remarkTaskRowId == null && t.remark_task_row_id != null) t.remarkTaskRowId = t.remark_task_row_id
   return t as Task
 }
 
@@ -1277,6 +1280,40 @@ export const getTaskpoolClaimIntent = async (
   return response.json()
 }
 
+export const getTaskpoolFinalRemarkPayloadIntent = async (
+  taskId: string,
+  body: { state: string; publisher_remark?: string | null; include_task_ids?: string[] },
+  baseUrl: string
+): Promise<{ ok: boolean; payload_id: string; expires_in_seconds?: number | null; pool_id?: string; remark_count?: number }> => {
+  const response = await fetch(`${baseUrl}/api/tasks/${taskId}/taskpool-final-remark-payload-intent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '生成终审 remark payload 失败')
+  }
+  return response.json()
+}
+
+export const getTaskInfoTaskpoolFinalRemarkPayloadIntent = async (
+  taskInfoId: string,
+  body: { state: string; publisher_remark?: string | null; include_task_ids?: string[] },
+  baseUrl: string
+): Promise<{ ok: boolean; payload_id: string; expires_in_seconds?: number | null; pool_id?: string; remark_count?: number }> => {
+  const response = await fetch(`${baseUrl}/api/task-info/${taskInfoId}/taskpool/final-remark-payload-intent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '生成终审 remark payload 失败')
+  }
+  return response.json()
+}
+
 export const completeTaskpoolClaim = async (
   taskId: string,
   body: {
@@ -1294,6 +1331,23 @@ export const completeTaskpoolClaim = async (
   if (!response.ok) {
     const err = await response.json().catch(() => ({}))
     throw new Error((err as { error?: string }).error || '同步领取结果失败')
+  }
+  return response.json()
+}
+
+/** 链上补同步领取（回跳失败但链上已 TaskClaimed 时） */
+export const reconcileTaskpoolClaim = async (
+  taskId: string,
+  baseUrl: string
+): Promise<{ ok: boolean; alreadyClaimed?: boolean; reconciled?: boolean; tx_hash?: string }> => {
+  const response = await fetch(`${baseUrl}/api/tasks/${taskId}/taskpool-claim-reconcile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({}),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '链上补同步领取失败')
   }
   return response.json()
 }
@@ -1316,6 +1370,39 @@ export const completeTaskpoolApprove = async (
   if (!response.ok) {
     const err = await response.json().catch(() => ({}))
     throw new Error((err as { error?: string }).error || '同步审核结果失败')
+  }
+  return response.json()
+}
+
+/** Semi 单参与者薄池：V4 一笔 finalApprovePool；兼容旧版两笔回跳（approve_tx + final_tx） */
+export const completeTaskpoolApproveAndFinalize = async (
+  taskId: string,
+  body: {
+    state: string
+    status: 'success' | 'failed' | 'cancelled'
+    approve_tx_hash?: string | null
+    /** V4：与 Semi 回跳 tx_hash 一致时可只传其一 */
+    final_tx_hash?: string | null
+    tx_hash?: string | null
+    comments?: string | null
+  },
+  baseUrl: string
+): Promise<{
+  ok: boolean
+  alreadyCompleted?: boolean
+  skipped?: boolean
+  mode?: string
+  approve?: unknown
+  final?: unknown
+}> => {
+  const response = await fetch(`${baseUrl}/api/tasks/${taskId}/taskpool-approve-finalize-complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || '同步审核与终审失败')
   }
   return response.json()
 }

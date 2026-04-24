@@ -23,7 +23,18 @@ export default defineConfig({
     storageState: hasState ? defaultStatePath : undefined,
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        // 本机已安装 Google Chrome 时：PLAYWRIGHT_CHROME_CHANNEL=chrome npx playwright test
+        ...(process.env.PLAYWRIGHT_CHROME_CHANNEL
+          ? { channel: process.env.PLAYWRIGHT_CHROME_CHANNEL as 'chrome' }
+          : {}),
+      },
+    },
+  ],
   webServer: {
     command: 'npm run dev',
     url: baseURL,

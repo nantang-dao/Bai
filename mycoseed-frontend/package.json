@@ -12,6 +12,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "check:taskpool-digest": "tsx scripts/check-taskpool-digest.mts",
+    "diagnose:taskpool-remarks": "node scripts/diagnose-taskpool-remarks.mjs",
     "taskpool:print-typeddata": "tsx scripts/taskpool-print-typeddata.mts",
     "taskpool:test-eip712": "tsx scripts/test-taskpool-eip712.mts",
     "taskpool:test-createpool-mock": "tsx scripts/test-taskpool-createpool-mock.mts",
@@ -31,7 +32,8 @@
     "test:e2e": "playwright test",
     "test:e2e:taskpool": "playwright test e2e/taskpool-*.spec.ts --grep-invert @slow",
     "test:e2e:slow": "playwright test --grep @slow",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:taskpool-remarks": "playwright test e2e/taskpool-detail-remark-cards.spec.ts"
   },
   "dependencies": {
     "@types/d3": "^7.4.3",

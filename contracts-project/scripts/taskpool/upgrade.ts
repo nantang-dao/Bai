@@ -1,5 +1,5 @@
 /**
- * TaskPool V3：升级现有 Proxy 的实现地址（不更换 Proxy）。
+ * TaskPool：升级现有 Proxy 的实现地址（不更换 Proxy）。
  *
  * 用法：
  *   TASKPOOL_PROXY_ADDRESS=0x... PRIVATE_KEY=... OP_RPC_URL=... npm run upgrade:taskpool:optimism
@@ -32,11 +32,11 @@ async function main() {
     );
   }
 
-  // 2) 部署新实现（V3）
-  const impl = await ethers.deployContract("TaskPoolLogicV3");
+  // 2) 部署新实现（V4）
+  const impl = await ethers.deployContract("TaskPoolLogicV4");
   await impl.waitForDeployment();
   const implAddr = await impl.getAddress();
-  console.log("[taskpool] TaskPoolLogicV3 deployed to:", implAddr);
+  console.log("[taskpool] TaskPoolLogicV4 deployed to:", implAddr);
 
   // 3) 升级 Proxy
   const tx = await proxy.upgradeTo(implAddr);
@@ -52,7 +52,7 @@ async function main() {
 
   console.log("\n=== TaskPool upgrade done ===");
   console.log("TASKPOOL_PROXY_ADDRESS=" + proxyAddr);
-  console.log("TASKPOOL_LOGIC_V3_ADDRESS=" + implAddr);
+  console.log("TASKPOOL_LOGIC_V4_ADDRESS=" + implAddr);
 }
 
 main().catch((err) => {

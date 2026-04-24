@@ -65,6 +65,7 @@ import PixelButton from '~/components/pixel/PixelButton.vue'
 import {
   parseSemiPrepayCallback,
   SEMI_TASKPOOL_PREPAY_STATE_KEY,
+  semiTaskpoolStateStorageKey,
   optimismTxExplorerUrl,
 } from '~/utils/semiTaskpoolPrepay'
 import { completeTaskpoolFinalApprove, getApiBaseUrl } from '~/utils/api'
@@ -80,6 +81,7 @@ const serverError = ref('')
 const parsed = ref(parseSemiPrepayCallback(''))
 
 const taskInfoId = computed(() => (typeof route.query.taskInfoId === 'string' ? route.query.taskInfoId : ''))
+const taskId = computed(() => (typeof route.query.taskId === 'string' ? route.query.taskId : ''))
 
 const recoveryHint = computed(() => {
   const st = parsed.value.status
@@ -95,10 +97,14 @@ const recoveryHint = computed(() => {
 onMounted(async () => {
   try {
     parsed.value = parseSemiPrepayCallback(window.location.search || '')
-    const saved = sessionStorage.getItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
+    const key = semiTaskpoolStateStorageKey('final_approve', taskInfoId.value || undefined)
+    const saved = sessionStorage.getItem(key) ?? sessionStorage.getItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
     const received = parsed.value.state
     if (received && saved && saved !== received) stateMismatch.value = true
-    else if (received && saved && saved === received) sessionStorage.removeItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
+    else if (received && saved && saved === received) {
+      sessionStorage.removeItem(key)
+      sessionStorage.removeItem(SEMI_TASKPOOL_PREPAY_STATE_KEY)
+    }
 
     const st = parsed.value.status
     if (!stateMismatch.value && taskInfoId.value && parsed.value.state && st) {
@@ -112,6 +118,22 @@ onMounted(async () => {
       } catch (e) {
         serverError.value = e instanceof Error ? e.message : String(e)
       }
+    }
+    // 成功且已同步服务端：自动回跳任务详情，并触发 reviewer 自动弹分享（见 tasks/[id].vue 的 handleReturnQuery）
+    if (
+      !stateMismatch.value &&
+      parsed.value.status === 'success' &&
+      serverOk.value &&
+      taskId.value
+    ) {
+      await nextTick()
+      const txRaw = String(parsed.value.tx_hash || '').trim()
+      const txOk = txRaw.startsWith('0x') && txRaw.length === 66
+      const poolTx = txOk ? `&pool_final_tx=${encodeURIComponent(txRaw)}` : ''
+      router.replace(
+        `/tasks/${encodeURIComponent(taskId.value)}?share=reviewer&reviewed=true${poolTx}`
+      )
+      return
     }
     window.history.replaceState({}, document.title, route.path)
   } finally {

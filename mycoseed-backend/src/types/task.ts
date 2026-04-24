@@ -46,6 +46,8 @@ export interface TaskInfo {
     title: string
     description: string
     activityId: number
+    /** 所属社区 UUID（来自 task_info.community_id） */
+    communityId?: string | null
     startDate?: string
     deadline?: string
     submitDeadline?: string
@@ -79,6 +81,8 @@ export interface Task{
     id: string
     taskInfoId: string           // 关联的任务信息ID
     taskInfo?: TaskInfo          // 关联的任务信息（JOIN后填充）
+    /** 所属社区 UUID（便于前端兜底，不依赖 taskInfo 是否被裁剪） */
+    communityId?: string | null
     
     // 创建者和领取者（每个任务行只有一个）
     creatorId: string            // 创建者ID (UUID)

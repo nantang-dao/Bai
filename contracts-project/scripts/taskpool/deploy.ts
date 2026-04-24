@@ -21,10 +21,10 @@ async function main() {
   console.log("[taskpool] Deploying with account:", admin);
   console.log("[taskpool] Using NT token address:", ntAddress);
 
-  const taskPoolLogic = await ethers.deployContract("TaskPoolLogicV3");
+  const taskPoolLogic = await ethers.deployContract("TaskPoolLogicV4");
   await taskPoolLogic.waitForDeployment();
   const taskPoolLogicAddr = await taskPoolLogic.getAddress();
-  console.log("[taskpool] TaskPoolLogicV3 deployed to:", taskPoolLogicAddr);
+  console.log("[taskpool] TaskPoolLogicV4 deployed to:", taskPoolLogicAddr);
 
   const proxy = await ethers.deployContract("contracts/Proxy.sol:Proxy", [
     taskPoolLogicAddr,
@@ -34,7 +34,7 @@ async function main() {
   const proxyAddr = await proxy.getAddress();
   console.log("[taskpool] Proxy deployed to:", proxyAddr);
 
-  const taskPoolViaProxy = await ethers.getContractAt("TaskPoolLogicV3", proxyAddr);
+  const taskPoolViaProxy = await ethers.getContractAt("TaskPoolLogicV4", proxyAddr);
   const tx = await taskPoolViaProxy.initialize(ntAddress, admin);
   await tx.wait();
   console.log("[taskpool] Proxy initialized.");

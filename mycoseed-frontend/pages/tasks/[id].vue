@@ -125,11 +125,11 @@
                 <div v-if="task.assignedUserIds && task.assignedUserIds.length > 0" class="flex flex-wrap items-center gap-2 pb-2 border-b border-black/10">
                   <span class="text-text-body">预留用户:</span>
                   <span
-                    v-for="(assignedUserId, index) in task.assignedUserIds"
+                    v-for="(assignedUserId, idx) in task.assignedUserIds"
                     :key="assignedUserId"
                     class="font-medium text-text-title"
                   >
-                    {{ getUserName(assignedUserId) || '未知用户' }}<span v-if="index < task.assignedUserIds.length - 1">、</span>
+                    {{ getUserName(assignedUserId) || '未知用户' }}<span v-if="Number(idx) < task.assignedUserIds.length - 1">、</span>
                   </span>
                 </div>
                 
@@ -173,6 +173,15 @@
                   <span class="text-text-body shrink-0">链上阶段</span>
                   <span class="font-medium text-right">{{ taskpoolPhaseLabel }}</span>
                 </div>
+                <div class="flex flex-wrap justify-between gap-2 items-baseline">
+                  <span class="text-text-body shrink-0">链上发放</span>
+                  <span
+                    class="font-medium text-right"
+                    :class="poolOnchainRow?.settled ? 'text-success' : 'text-text-title'"
+                  >
+                    {{ poolOnchainRow?.settled ? '已结算发放完成' : '未结算/未发放' }}
+                  </span>
+                </div>
                 <div
                   v-if="taskpoolCreateStatusLabel"
                   class="flex flex-wrap justify-between gap-2 items-baseline"
@@ -191,6 +200,52 @@
                     rel="noopener noreferrer"
                     class="font-mono text-sm text-primary underline break-all text-right max-w-[min(100%,20rem)]"
                   >{{ shortTxHash(task.taskpoolCreateTxHash) }}</a>
+                </div>
+                <div
+                  v-if="finalApprovedEventRef?.txHash"
+                  class="flex flex-wrap justify-between gap-2 items-start"
+                >
+                  <span class="text-text-body shrink-0 pt-0.5">链上备注</span>
+                  <a
+                    :href="optimismTxExplorerUrl(finalApprovedEventRef.txHash)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="font-mono text-sm text-primary underline break-all text-right max-w-[min(100%,20rem)]"
+                  >
+                    {{ shortTxHash(finalApprovedEventRef.txHash) }}
+                  </a>
+                </div>
+                <div
+                  v-if="remarkReadError && String(remarkReadError).trim()"
+                  class="text-xs text-text-placeholder break-words"
+                >
+                  {{ remarkReadError }}
+                </div>
+                <div
+                  v-if="onchainClaimerRemarkText && String(onchainClaimerRemarkText).trim()"
+                  class="bg-primary/5 border border-border rounded-2xl p-3"
+                >
+                  <div class="flex items-baseline justify-between gap-2 mb-1">
+                    <span class="font-bold text-xs uppercase text-text-title">链上备注（接包者）</span>
+                    <span class="text-xs text-text-placeholder">所有人可见</span>
+                  </div>
+                  <p
+                    data-testid="taskpool-onchain-remark-assignee"
+                    class="text-sm text-text-title whitespace-pre-wrap break-words"
+                  >{{ onchainClaimerRemarkText }}</p>
+                </div>
+                <div
+                  v-if="onchainPublisherRemarkText && String(onchainPublisherRemarkText).trim()"
+                  class="bg-primary/5 border border-border rounded-2xl p-3"
+                >
+                  <div class="flex items-baseline justify-between gap-2 mb-1">
+                    <span class="font-bold text-xs uppercase text-text-title">链上备注（发包者）</span>
+                    <span class="text-xs text-text-placeholder">所有人可见</span>
+                  </div>
+                  <p
+                    data-testid="taskpool-onchain-remark-publisher"
+                    class="text-sm text-text-title whitespace-pre-wrap break-words"
+                  >{{ onchainPublisherRemarkText }}</p>
                 </div>
                 <div class="pt-1">
                   <PixelButton
@@ -217,7 +272,7 @@
           </div>
         </PixelCard>
 
-        <!-- TaskPool：公示结束后由领取者在 Semi 发起 distribute（主路径；管理页为备用） -->
+        <!-- TaskPool：领取者收款（distribute）。卡片始终展示，按钮按状态置灰。 -->
         <PixelCard v-if="showClaimerTaskpoolSettlementCard" class="mb-4">
           <template #header>
             链上收款（领取者）
@@ -228,34 +283,61 @@
               <code class="text-xs">distribute</code>；与「钱包间转账」页面无关。
             </p>
             <p v-if="poolReadLoading" class="text-text-placeholder">读取链上池子状态…</p>
-            <p v-else-if="poolReadError" class="text-destructive">{{ poolReadError }}</p>
+            <template v-else-if="poolReadError">
+              <p class="text-destructive">链上状态读取失败，请点击下方刷新或稍后重试。</p>
+              <p class="text-xs text-text-placeholder break-words">{{ poolReadError }}</p>
+            </template>
+            <template v-else-if="poolNotFound">
+              <div class="text-text-body">
+                链上暂未找到该池子：通常是尚未完成建池/同步，或发布者还未在 Semi 发起建池。
+              </div>
+            </template>
             <template v-else-if="poolOnchainRow">
               <div v-if="poolOnchainRow.settled" class="text-success font-medium">
                 链上已结算关闭，NT 已按合约规则发放（以区块浏览器为准）。
               </div>
               <div v-else-if="!publicizeStartedOnchain" class="text-text-body">
-                等待发布方完成链上<strong>终审（开启公示）</strong>后，此处会显示公示倒计时；终审前无法结算。
+                审核通过后需由发布者在 Semi 完成<strong>终审（开启公示）</strong>，公示期约 24 小时；终审前无法结算。
               </div>
               <div v-else-if="publicizeRemainingSec > 0" class="space-y-1">
                 <p>
                   公示进行中（链上约 24 小时）。剩余约
                   <span class="font-mono font-semibold text-text-title">{{ formatDurationCn(publicizeRemainingSec) }}</span>
                 </p>
-                <p class="text-xs text-text-placeholder">公示结束前在 Semi 发起结算通常会失败，属正常。</p>
+                <p class="text-xs text-text-placeholder">
+                  公示结束后可结算发放；如有异议请在公示期内提出申诉（后续将提供入口）。
+                </p>
+                <p v-if="finalApprovedEventRef?.txHash" class="text-xs text-text-placeholder">
+                  终审交易：
+                  <a
+                    class="text-primary underline font-mono"
+                    :href="optimismTxExplorerUrl(finalApprovedEventRef.txHash)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {{ shortTxHash(finalApprovedEventRef.txHash) }}
+                  </a>
+                  <span v-if="finalApprovedEventRef.blockNumber">
+                    · 区块 {{ finalApprovedEventRef.blockNumber.toString() }}
+                  </span>
+                </p>
               </div>
-              <div v-else class="space-y-2">
-                <p class="text-text-title font-medium">已到链上可结算时间，请领取者本人在 Semi 确认交易。</p>
-                <PixelButton
-                  variant="primary"
-                  size="lg"
-                  :block="true"
-                  :disabled="claimerDistributeOpening || !canClaimerOpenSemiDistribute"
-                  @click="onClaimerSemiDistribute"
-                >
-                  {{ claimerDistributeOpening ? '正在打开 Semi…' : '打开 Semi 收款（链上结算）' }}
-                </PixelButton>
+              <div v-else class="text-text-title font-medium">
+                已到链上可结算时间，请领取者本人在 Semi 确认交易。
               </div>
             </template>
+
+            <PixelButton
+              variant="primary"
+              size="lg"
+              :block="true"
+              :disabled="claimerDistributeOpening || settlementCtaDisabled"
+              @click="onClaimerSemiDistribute"
+            >
+              {{ claimerDistributeOpening ? '正在打开 Semi…' : settlementCtaText }}
+            </PixelButton>
+            <p v-if="settlementHint" class="text-xs text-text-placeholder">{{ settlementHint }}</p>
+
             <PixelButton
               variant="secondary"
               size="sm"
@@ -263,6 +345,16 @@
               @click="refreshTaskpoolPoolOnchain"
             >
               刷新链上状态
+            </PixelButton>
+
+            <PixelButton
+              v-if="showShareButton && poolOnchainRow?.settled"
+              variant="secondary"
+              size="sm"
+              class="ml-2"
+              @click="openShareModal('claimer')"
+            >
+              一键分享社区圈
             </PixelButton>
           </div>
         </PixelCard>
@@ -285,10 +377,10 @@
                 'bg-primary text-white': currentParticipantId === (participant.id || task.id),
                 'border-warning': participant.claimerId === task.creatorId, // 创建者自己的任务行特殊标记
                 'bg-white text-text-title hover:bg-primary/10': currentParticipantId !== (participant.id || task.id),
-                'text-gray-400': !participant.claimerId && isAssignedUserUnclaimed(participant.claimerId, index) // 指定用户未领取时灰色
+                'text-gray-400': !participant.claimerId && isAssignedUserUnclaimed(participant.claimerId, Number(index)) // 指定用户未领取时灰色
               }"
             >
-              {{ getParticipantDisplayName(participant, index) }}
+              {{ getParticipantDisplayName(participant, Number(index)) }}
               <span v-if="participant.claimerId === task.creatorId" class="ml-1">👑</span>
               <span v-if="participant.status === 'completed'" class="ml-1">✓</span>
               <span v-else-if="participant.status === 'rejected'" class="ml-1">✗</span>
@@ -435,6 +527,21 @@
             >
               {{ loading ? '领取中...' : '领取任务' }}
             </PixelButton>
+
+            <template v-if="showTaskpoolClaimReconcileButton">
+              <PixelButton
+                variant="secondary"
+                size="lg"
+                :block="true"
+                :disabled="claimReconcileLoading || loading"
+                @click="handleReconcileTaskpoolClaim"
+              >
+                {{ claimReconcileLoading ? '同步中…' : '同步链上领取状态' }}
+              </PixelButton>
+              <p class="text-xs text-text-placeholder text-center">
+                若 Semi 侧已领取成功但本站仍显示未领取，可点此从链上补全（不依赖回跳）。
+              </p>
+            </template>
             
             <!-- 领取错误提示 -->
             <div
@@ -588,25 +695,28 @@
             <template v-if="task.status === 'completed' && canReview">
               <!-- 未转账：显示转账按钮和标记按钮 -->
               <template v-if="!task.transferredAt">
-            <PixelButton
-                  @click="handleTransferToSemi"
-                  variant="primary"
-                  size="lg"
-                  :block="true"
-                  :disabled="isTransferring"
-                  class="mb-3"
-                >
-                  {{ isTransferring ? '处理中...' : '跳转到Semi转账' }}
-                </PixelButton>
-                <PixelButton
-                  @click="handleMarkTransferCompleted"
-                  variant="secondary"
-                  size="lg"
-                  :block="true"
-                  :disabled="isMarkingTransfer"
-                >
-                  {{ isMarkingTransfer ? '标记中...' : '标记为已转账' }}
-                </PixelButton>
+                <!-- 旧版链下转账入口：暂时隐藏（保留代码，后续可开启） -->
+                <template v-if="false">
+                  <PixelButton
+                    @click="handleTransferToSemi"
+                    variant="primary"
+                    size="lg"
+                    :block="true"
+                    :disabled="isTransferring"
+                    class="mb-3"
+                  >
+                    {{ isTransferring ? '处理中...' : '跳转到Semi转账' }}
+                  </PixelButton>
+                  <PixelButton
+                    @click="handleMarkTransferCompleted"
+                    variant="secondary"
+                    size="lg"
+                    :block="true"
+                    :disabled="isMarkingTransfer"
+                  >
+                    {{ isMarkingTransfer ? '标记中...' : '标记为已转账' }}
+                  </PixelButton>
+                </template>
               </template>
               <!-- 已转账：显示状态标记 -->
               <div v-else class="text-center py-4">
@@ -699,6 +809,7 @@
       :mode="shareModalMode"
       :task="shareTask"
       :sender-remark="shareSenderRemark"
+      :onchain-remark="shareModalMode === 'claimer' ? shareOnchainClaimerRemark : shareOnchainPublisherRemark"
       @close="onShareModalClose"
     />
   </div>
@@ -715,6 +826,7 @@ import {
   buildSemiTransferUrl,
   getWalletAddressByUserId,
   getTaskpoolClaimIntent,
+  reconcileTaskpoolClaim,
   generateRandomState,
 } from '~/utils/api'
 import ShareToCommunityModal from '~/components/tasks/ShareToCommunityModal.vue'
@@ -728,12 +840,13 @@ import { withdrawTask, deleteTask, withdrawTaskPool } from '~/utils/api'
 import {
   buildSemiTaskpoolClaimUrl,
   buildSemiTaskpoolDistributeUrl,
-  SEMI_TASKPOOL_PREPAY_STATE_KEY,
+  semiTaskpoolStateStorageKey,
   optimismTxExplorerUrl,
 } from '~/utils/semiTaskpoolPrepay'
 import { uuidToTaskPoolUint256 } from '~/utils/taskpool'
 import { useTaskpoolPoolOnchain } from '~/composables/useTaskpoolPoolOnchain'
-import type { TaskpoolPoolRow } from '~/composables/useTaskpoolPoolOnchain'
+import type { TaskpoolPoolEventRef, TaskpoolPoolRow } from '~/composables/useTaskpoolPoolOnchain'
+import type { Hex } from 'viem'
 
 // 获取路由参数
 const route = useRoute()
@@ -741,6 +854,7 @@ const router = useRouter()
 const taskId = route.params.id as string  // UUID是字符串，不需要parseInt
 const toast = useToast()
 const loading = ref(false)
+const claimReconcileLoading = ref(false)
 const claimError = ref<string | null>(null)
 const userStore = useUserStore()
 const taskRewardSymbol = ref('积分') // 任务奖励的积分符号
@@ -759,6 +873,8 @@ const shareTask = ref<{
 } | null>(null)
 const shareSenderRemark = ref('')
 const shareModalMode = ref<'claimer' | 'reviewer'>('claimer')
+const shareOnchainPublisherRemark = ref<string | null>(null)
+const shareOnchainClaimerRemark = ref<string | null>(null)
 
 // 当前查看的参与者ID（用于多人任务导航）
 
@@ -796,6 +912,8 @@ const task = ref<any>({
     | 'failed'
     | undefined,
   taskpoolCreateLastError: null as string | null | undefined,
+  /** 读链上备注用的「真实任务行」UUID（商城池列表行可能与链上 taskId 不一致，以后端为准） */
+  remarkTaskRowId: null as string | null | undefined,
 })
 
 // 当前查看的参与者任务ID（用于多人任务切换）
@@ -826,6 +944,13 @@ const isTaskpoolPoolListing = computed(() => task.value?.useTaskpool === true &&
 
 /** 走链上托管的普通任务：详情页展示链上阶段与建池交易 */
 const showTaskpoolOnchainSection = computed(() => task.value?.useTaskpool === true)
+
+/** 任务池任务且本站尚未记录领取者：允许从链上 TaskClaimed 日志补同步 */
+const showTaskpoolClaimReconcileButton = computed(() => {
+  if (task.value?.useTaskpool !== true) return false
+  if (task.value?.claimerId) return false
+  return !!userStore.user?.id
+})
 
 const taskpoolPhaseLabel = computed(() => {
   const p = task.value?.taskpoolPhase
@@ -893,17 +1018,87 @@ const taskpoolPoolReader = useTaskpoolPoolOnchain()
 const poolOnchainRow = ref<TaskpoolPoolRow | null>(null)
 const poolReadLoading = ref(false)
 const poolReadError = ref('')
+const finalApprovedEventRef = ref<TaskpoolPoolEventRef | null>(null)
+const distributedEventRef = ref<TaskpoolPoolEventRef | null>(null)
+/**
+ * 链上备注正文（remarkProxy）：
+ * - 发包者总评：`getRemarks(poolId, 0).receiverRemark`
+ * - 接包者备注：`getRemarks(poolId, taskRow).senderRemark`
+ */
+const onchainClaimerRemarkText = ref<string | null>(null)
+const onchainPublisherRemarkText = ref<string | null>(null)
+const remarkReadError = ref<string>('')
+const lastRemarkFetchKey = ref<string>('')
 const claimerDistributeOpening = ref(false)
 /** 仅用于公示倒计时每秒刷新 */
 const poolUiTick = ref(0)
 const poolPollTimerRef = ref<ReturnType<typeof setInterval> | null>(null)
 const tickTimerRef = ref<ReturnType<typeof setInterval> | null>(null)
+/** TaskPool：链上读状态退避轮询（避免 RPC 429） */
+const taskpoolBackoffTimerRef = ref<ReturnType<typeof setTimeout> | null>(null)
+const taskpoolBackoffStepRef = ref(0)
+const taskpoolBackoffStartedAtRef = ref(0)
+
+function friendlyRpcErrorMessage(raw: unknown): string {
+  const msg = raw instanceof Error ? raw.message : String(raw || '')
+  if (msg.includes('429') || msg.includes('HTTP 429')) {
+    return '读链被限流（HTTP 429），稍后会自动重试；也可点击「刷新链上状态」。'
+  }
+  return msg
+}
+
+function stopTaskpoolBackoffPoll() {
+  if (taskpoolBackoffTimerRef.value) {
+    clearTimeout(taskpoolBackoffTimerRef.value)
+    taskpoolBackoffTimerRef.value = null
+  }
+  taskpoolBackoffStepRef.value = 0
+  taskpoolBackoffStartedAtRef.value = 0
+}
+
+function scheduleTaskpoolBackoffPoll() {
+  if (!import.meta.client) return
+  if (!task.value?.useTaskpool || !task.value?.taskInfoId) return
+  if (poolOnchainRow.value?.settled) {
+    stopTaskpoolBackoffPoll()
+    return
+  }
+  // 避免重复调度
+  if (taskpoolBackoffTimerRef.value) return
+
+  const now = Date.now()
+  if (!taskpoolBackoffStartedAtRef.value) taskpoolBackoffStartedAtRef.value = now
+  // 最多自动重试 2 分钟，避免后台刷屏；用户仍可手动点刷新
+  if (now - taskpoolBackoffStartedAtRef.value > 2 * 60 * 1000) {
+    stopTaskpoolBackoffPoll()
+    return
+  }
+
+  const step = taskpoolBackoffStepRef.value
+  const delays = [15_000, 30_000, 60_000] as const
+  const delay = delays[Math.min(step, delays.length - 1)]
+  taskpoolBackoffStepRef.value = step + 1
+
+  taskpoolBackoffTimerRef.value = setTimeout(async () => {
+    taskpoolBackoffTimerRef.value = null
+    try {
+      await refreshTaskpoolPoolOnchain()
+    } finally {
+      // 继续下一轮（若已 settled，会在 schedule 内停止）
+      scheduleTaskpoolBackoffPoll()
+    }
+  }, delay)
+}
+
+const poolNotFound = computed(() => {
+  const p = poolOnchainRow.value
+  return !!p && !p.exists
+})
 
 const showClaimerTaskpoolSettlementCard = computed(() => {
   if (!task.value?.useTaskpool) return false
-  if (!task.value?.taskInfoId || !task.value?.taskpoolCreateTxHash) return false
+  if (!task.value?.taskInfoId) return false
   if (!isClaimer.value) return false
-  if (task.value.taskpoolPhase === 'closed') return false
   return true
 })
 
@@ -930,6 +1125,42 @@ const canClaimerOpenSemiDistribute = computed(() => {
   return taskpoolPoolReader.canAttemptDistribute(p, now)
 })
 
+const settlementCtaText = computed(() => {
+  if (poolReadLoading.value) return '读取链上状态中…'
+  if (poolReadError.value) return '暂不可结算（请先刷新）'
+  const p = poolOnchainRow.value
+  if (!p) return '暂不可结算（缺少链上信息）'
+  if (poolNotFound.value) return '等待建池完成'
+  if (p.settled) return '已结算发放（链上）'
+  if (!publicizeStartedOnchain.value) return '等待终审开启公示'
+  if (publicizeRemainingSec.value > 0) return '公示中，暂不可结算'
+  return '打开 Semi 收款（链上结算）'
+})
+
+const settlementCtaDisabled = computed(() => {
+  if (poolReadLoading.value) return true
+  if (poolReadError.value) return true
+  const p = poolOnchainRow.value
+  if (!p) return true
+  if (poolNotFound.value) return true
+  if (p.settled) return true
+  return !canClaimerOpenSemiDistribute.value
+})
+
+const settlementHint = computed(() => {
+  if (poolReadLoading.value) return '正在读取链上池子状态…'
+  if (poolReadError.value) return '链上状态读取失败，请点击下方「刷新链上状态」重试。'
+  const p = poolOnchainRow.value
+  if (!p) return '暂未拿到链上池子信息，可稍后刷新或前往任务池管理页查看。'
+  if (poolNotFound.value) {
+    return '链上暂未找到该池子：通常是尚未完成建池/同步。请稍后刷新，或前往任务池管理页查看建池进度。'
+  }
+  if (p.settled) return '已结算关闭，无需再次结算。'
+  if (!publicizeStartedOnchain.value) return '等待发布者终审开启公示；开启后将显示 24 小时倒计时。'
+  if (publicizeRemainingSec.value > 0) return `公示剩余约 ${formatDurationCn(publicizeRemainingSec.value)}，结束后可结算发放。`
+  return ''
+})
+
 function formatDurationCn(totalSec: number): string {
   if (totalSec <= 0) return '0 秒'
   const h = Math.floor(totalSec / 3600)
@@ -950,12 +1181,91 @@ async function refreshTaskpoolPoolOnchain() {
   try {
     const row = await taskpoolPoolReader.readPoolByTaskInfoId(tid)
     poolOnchainRow.value = row
-    if (row && !row.exists) {
-      poolReadError.value = '链上未找到该池子（请确认已完成建池）'
+    // 读取终审/结算交易信息（按 poolId 过滤日志）。失败不阻塞主流程。
+    try {
+      const refs = await taskpoolPoolReader.readPoolEventRefsByTaskInfoId({
+        taskInfoId: tid,
+        taskpoolCreateTxHash: task.value?.taskpoolCreateTxHash || null,
+      })
+      finalApprovedEventRef.value = refs.finalApproved
+      distributedEventRef.value = refs.distributed
+
+      // 读取链上备注文本（publisher + assignee），失败不阻塞主流程
+      try {
+        remarkReadError.value = ''
+        const rowId = String(
+          (task.value as any)?.remarkTaskRowId ||
+            currentParticipantId.value ||
+            task.value?.id ||
+            ''
+        ).trim()
+        // 只有终审后才会写备注；并且避免轮询时重复打 RPC（429 会导致“备注消失”）
+        const gateTx = String(finalApprovedEventRef.value?.txHash || '').trim()
+        if (!gateTx) {
+          // 未终审时不读备注，避免无意义读链 + 限流
+          onchainPublisherRemarkText.value = null
+          onchainClaimerRemarkText.value = null
+          shareOnchainPublisherRemark.value = null
+          shareOnchainClaimerRemark.value = null
+        } else {
+          const fetchKey = `${tid}:${rowId}:${gateTx}`
+          const alreadyHas =
+            !!(onchainPublisherRemarkText.value && String(onchainPublisherRemarkText.value).trim()) ||
+            !!(onchainClaimerRemarkText.value && String(onchainClaimerRemarkText.value).trim())
+          if (alreadyHas && lastRemarkFetchKey.value === fetchKey) {
+            // keep existing text
+          } else {
+            lastRemarkFetchKey.value = fetchKey
+            const r = await taskpoolPoolReader.readTaskpoolSplitRemarksByTaskInfoId(tid, rowId)
+            // 语义对齐 RemarkLogicV1 + TaskPoolLogicV4：
+            // - publisherRemark：写入 remark(taskId=0) 的 receiver 槽位
+            // - assigneeRemark：写入 remark(taskId=taskRow) 的 sender 槽位
+            shareOnchainPublisherRemark.value = r?.publisherRemark || null
+            shareOnchainClaimerRemark.value = r?.assigneeRemark || null
+            onchainPublisherRemarkText.value = r?.publisherRemark || null
+            onchainClaimerRemarkText.value = r?.assigneeRemark || null
+          }
+        }
+      } catch {
+        remarkReadError.value = '链上备注读取失败（可能是 RPC 限流），稍后重试或点击「刷新链上状态」。'
+        shareOnchainPublisherRemark.value = null
+        shareOnchainClaimerRemark.value = null
+        onchainClaimerRemarkText.value = null
+        onchainPublisherRemarkText.value = null
+      }
+    } catch (e) {
+      finalApprovedEventRef.value = null
+      distributedEventRef.value = null
+      remarkReadError.value = ''
+      shareOnchainPublisherRemark.value = null
+      shareOnchainClaimerRemark.value = null
+      onchainClaimerRemarkText.value = null
+      onchainPublisherRemarkText.value = null
+    }
+
+    // 自动弹出「一键转发到活动圈」（仅领取者、链上已发放、且只弹一次）
+    if (!shareModalVisible.value && shouldAutoPromptShare()) {
+      markAutoPromptedShare()
+      await nextTick()
+      openShareModal('claimer')
+    }
+
+    // 链上状态变化时，合并更新时间线展示（避免仍停留在“公示后可结算”）
+    try {
+      updateTimeline()
+    } catch {
+      /* ignore */
     }
   } catch (e) {
-    poolReadError.value = e instanceof Error ? e.message : String(e)
+    poolReadError.value = friendlyRpcErrorMessage(e)
     poolOnchainRow.value = null
+    finalApprovedEventRef.value = null
+    distributedEventRef.value = null
+    remarkReadError.value = ''
+    shareOnchainPublisherRemark.value = null
+    shareOnchainClaimerRemark.value = null
+    onchainClaimerRemarkText.value = null
+    onchainPublisherRemarkText.value = null
   } finally {
     poolReadLoading.value = false
   }
@@ -980,12 +1290,15 @@ async function onClaimerSemiDistribute() {
   try {
     const state = generateRandomState()
     try {
-      sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
+      sessionStorage.setItem(semiTaskpoolStateStorageKey('distribute', id), state)
     } catch {
       /* ignore */
     }
     const poolId = uuidToTaskPoolUint256(id).toString()
-    const returnUrl = `${window.location.origin}/wallet/semi-distribute-callback?taskInfoId=${encodeURIComponent(id)}`
+    // 回跳后需要自动回到任务详情并弹分享：携带 taskId（当前详情页 id）
+    const returnUrl = `${window.location.origin}/wallet/semi-distribute-callback?taskInfoId=${encodeURIComponent(
+      id
+    )}&taskId=${encodeURIComponent(task.value?.id || taskId)}`
     const url = buildSemiTaskpoolDistributeUrl({
       semiAppBaseUrl: semiAppUrl,
       returnUrl,
@@ -1025,15 +1338,15 @@ watch(
       clearInterval(poolPollTimerRef.value)
       poolPollTimerRef.value = null
     }
+    // 使用退避轮询替代固定 interval
+    stopTaskpoolBackoffPoll()
     if (tickTimerRef.value) {
       clearInterval(tickTimerRef.value)
       tickTimerRef.value = null
     }
     if (on && import.meta.client) {
       void refreshTaskpoolPoolOnchain()
-      poolPollTimerRef.value = setInterval(() => {
-        void refreshTaskpoolPoolOnchain()
-      }, 30000)
+      scheduleTaskpoolBackoffPoll()
       tickTimerRef.value = setInterval(() => {
         poolUiTick.value++
       }, 1000)
@@ -1042,26 +1355,42 @@ watch(
   { immediate: true }
 )
 
+// TaskPool：任何人进入详情页都应能看到链上备注/是否已发放（至少刷新一次；并在未结算时低频轮询）
+watch(
+  () => [showTaskpoolOnchainSection.value, task.value?.taskInfoId],
+  ([on, tid]) => {
+    if (!import.meta.client) return
+    if (!on || !tid) return
+    void refreshTaskpoolPoolOnchain()
+    scheduleTaskpoolBackoffPoll()
+  },
+  { immediate: true }
+)
+
 onUnmounted(() => {
   if (poolPollTimerRef.value) clearInterval(poolPollTimerRef.value)
   if (tickTimerRef.value) clearInterval(tickTimerRef.value)
+  stopTaskpoolBackoffPoll()
 })
 
 // 当前选中社区（来自 localStorage），用于任务未带 communityId 时的兜底分享目标
 const currentCommunityId = ref<string | null>(null)
 
 const shareCommunityId = computed(() => {
-  return (task.value?.taskInfo?.communityId ??
-    task.value?.communityId ??
-    currentCommunityId.value ??
-    null) as string | null
+  // 严格使用“任务所属社区”，避免跨社区错发圈帖；缺失则不提供分享入口
+  return (task.value?.taskInfo?.communityId ?? task.value?.communityId ?? null) as string | null
 })
 
 const showShareButton = computed(() => {
   if (!shareCommunityId.value) return false
-  if (task.value.status !== 'completed') return false
-  if (isClaimer.value) return true
-  if (canReview.value && task.value.transferredAt) return true
+  // 领取者：以链上发放（settled）为准
+  if (isClaimer.value) return !!poolOnchainRow.value?.settled
+  if (canReview.value) {
+    // TaskPool：发包者分享以“终审已发生”为准（不依赖链下 transferredAt）
+    if (task.value?.useTaskpool) return !!finalApprovedEventRef.value?.txHash
+    // 非 TaskPool：沿用旧逻辑
+    if (task.value.transferredAt) return true
+  }
   return false
 })
 
@@ -1073,7 +1402,15 @@ function openShareModal(mode?: 'claimer' | 'reviewer') {
     mode ?? (isClaimer.value ? 'claimer' : 'reviewer')
 
   // reviewer 必须在已转账后才允许分享（避免流程混乱）
-  if (effectiveMode === 'reviewer' && !task.value.transferredAt) return
+  if (effectiveMode === 'reviewer') {
+    if (task.value?.useTaskpool) {
+      if (!finalApprovedEventRef.value?.txHash) return
+    } else {
+      if (!task.value.transferredAt) return
+    }
+  }
+  // claimer：必须链上已结算（settled）才允许分享
+  if (effectiveMode === 'claimer' && !poolOnchainRow.value?.settled) return
 
   shareTask.value = {
     id: task.value.id,
@@ -1085,7 +1422,8 @@ function openShareModal(mode?: 'claimer' | 'reviewer') {
   }
 
   shareModalMode.value = effectiveMode
-  shareSenderRemark.value = ''
+  // reviewer：默认用链上备注作为发帖备注（可在弹窗中继续编辑）
+  shareSenderRemark.value = effectiveMode === 'reviewer' ? (shareOnchainPublisherRemark.value || '') : ''
   shareModalVisible.value = true
 }
 
@@ -1094,6 +1432,71 @@ function onShareModalClose() {
   shareTask.value = null
   shareSenderRemark.value = ''
   shareModalMode.value = 'claimer'
+  shareOnchainPublisherRemark.value = null
+  shareOnchainClaimerRemark.value = null
+}
+
+function sharePromptStorageKey(taskInfoId: string, userId: string): string {
+  return `taskpool_share_prompt_shown:${taskInfoId}:${userId}`
+}
+
+function shouldAutoPromptShare(): boolean {
+  if (!import.meta.client) return false
+  const uid = userStore.user?.id
+  const tid = String(task.value?.taskInfoId || '').trim()
+  if (!uid || !tid) return false
+  if (!isClaimer.value) return false
+  if (!shareCommunityId.value) return false
+  if (!poolOnchainRow.value?.settled) return false
+  try {
+    return localStorage.getItem(sharePromptStorageKey(tid, uid)) !== '1'
+  } catch {
+    return false
+  }
+}
+
+function markAutoPromptedShare() {
+  if (!import.meta.client) return
+  const uid = userStore.user?.id
+  const tid = String(task.value?.taskInfoId || '').trim()
+  if (!uid || !tid) return
+  try {
+    localStorage.setItem(sharePromptStorageKey(tid, uid), '1')
+  } catch {
+    /* ignore */
+  }
+}
+
+function reviewerSharePromptStorageKey(taskInfoId: string, userId: string): string {
+  return `taskpool_share_prompt_shown:reviewer:${taskInfoId}:${userId}`
+}
+
+function shouldAutoPromptReviewerShareOnReturn(): boolean {
+  if (!import.meta.client) return false
+  const uid = userStore.user?.id
+  const tid = String(task.value?.taskInfoId || '').trim()
+  if (!uid || !tid) return false
+  if (!canReview.value) return false
+  if (!shareCommunityId.value) return false
+  if (!task.value?.useTaskpool) return false
+  if (!finalApprovedEventRef.value?.txHash) return false
+  try {
+    return localStorage.getItem(reviewerSharePromptStorageKey(tid, uid)) !== '1'
+  } catch {
+    return false
+  }
+}
+
+function markAutoPromptedReviewerShare() {
+  if (!import.meta.client) return
+  const uid = userStore.user?.id
+  const tid = String(task.value?.taskInfoId || '').trim()
+  if (!uid || !tid) return
+  try {
+    localStorage.setItem(reviewerSharePromptStorageKey(tid, uid), '1')
+  } catch {
+    /* ignore */
+  }
 }
 
 // 获取用户名（用于显示预留用户）
@@ -1584,7 +1987,9 @@ const updateTimeline = () => {
           break
         case 'completed':
           title = action || '审核通过'
-          description = `任务审核通过，奖励已发放${actorName ? `（审核者：${actorName}）` : ''}${reason ? `，审核意见：${reason}` : ''}`
+          description = task.value?.useTaskpool
+            ? `任务审核通过，进入约 24 小时公示期；公示结束后可链上结算发放${actorName ? `（审核者：${actorName}）` : ''}${reason ? `，审核意见：${reason}` : ''}`
+            : `任务审核通过，奖励已发放${actorName ? `（审核者：${actorName}）` : ''}${reason ? `，审核意见：${reason}` : ''}`
           break
         case 'resubmit':
           title = action || '审核驳回'
@@ -1618,6 +2023,25 @@ const updateTimeline = () => {
         reason
       }
     })
+    // TaskPool：链上已结算时，追加一条“链上发放完成”节点（避免仍显示公示期话术）
+    if (task.value?.useTaskpool && poolOnchainRow.value?.settled) {
+      const already =
+        Array.isArray(task.value.updates) &&
+        task.value.updates.some((u: any) => String(u?.id || '').includes('onchain-settled'))
+      if (!already) {
+        const ts = new Date().toISOString()
+        task.value.updates = [
+          ...(task.value.updates || []),
+          {
+            id: `onchain-settled-${ts}`,
+            title: '链上发放完成',
+            description: '已在链上结算发放完成（以链上为准）。',
+            timestamp: ts,
+            status: 'completed',
+          },
+        ]
+      }
+    }
     console.log('Generated updates from timeline:', task.value.updates)
     return
   }
@@ -1747,8 +2171,12 @@ const loadTask = async (options?: { useCache?: boolean }) => {
     let currentTaskData = taskData
     let targetTaskId = taskId
     
-    // 如果是多人任务（participantLimit > 1）
-    if (taskData.participantLimit && taskData.participantLimit > 1 && taskData.participantsList && taskData.participantsList.length > 0) {
+    // 多人任务：历史数据有时不带 participantLimit，但会带 participantsList；两者任一可判定为多人任务
+    const isMultiParticipantTask =
+      (Number(taskData.participantLimit) || 0) > 1 ||
+      (Array.isArray(taskData.participantsList) && taskData.participantsList.length > 1)
+
+    if (isMultiParticipantTask && taskData.participantsList && taskData.participantsList.length > 0) {
       // 判断用户角色
       if (userStore.user?.id === taskData.creatorId) {
         // 创建者：如果已领取，默认显示自己的任务行；否则显示第一个已领取的任务行
@@ -1860,6 +2288,8 @@ const loadTask = async (options?: { useCache?: boolean }) => {
         (taskData as any).taskpoolCreateStatus ?? (currentTaskData as any).taskpoolCreateStatus,
       taskpoolCreateLastError:
         (taskData as any).taskpoolCreateLastError ?? (currentTaskData as any).taskpoolCreateLastError ?? null,
+      remarkTaskRowId:
+        (taskData as any).remarkTaskRowId ?? (currentTaskData as any).remarkTaskRowId ?? null,
     }
     
     // 调试：打印 assignedUserId
@@ -1961,79 +2391,132 @@ const handleClaimTask = async () => {
   try {
     const baseUrl = getApiBaseUrl()
     // TaskPool 普通任务：走 Semi claimTask（链上领取）
+    // 须先同步 window.open（再 await 接口），否则 Safari 等会拦截弹窗
     if (task.value?.useTaskpool) {
-      let intent: any
-      try {
-        const r = await getTaskpoolClaimIntent(taskId, baseUrl)
-        intent = (r as any)?.intent
-      } catch (e: any) {
-        const body = e?.body as { last_error?: string; hint?: string; code?: string } | undefined
-        const raw = e?.message || String(e)
-        const baseHint =
-          raw.includes('尚未上链建池完成') || raw.includes('暂不可领取')
-            ? '服务端尚未记录建池交易哈希：接包者需等发布者在 Semi 预付链上完成且后台校验到 PoolCreated。请到「任务池管理」查看预付记录与 last_error。'
-            : raw
-        const detail =
-          body?.last_error != null && String(body.last_error).trim()
-            ? ` 链上/后台原因：${String(body.last_error).slice(0, 500)}`
-            : ''
-        const friendly = `${baseHint}${detail}`
-        claimError.value = friendly
+      const w = window.open('about:blank', '_blank')
+      if (!w) {
         toast.add({
-          title: '暂不可领取',
-          description: friendly,
-          color: 'orange',
+          title: '无法打开 Semi',
+          description: '浏览器阻止了弹窗，请允许本站点弹窗后重试',
+          color: 'red',
         })
-        // 尝试引导到管理页（若我们能拿到 taskInfoId）
-        try {
-          const taskInfoId = String((task.value as any)?.taskInfoId || '')
-          if (taskInfoId) {
-            router.push(`/tasks/pool/${encodeURIComponent(taskInfoId)}/manage`)
-          }
-        } catch {}
         return
       }
-      const config = useRuntimeConfig()
-      const semiAppUrl = String((config.public as any).semiAppUrl || '')
-      const chainId = Number((config.public as any).chainId ?? 10)
-      const proxy = String((config.public as any).taskpoolProxyAddress || '')
-      if (!semiAppUrl) throw new Error('未配置 NUXT_PUBLIC_SEMI_APP_URL')
-      if (!proxy) throw new Error('未配置 NUXT_PUBLIC_TASKPOOL_PROXY_ADDRESS')
-
-      const state =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(16).slice(2)}`
       try {
-        sessionStorage.setItem(SEMI_TASKPOOL_PREPAY_STATE_KEY, state)
-      } catch {}
+        try {
+          w.document.title = '正在获取领取参数…'
+        } catch {
+          /* 跨域或沙箱时可能不可写 */
+        }
 
-      const infoId = String((task.value as any)?.taskInfoId || '')
-      const returnUrl = `${window.location.origin}/wallet/semi-claim-callback?taskId=${encodeURIComponent(
-        taskId
-      )}${infoId ? `&taskInfoId=${encodeURIComponent(infoId)}` : ''}`
-      const url = buildSemiTaskpoolClaimUrl({
-        semiAppBaseUrl: semiAppUrl,
-        returnUrl,
-        state,
-        chainId,
-        taskpoolProxyAddress: proxy,
-        poolId: String(intent.message.poolId),
-        taskId: String(intent.message.taskId),
-        amountWei: String(intent.message.amountWei),
-        sigDeadline: String(intent.message.sigDeadline),
-        signature: String(intent.signature),
-      })
+        let intent: any
+        try {
+          const r = await getTaskpoolClaimIntent(taskId, baseUrl)
+          intent = (r as any)?.intent
+        } catch (e: any) {
+          try {
+            w.close()
+          } catch {
+            /* ignore */
+          }
+          const body = e?.body as { last_error?: string; hint?: string; code?: string } | undefined
+          const raw = e?.message || String(e)
+          const baseHint =
+            raw.includes('尚未上链建池完成') || raw.includes('暂不可领取')
+              ? '服务端尚未记录建池交易哈希：接包者需等发布者在 Semi 预付链上完成且后台校验到 PoolCreated。请到「任务池管理」查看预付记录与 last_error。'
+              : raw
+          const detail =
+            body?.last_error != null && String(body.last_error).trim()
+              ? ` 链上/后台原因：${String(body.last_error).slice(0, 500)}`
+              : ''
+          const friendly = `${baseHint}${detail}`
+          claimError.value = friendly
+          toast.add({
+            title: '暂不可领取',
+            description: friendly,
+            color: 'orange',
+          })
+          try {
+            const taskInfoId = String((task.value as any)?.taskInfoId || '')
+            if (taskInfoId) {
+              router.push(`/tasks/pool/${encodeURIComponent(taskInfoId)}/manage`)
+            }
+          } catch {}
+          return
+        }
 
-      const w = window.open('about:blank', '_blank')
-      if (!w) throw new Error('浏览器阻止了弹窗，请允许弹窗后重试')
-      try {
-        w.document.title = '正在跳转…'
-      } catch {}
-      w.location.href = url
+        const config = useRuntimeConfig()
+        const semiAppUrl = String((config.public as any).semiAppUrl || '')
+        const chainId = Number((config.public as any).chainId ?? 10)
+        const proxy = String((config.public as any).taskpoolProxyAddress || '')
+        if (!semiAppUrl) {
+          try {
+            w.close()
+          } catch {
+            /* ignore */
+          }
+          throw new Error('未配置 NUXT_PUBLIC_SEMI_APP_URL')
+        }
+        if (!proxy) {
+          try {
+            w.close()
+          } catch {
+            /* ignore */
+          }
+          throw new Error('未配置 NUXT_PUBLIC_TASKPOOL_PROXY_ADDRESS')
+        }
 
-      toast.add({ title: '已打开 Semi', description: '请在 Semi 完成领取确认', color: 'green' })
-      return
+        const state =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+        const stateKey = semiTaskpoolStateStorageKey('claim', taskId)
+        try {
+          sessionStorage.setItem(stateKey, state)
+        } catch {}
+        // Safari 等浏览器：回跳页在弹窗上下文里读取 sessionStorage，需同步写入弹窗窗口
+        try {
+          w.sessionStorage.setItem(stateKey, state)
+          // 兼容：清理旧版全局 key，避免误判 stateMismatch
+          w.sessionStorage.removeItem('semi_taskpool_prepay_state')
+        } catch {
+          /* ignore */
+        }
+
+        const infoId = String((task.value as any)?.taskInfoId || '')
+        const returnUrl = `${window.location.origin}/wallet/semi-claim-callback?taskId=${encodeURIComponent(
+          taskId
+        )}${infoId ? `&taskInfoId=${encodeURIComponent(infoId)}` : ''}`
+        const url = buildSemiTaskpoolClaimUrl({
+          semiAppBaseUrl: semiAppUrl,
+          returnUrl,
+          state,
+          chainId,
+          taskpoolProxyAddress: proxy,
+          poolId: String(intent.message.poolId),
+          taskId: String(intent.message.taskId),
+          amountWei: String(intent.message.amountWei),
+          sigDeadline: String(intent.message.sigDeadline),
+          signature: String(intent.signature),
+        })
+
+        try {
+          w.document.title = '正在跳转…'
+        } catch {
+          /* ignore */
+        }
+        w.location.href = url
+
+        toast.add({ title: '已打开 Semi', description: '请在 Semi 完成领取确认', color: 'green' })
+        return
+      } catch (e) {
+        try {
+          w.close()
+        } catch {
+          /* ignore */
+        }
+        throw e
+      }
     }
 
     const result = await claimTask(taskId, baseUrl)
@@ -2065,6 +2548,30 @@ const handleClaimTask = async () => {
     })
   } finally {
     loading.value = false
+  }
+}
+
+/** 链上已领取但回跳未写库：按 TaskClaimed 日志补同步 */
+const handleReconcileTaskpoolClaim = async () => {
+  if (claimReconcileLoading.value) return
+  claimReconcileLoading.value = true
+  try {
+    const baseUrl = getApiBaseUrl()
+    const r = await reconcileTaskpoolClaim(taskId, baseUrl)
+    if (r.alreadyClaimed) {
+      toast.add({ title: '已是领取状态', description: '无需补同步', color: 'green' })
+    } else {
+      toast.add({ title: '已同步', description: '链上领取状态已写入本站', color: 'green' })
+    }
+    await loadTask()
+  } catch (e: unknown) {
+    toast.add({
+      title: '同步失败',
+      description: e instanceof Error ? e.message : String(e),
+      color: 'red',
+    })
+  } finally {
+    claimReconcileLoading.value = false
   }
 }
 
@@ -2447,10 +2954,46 @@ async function handleReturnQuery () {
 
   if (!shouldRefresh) return
 
+  /** Semi 回跳写入；在下方多次 loadTask / watch 触发 refresh 后仍可能需再次注入 */
+  const poolFinalTxRaw =
+    typeof route.query.pool_final_tx === 'string' ? route.query.pool_final_tx.trim() : ''
+  const poolFinalTxHex: Hex | null =
+    poolFinalTxRaw.startsWith('0x') && poolFinalTxRaw.length === 66 ? (poolFinalTxRaw as Hex) : null
+
+  function applyPoolFinalTxSeed (): void {
+    if (!task.value?.useTaskpool || !poolFinalTxHex) return
+    if (!(shareMode === 'reviewer' || route.query.reviewed === 'true')) return
+    finalApprovedEventRef.value = {
+      txHash: poolFinalTxHex,
+      blockNumber: 0n,
+      logIndex: 0n,
+    }
+  }
+
   // 清缓存 + 绕过缓存，确保 transferredAt / 状态是最新的
   const { responseCache } = await import('~/utils/cache')
   responseCache.delete(`task:${taskId}`)
   await loadTask({ useCache: false })
+
+  // TaskPool：reviewer 回跳后需要链上 refs/备注，先刷新一次链上状态
+  if (route.query.reviewed === 'true' && canReview.value && task.value?.useTaskpool) {
+    try {
+      await refreshTaskpoolPoolOnchain()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // TaskPool：claimer 回跳后需要链上 settled 才能弹分享；share=claimer 时先刷新一次链上状态
+  if (shareMode === 'claimer' && task.value?.useTaskpool) {
+    try {
+      await refreshTaskpoolPoolOnchain()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  applyPoolFinalTxSeed()
 
   // 从审核页带回时，偶发 API 与缓存竞态：reviewer 分享前再拉一次
   if (shareMode === 'reviewer' && !task.value.transferredAt) {
@@ -2458,8 +3001,21 @@ async function handleReturnQuery () {
     await loadTask({ useCache: false })
   }
 
+  // loadTask 会触发 watch → 异步 refresh，可能把 finalApprovedEventRef 清空；弹窗前再注入一次
+  applyPoolFinalTxSeed()
+  await nextTick()
+
   if (shareMode) {
     openShareModal(shareMode)
+  }
+
+  // reviewer：审核后回跳到 bai 自动弹一次（与接包者一致：只弹一次 + 可手动再点）
+  if (!shareMode && route.query.reviewed === 'true') {
+    if (!shareModalVisible.value && shouldAutoPromptReviewerShareOnReturn()) {
+      markAutoPromptedReviewerShare()
+      await nextTick()
+      openShareModal('reviewer')
+    }
   }
 
   router.replace({ query: {} })
