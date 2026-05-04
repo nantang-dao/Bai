@@ -136,7 +136,6 @@
                 <h3 class="font-bold text-sm uppercase">社区动态（帖子）</h3>
                 <PixelButton v-if="userStore.user" @click="navigateTo('/post/create')">发动态</PixelButton>
               </div>
-              <p class="text-sm text-text-placeholder mt-1">长按可打赏</p>
 
               <div v-if="postsLoading && posts.length === 0" class="text-center py-8 text-gray-500">
                 加载中...
@@ -182,12 +181,6 @@
                       </div>
                     </div>
                   </template>
-                  <div
-                    class="cursor-default"
-                    @pointerdown="startLongPress('post', post.authorId)"
-                    @pointerup="cancelLongPress"
-                    @pointerleave="cancelLongPress"
-                  >
                   <div class="text-gray-800 whitespace-pre-wrap">
                     <p
                       :class="needsTextExpand(post.content) && !isTextExpanded(post.id) ? 'line-clamp-10' : ''"
@@ -224,10 +217,7 @@
                       v-for="c in (postCommentsMap.get(post.id) ?? [])"
                       :key="c.id"
                       class="text-gray-700 flex items-baseline gap-1 flex-wrap cursor-pointer rounded px-1 -mx-1 hover:bg-gray-200/60"
-                      @pointerdown="startLongPress('comment', c.authorId)"
-                      @pointerup="cancelLongPress"
-                      @pointerleave="cancelLongPress"
-                      @click.stop="onCommentClick(post.id, c, $event)"
+                      @click.stop="onReplyComment(post.id, c)"
                     >
                       <span v-if="c.replyTo" class="text-gray-700">
                         <span class="font-medium">{{ c.author?.name || '用户' }}</span>
@@ -262,7 +252,6 @@
                         发送
                       </button>
                     </div>
-                  </div>
                   </div>
 
                   <template #footer>
@@ -363,27 +352,6 @@
                   </div>
                 </Transition>
               </Teleport>
-
-              <Teleport to="body">
-                <div
-                  v-if="tipModalOpen"
-                  class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                  @click.self="closeTipModal"
-                >
-                  <div
-                    class="bg-card rounded-2xl shadow-soft border border-border p-6 w-full max-w-sm text-center"
-                    @click.stop
-                  >
-                    <button
-                      type="button"
-                      class="w-full px-6 py-3 rounded-xl bg-primary text-white font-medium"
-                      @click="confirmTip"
-                    >
-                      打赏
-                    </button>
-                  </div>
-                </div>
-              </Teleport>
             </div>
           </div>
 
@@ -397,16 +365,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { definePageMeta, useRuntimeConfig } from '#imports'
 import { useUserStore } from '~/stores/user'
 import { useCommunityStore } from '~/stores/community'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import { useApi } from '~/composables/useApi'
-import { getCommunityById, getCommunityMembers, getCommunityAnnouncements, getCommunities, DEFAULT_COMMUNITY_UUID, getApiBaseUrl, openTipToSemi, type Community, type Announcement } from '~/utils/api'
+import { getCommunityById, getCommunityMembers, getCommunityAnnouncements, getCommunities, DEFAULT_COMMUNITY_UUID, type Community, type Announcement } from '~/utils/api'
 import type { Post, Comment, Like } from '~/utils/api'
-import { useToast } from '~/composables/useToast'
 
 // Use definePageMeta to ensure layout is applied
 definePageMeta({
@@ -419,76 +385,7 @@ const route = useRoute()
 const userStore = useUserStore()
 const communityStore = useCommunityStore()
 const api = useApi()
-const toast = useToast()
-const runtimeConfig = useRuntimeConfig()
 const activeTab = ref('COMMUNITY')
-
-const LONG_PRESS_MS = 400
-let longPressTimer: ReturnType<typeof setTimeout> | null = null
-const tipModalOpen = ref(false)
-const tipTarget = ref<{ type: 'post' | 'comment'; authorId: string } | null>(null)
-const longPressHandled = ref(false)
-
-function startLongPress(type: 'post' | 'comment', authorId: string) {
-  if (longPressTimer) return
-  longPressTimer = setTimeout(() => {
-    longPressTimer = null
-    longPressHandled.value = true
-    tipTarget.value = { type, authorId }
-    tipModalOpen.value = true
-  }, LONG_PRESS_MS)
-}
-
-function cancelLongPress() {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
-  }
-}
-
-function closeTipModal() {
-  tipModalOpen.value = false
-  tipTarget.value = null
-}
-
-async function confirmTip() {
-  if (!tipTarget.value) {
-    closeTipModal()
-    return
-  }
-  if (!userStore.user) {
-    toast.add({ title: '请先登录', description: '登录后可打赏', color: 'orange' })
-    closeTipModal()
-    return
-  }
-  const baseUrl = getApiBaseUrl()
-  const semiAppUrl = (runtimeConfig.public as any).semiAppUrl as string | undefined
-  const opened = await openTipToSemi(tipTarget.value.authorId, () => baseUrl, semiAppUrl)
-  closeTipModal()
-  if (!opened) {
-    toast.add({
-      title: '无法打赏',
-      description: '该用户未绑定钱包，无法打赏',
-      color: 'orange',
-    })
-    return
-  }
-  toast.add({
-    title: '已打开转账页面',
-    description: '可在 Semi 内修改金额后完成转账',
-    color: 'green',
-  })
-}
-
-function onCommentClick(postId: string, comment: Comment, e: MouseEvent) {
-  if (longPressHandled.value) {
-    e.preventDefault()
-    e.stopPropagation()
-    longPressHandled.value = false
-    return
-  }
-  onReplyComment(postId, comment)
-}
 
 // 背景图轮播：取社区背景图（最多 3 张）
 const bannerImages = computed(() => {

@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import multer from 'multer'
-import { uploadAvatarController, uploadProofController, uploadPostImageController } from '../controllers/uploadController'
+import { uploadAvatarController, uploadProofController, uploadPostImageController, uploadMarketplaceImageController } from '../controllers/uploadController'
 import { authenticate } from '../middleware/auth'
 
 const router = Router()
@@ -28,5 +28,8 @@ router.post('/proof', authenticate, upload.array('files', 10), uploadProofContro
 
 // 上传社区动态图片（多文件）
 router.post('/post-image', authenticate, upload.array('files', 9), uploadPostImageController)
+
+// 商城商品图（多文件，最多 3）
+router.post('/marketplace-image', authenticate, upload.array('files', 3), uploadMarketplaceImageController)
 
 export default router

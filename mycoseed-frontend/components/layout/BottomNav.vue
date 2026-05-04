@@ -48,35 +48,22 @@ const getMyProfilePath = () => {
 // 第一个入口：社区（当前所选社区首页），未选时仍进入首页由页面引导去社区广场
 const communityPath = computed(() => '/')
 
-// 是否在底部导航中显示「活动」入口（隐藏时仅不展示，相关页面与路由仍保留）
-const showActivitiesNav = false
+const eventsPath = computed(() => {
+  const id = communityStore.currentCommunityId
+  if (!id) return '/communities'
+  return `/community/${id}/events`
+})
 
 const navItems = computed(() => {
-  const items = [
+  return [
     { label: '社区', path: communityPath.value, icon: '🏠' },
     { label: '任务', path: '/tasks', icon: '📋' },
-    { label: '活动', path: '/activities-feed', icon: '📅' },
+    { label: '活动', path: eventsPath.value, icon: '📅' },
     { label: '我的', path: getMyProfilePath(), icon: '👤' }
   ]
-  return showActivitiesNav ? items : items.filter(item => item.path !== '/activities-feed')
 })
 
 const navigateTo = (path: string) => {
-  try {
-    fetch('http://127.0.0.1:7242/ingest/af348509-5d27-4b86-baea-9c27926471bf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId: 'debug-session',
-        runId: 'nav-structure',
-        hypothesisId: 'H1',
-        location: 'components/layout/BottomNav.vue:navigateTo',
-        message: 'BottomNav navigateTo called',
-        data: { path },
-        timestamp: Date.now()
-      })
-    }).catch(() => {})
-  } catch (error) {}
   router.push(path)
 }
 </script>

@@ -176,3 +176,32 @@ export const uploadPostImage = async (
 
     return await uploadFileToStorage(file, 'community-posts', fileName, contentType)
 }
+
+/**
+ * 商城商品图（最多 3 张，与动态共用 bucket，路径前缀区分）
+ */
+export const uploadMarketplaceImage = async (
+    file: Buffer,
+    communityId: string,
+    draftListingId: string,
+    index: number,
+    contentType: string
+): Promise<{ url: string; hash: string }> => {
+    const getExtension = (mimeType: string): string => {
+        const mimeToExt: Record<string, string> = {
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/png': 'png',
+            'image/gif': 'gif',
+            'image/webp': 'webp'
+        }
+        const ext = mimeToExt[mimeType.toLowerCase()]
+        if (!ext) throw new Error(`不支持的图片类型：${mimeType}`)
+        return ext
+    }
+    if (index < 0 || index > 2) throw new Error('商城图片索引须在 0–2')
+    const timestamp = Date.now()
+    const ext = getExtension(contentType)
+    const fileName = `${communityId}/marketplace/${draftListingId}/${timestamp}_${index}.${ext}`
+    return await uploadFileToStorage(file, 'community-posts', fileName, contentType)
+}

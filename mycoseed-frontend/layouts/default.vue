@@ -24,15 +24,23 @@
         </div>
       </div>
       
-      <!-- 手机端设置按钮 -->
-      <NuxtLink
-        v-if="mobileUserStore.isAuthenticated"
-        to="/settings"
-        class="w-10 h-10 flex items-center justify-center rounded-xl bg-primary text-white font-medium text-sm transition-all active:scale-95 shadow-soft ml-2"
-        title="设置"
-      >
-        ⚙️
-      </NuxtLink>
+      <div class="flex items-center gap-2 shrink-0">
+        <NuxtLink
+          :to="mallPath"
+          class="w-10 h-10 flex items-center justify-center rounded-xl bg-amber-500 text-white font-medium text-sm transition-all active:scale-95 shadow-soft"
+          title="社区商城"
+        >
+          🛒
+        </NuxtLink>
+        <NuxtLink
+          v-if="mobileUserStore.isAuthenticated"
+          to="/settings"
+          class="w-10 h-10 flex items-center justify-center rounded-xl bg-primary text-white font-medium text-sm transition-all active:scale-95 shadow-soft"
+          title="设置"
+        >
+          ⚙️
+        </NuxtLink>
+      </div>
     </div>
     
     <!-- 主内容区域 -->
@@ -70,6 +78,12 @@ const mobileCurrentCommunityName = computed(() => {
 const communitiesPathWithFrom = computed(() => {
   const from = route.fullPath && route.fullPath !== '/communities' ? encodeURIComponent(route.fullPath) : ''
   return from ? `/communities?from=${from}` : '/communities'
+})
+
+const mallPath = computed(() => {
+  const id = mobileCommunityStore.currentCommunityId
+  if (!id) return '/communities'
+  return `/community/${id}/marketplace`
 })
 
 onMounted(async () => {
