@@ -30,11 +30,11 @@ export const listCalendarTags = async (req: AuthRequest, res: Response) => {
         await ensureDefaultCalendarTags(communityId)
         const { data, error } = await supabase
             .from('community_calendar_tags')
-            .select('id, name, color_hex, sort_order')
+            .select('id, name, color_hex, sort_order, archived')
             .eq('community_id', communityId)
             .order('sort_order', { ascending: true })
         if (error) throw error
-        res.json({ tags: (data || []).map((t) => ({ id: t.id, name: t.name, colorHex: t.color_hex, sortOrder: t.sort_order })) })
+        res.json({ tags: (data || []).map((t) => ({ id: t.id, name: t.name, colorHex: t.color_hex, sortOrder: t.sort_order, archived: t.archived || false })) })
     } catch (e: any) {
         console.error(e)
         res.status(500).json({ result: 'error', message: e.message })
@@ -92,13 +92,7 @@ export const deleteCalendarTag = async (req: AuthRequest, res: Response) => {
     try {
         const communityId = req.params.communityId
         const tagId = req.params.tagId
-        const { count } = await supabase
-            .from('community_events')
-            .select('*', { count: 'exact', head: true })
-            .eq('community_id', communityId)
-            .eq('tag_id', tagId)
-        if ((count ?? 0) > 0) return res.status(400).json({ result: 'error', message: '仍有活动使用该标签' })
-        const { error } = await supabase.from('community_calendar_tags').delete().eq('id', tagId).eq('community_id', communityId)
+        const { error } = await supabase.from('community_calendar_tags').update({ archived: true }).eq('id', tagId).eq('community_id', communityId)
         if (error) throw error
         res.json({ ok: true })
     } catch (e: any) {
@@ -134,10 +128,10 @@ async function loadEventBundle(eventId: string) {
     return { ev, options: options || [], occurrences: occurrences || [] }
 }
 
-function maxEndMs(occurrences: { activity_end: string }[]) {
+function maxEndMs(occurrences: { activityEnd: string }[]) {
     let m = 0
     for (const o of occurrences) {
-        const t = new Date(o.activity_end).getTime()
+        const t = new Date(o.activityEnd).getTime()
         if (t > m) m = t
     }
     return m
@@ -150,17 +144,21 @@ function sortEventsForList(rows: any[]) {
         const ended = maxEnd > 0 && maxEnd < now
         return { ...r, _maxEnd: maxEnd, _ended: ended }
     })
-    const pinned = decorated.filter((r) => r.is_pinned).sort((a, b) => a._maxEnd - b._maxEnd)
-    const unpinned = decorated.filter((r) => !r.is_pinned)
+    const pinned = decorated.filter((r) => r.isPinned).sort((a, b) => {
+        const ta = a.pinnedAt ? new Date(a.pinnedAt).getTime() : 0
+        const tb = b.pinnedAt ? new Date(b.pinnedAt).getTime() : 0
+        return tb - ta
+    })
+    const unpinned = decorated.filter((r) => !r.isPinned)
     const active = unpinned.filter((r) => !r._ended).sort((a, b) => {
-        const sa = new Date(a.occurrences?.[0]?.activity_start || 0).getTime()
-        const sb = new Date(b.occurrences?.[0]?.activity_start || 0).getTime()
+        const sa = new Date(a.occurrences?.[0]?.activityStart || 0).getTime()
+        const sb = new Date(b.occurrences?.[0]?.activityStart || 0).getTime()
         return sa - sb
     })
     const endedList = unpinned.filter((r) => r._ended).sort((a, b) => {
-        const sa = new Date(a.occurrences?.[0]?.activity_start || 0).getTime()
-        const sb = new Date(b.occurrences?.[0]?.activity_start || 0).getTime()
-        return sa - sb
+        const sa = new Date(a.occurrences?.[0]?.activityStart || 0).getTime()
+        const sb = new Date(b.occurrences?.[0]?.activityStart || 0).getTime()
+        return sb - sa
     })
     return [...pinned, ...active, ...endedList].map(({ _maxEnd, _ended, ...rest }) => rest)
 }
@@ -312,6 +310,7 @@ async function formatEventListItem(bundle: NonNullable<Awaited<ReturnType<typeof
         description: ev.description,
         noteEnabled: ev.note_enabled,
         isPinned: ev.is_pinned,
+        pinnedAt: ev.pinned_at,
         registrationStart: ev.registration_start,
         registrationEnd: ev.registration_end,
         paymentAddress: String((ev as any).payment_address ?? '').trim(),
@@ -643,7 +642,7 @@ export const pinEvent = async (req: AuthRequest, res: Response) => {
 
         const { error } = await supabase
             .from('community_events')
-            .update({ is_pinned: !!isPinned })
+            .update({ is_pinned: !!isPinned, pinned_at: !!isPinned ? new Date().toISOString() : null })
             .eq('id', eventId)
             .eq('community_id', communityId)
         if (error) throw error

@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 
 const DEFAULT_TAGS: { name: string; color_hex: string; sort_order: number }[] = [
-    { name: '闲置物品', color_hex: '#22c55e', sort_order: 0 },
+    { name: '闲置物品', color_hex: '#f87171', sort_order: 0 },
     { name: '技能服务', color_hex: '#3b82f6', sort_order: 1 },
     { name: '代购跑腿', color_hex: '#eab308', sort_order: 2 },
     { name: '珍藏好物', color_hex: '#a855f7', sort_order: 3 },

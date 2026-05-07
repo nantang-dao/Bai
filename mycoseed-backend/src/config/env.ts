@@ -17,3 +17,5 @@ if (nodeEnv === 'development') {
 }
 
 export const NODE_ENV = nodeEnv
+
+export const DEV_BYPASS_AUTH = process.env.DEV_BYPASS_AUTH === 'true' && nodeEnv !== 'production'

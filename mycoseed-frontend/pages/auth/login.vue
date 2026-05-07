@@ -26,6 +26,33 @@
         >
           返回地图
         </PixelButton>
+
+        <!-- [DEV_BYPASS] 开发者免验登录（仅开发环境显示） -->
+        <div v-if="isDev" class="mt-4 pt-4 border-t-2 border-dashed border-amber-400">
+          <div class="text-center text-sm font-bold text-amber-600 mb-3">
+            🛠 开发者免验登录
+          </div>
+          <div class="flex gap-3">
+            <PixelButton
+              variant="secondary"
+              block
+              size="sm"
+              :disabled="devLoggingIn"
+              @click="handleDevLogin(0)"
+            >
+              {{ devLoggingIn ? '登录中...' : '👤 开发者A（发包方）' }}
+            </PixelButton>
+            <PixelButton
+              variant="secondary"
+              block
+              size="sm"
+              :disabled="devLoggingIn"
+              @click="handleDevLogin(1)"
+            >
+              {{ devLoggingIn ? '登录中...' : '👤 开发者B（接包方）' }}
+            </PixelButton>
+          </div>
+        </div>
       </div>
 
       <template #footer>
@@ -40,6 +67,7 @@
 <script setup lang="ts">
 import { buildOAuthUrl, generateRandomState } from '~/utils/api'
 import { useToast } from '~/composables/useToast'
+import { useUserStore } from '~/stores/user'
 definePageMeta({
   layout: 'unauth'
 })
@@ -47,6 +75,32 @@ definePageMeta({
 const router = useRouter()
 const toast = useToast()
 const config = useRuntimeConfig()
+const userStore = useUserStore()
+const { devLogin } = useApi()
+
+const isDev = computed(() => {
+  if (process.server) return false
+  const url = config.public.apiUrl || ''
+  return url.includes('localhost') || url.includes('127.0.0.1')
+})
+
+const devLoggingIn = ref(false)
+
+const handleDevLogin = async (userIndex: number) => {
+  devLoggingIn.value = true
+  try {
+    const data = await devLogin(userIndex)
+    if (data.auth_token) {
+      await userStore.getUser(true)
+      toast.add({ title: '开发者登录成功', description: `已登录为 ${data.user?.name || '开发者'}`, color: 'green' })
+      router.push('/')
+    }
+  } catch (error: any) {
+    toast.add({ title: '开发者登录失败', description: error.message, color: 'red' })
+  } finally {
+    devLoggingIn.value = false
+  }
+}
 
 const handleOAuth2Login = () => {
   const clientId = config.public.semiClientId

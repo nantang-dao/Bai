@@ -1097,6 +1097,32 @@ export const sendEmailCode = async (email: string): Promise<{ result: string }> 
 }
 
 /**
+ * [DEV_BYPASS] 开发者免验登录
+ * @param userIndex 0=开发者A（发包方）, 1=开发者B（接包方）
+ * @param baseUrl API 基础 URL
+ */
+export const devLogin = async (userIndex: number, baseUrl: string): Promise<{ result: string; auth_token?: string; user?: any }> => {
+  const response = await fetch(`${baseUrl}/api/auth/dev-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userIndex }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.message || '开发者登录失败')
+  }
+
+  const data = await response.json()
+
+  if (data.auth_token) {
+    setCookie(AUTH_TOKEN_KEY, data.auth_token)
+  }
+
+  return data
+}
+
+/**
  * 登录
  * @param identifier 手机号或邮箱
  * @param code 验证码
@@ -2955,6 +2981,7 @@ export interface MarketplaceTag {
   colorHex: string
   sortOrder?: number
   createdAt?: string
+  archived?: boolean
 }
 
 export interface MarketplaceSeller {
@@ -3152,6 +3179,7 @@ export interface CalendarTag {
   name: string
   colorHex: string
   sortOrder?: number
+  archived?: boolean
 }
 
 export interface CommunityEventOccurrence {

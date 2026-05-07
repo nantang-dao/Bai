@@ -11,6 +11,7 @@ import
     getAllUsersController,
     setPasswordController,
     syncFromSemiController,
+    devLoginController,
 } from '../controllers/authController'
 import {authenticate} from '../middleware/auth'
 
@@ -23,6 +24,7 @@ router.post('/register', registerController)  // 用户注册（密码）
 router.post('/login', passwordLoginController)  // 密码登录
 router.post('/set-password', setPasswordController)  // 设置密码（验证码验证后）
 router.post('/sync-from-semi', syncFromSemiController)  // 从 Semi 同步用户信息
+router.post('/dev-login', devLoginController)  // [DEV_BYPASS] 开发者免验登录
 router.get('/me',authenticate,getMeController)  // 获取当前用户信息
 router.patch('/me', authenticate, updateProfileController)  // 更新用户资料
 router.get('/users', authenticate, getAllUsersController)  // 获取所有用户列表（需要认证）- 必须在 /users/:id 之前

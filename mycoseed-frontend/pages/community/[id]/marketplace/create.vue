@@ -11,7 +11,7 @@
 
     <div class="space-y-4">
       <div>
-        <label class="block text-sm font-bold text-text-body mb-1">图片（1–3 张，首张为主图）</label>
+        <label class="block text-sm font-bold text-text-body mb-1">图片（可选，最多3张，首张为主图）</label>
         <input ref="fileRef" type="file" accept="image/*" multiple class="hidden" @change="onFiles" />
         <div class="flex gap-2 flex-wrap">
           <button
@@ -48,14 +48,14 @@
 
       <div>
         <label class="block text-sm font-bold text-text-body mb-1">价格（元）</label>
-        <input v-model.number="price" type="number" min="0" step="0.01" class="w-full h-11 px-3 rounded-xl border border-border bg-input-bg" />
+        <input v-model.number="price" type="number" min="0" step="0.5" class="w-full h-11 px-3 rounded-xl border border-border bg-input-bg" />
       </div>
 
       <div>
         <label class="block text-sm font-bold text-text-body mb-2">标签</label>
         <div class="flex flex-wrap gap-2">
           <button
-            v-for="t in tagList"
+            v-for="t in tagList.filter(t => !t.archived)"
             :key="t.id"
             type="button"
             class="px-3 py-1.5 rounded-full text-xs font-medium border-2 transition-colors"
@@ -121,6 +121,26 @@ const saving = ref(false)
 const withdrawing = ref(false)
 const err = ref('')
 
+function safeUUID() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
+function generateTitleImage(t: string) {
+  const display = t.length > 12 ? t.slice(0, 12) + '…' : t
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+    <rect width="400" height="400" fill="#f1f5f9"/>
+    <rect x="20" y="20" width="360" height="360" rx="16" fill="#e2e8f0"/>
+    <text x="200" y="200" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-size="36" font-weight="bold" fill="#334155">${display}</text>
+    <text x="200" y="340" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" fill="#94a3b8">商城商品</text>
+  </svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
 const canWithdraw = computed(() => {
   if (!editingId.value) return false
   return listingStatus.value === 'active'
@@ -140,7 +160,7 @@ async function onFiles(e: Event) {
   const files = Array.from(input.files || []).slice(0, 3 - images.value.length)
   input.value = ''
   if (!files.length) return
-  if (!draftListingId.value) draftListingId.value = crypto.randomUUID()
+  if (!draftListingId.value) draftListingId.value = safeUUID()
   uploading.value = true
   try {
     const res = await api.uploadMarketplaceImages({
@@ -160,10 +180,6 @@ async function onFiles(e: Event) {
 
 async function submit() {
   err.value = ''
-  if (images.value.length < 1 || images.value.length > 3) {
-    err.value = '请上传 1–3 张图片'
-    return
-  }
   if (!title.value.trim()) {
     err.value = '请填写标题'
     return
@@ -172,6 +188,9 @@ async function submit() {
     err.value = '请填写有效价格'
     return
   }
+  const finalImages = images.value.length > 0
+    ? images.value
+    : [generateTitleImage(title.value.trim())]
   saving.value = true
   try {
     const tagIds = [...selectedTagIds.value]
@@ -180,18 +199,18 @@ async function submit() {
         title: title.value.trim(),
         description: description.value,
         price: Number(price.value),
-        imageUrls: images.value,
+        imageUrls: finalImages,
         tagIds
       })
       toast.add({ title: '已保存', color: 'green' })
     } else {
-      const id = draftListingId.value || crypto.randomUUID()
+      const id = draftListingId.value || safeUUID()
       await api.createMarketplaceListing(communityId.value, {
         id,
         title: title.value.trim(),
         description: description.value,
         price: Number(price.value),
-        imageUrls: images.value,
+        imageUrls: finalImages,
         tagIds
       })
       toast.add({ title: '发布成功', color: 'green' })
@@ -218,7 +237,7 @@ async function doWithdraw() {
     })
     editingId.value = null
     listingStatus.value = null
-    draftListingId.value = crypto.randomUUID()
+    draftListingId.value = safeUUID()
   } catch (e: any) {
     toast.add({ title: e?.message || '撤回失败', color: 'red' })
   } finally {
@@ -256,7 +275,7 @@ async function loadFromWithdraw(id: string) {
     price.value = listing.price
     images.value = [...listing.imageUrls]
     selectedTagIds.value = new Set(listing.tags.map((t) => t.id))
-    draftListingId.value = crypto.randomUUID()
+    draftListingId.value = safeUUID()
   } catch (_) {
     /* ignore */
   }
@@ -265,7 +284,7 @@ async function loadFromWithdraw(id: string) {
 async function initPage() {
   await communityStore.setCurrentCommunity(communityId.value)
   tagList.value = await api.getMarketplaceTags(communityId.value)
-  draftListingId.value = crypto.randomUUID()
+  draftListingId.value = safeUUID()
 
   if (editId.value) {
     await loadForEdit(editId.value)

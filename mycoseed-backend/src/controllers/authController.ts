@@ -3,6 +3,7 @@ import {AuthRequest} from '../middleware/auth'
 import {supabase} from '../services/supabase'
 import {sendSMS} from '../services/sms'
 import {User,SignInRequest} from '../types/auth'
+import {DEV_BYPASS_AUTH} from '../config/env'
 import crypto from 'crypto'
 import { promisify } from 'util'
 
@@ -922,5 +923,97 @@ export const syncFromSemiController = async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('Sync from Semi error:', error)
         res.status(500).json({ result: 'error', message: error.message || 'Failed to sync user from Semi'})
+    }
+}
+
+// ==================== 开发者免验登录 ====================
+// [DEV_BYPASS] 仅在 DEV_BYPASS_AUTH=true 且 NODE_ENV !== 'production' 时可用
+// 删除提示：搜索 [DEV_BYPASS] 标记可定位所有绕过代码
+
+const DEV_USERS = [
+    {
+        phone: '18800000001',
+        name: '开发者A（发包方）',
+        evm_chain_address: '0xDevA00000000000000000000000000000000001',
+        semi_id: 'DEV_SEMI_ID_A',
+    },
+    {
+        phone: '18800000002',
+        name: '开发者B（接包方）',
+        evm_chain_address: '0xDevB00000000000000000000000000000000002',
+        semi_id: 'DEV_SEMI_ID_B',
+    },
+] as const
+
+export const devLoginController = async (req: Request, res: Response) => {
+    try {
+        if (!DEV_BYPASS_AUTH) {
+            return res.status(403).json({ result: 'error', message: '开发者免验登录未启用' })
+        }
+
+        const { userIndex } = req.body as { userIndex?: number }
+        const idx = typeof userIndex === 'number' ? userIndex : 0
+        if (idx < 0 || idx >= DEV_USERS.length) {
+            return res.status(400).json({ result: 'error', message: `userIndex 须为 0-${DEV_USERS.length - 1}` })
+        }
+
+        const devUser = DEV_USERS[idx]
+
+        let { data: user, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('phone', devUser.phone)
+            .single()
+
+        if (userError && userError.code === 'PGRST116') {
+            const { data: newUser, error: createError } = await supabase
+                .from('users')
+                .insert({
+                    phone: devUser.phone,
+                    name: devUser.name,
+                    phone_verified: true,
+                    evm_chain_address: devUser.evm_chain_address,
+                    semi_id: devUser.semi_id,
+                })
+                .select()
+                .single()
+
+            if (createError) throw createError
+            user = newUser
+        } else if (userError) {
+            throw userError
+        } else {
+            const updateData: Record<string, any> = {}
+            if (user.name !== devUser.name) updateData.name = devUser.name
+            if (!user.evm_chain_address) updateData.evm_chain_address = devUser.evm_chain_address
+            if (!user.semi_id) updateData.semi_id = devUser.semi_id
+            if (!user.phone_verified) updateData.phone_verified = true
+            if (Object.keys(updateData).length > 0) {
+                const { data: updated, error: updateError } = await supabase
+                    .from('users')
+                    .update(updateData)
+                    .eq('id', user.id)
+                    .select()
+                    .single()
+                if (updateError) throw updateError
+                user = updated
+            }
+        }
+
+        const token = generateToken()
+        const { error: tokenError } = await supabase
+            .from('auth_tokens')
+            .insert({ token, user_id: user.id, disabled: false })
+        if (tokenError) throw tokenError
+
+        const userResponse: any = { ...user, avatar: user.avatar || user.image_url }
+        delete userResponse.image_url
+        delete userResponse.password_hash
+
+        console.log(`[DEV_BYPASS] 开发者登录: ${devUser.name} (${devUser.phone})`)
+        res.json({ result: 'ok', auth_token: token, user: userResponse, address_type: 'phone' })
+    } catch (error: any) {
+        console.error('Dev login error:', error)
+        res.status(500).json({ result: 'error', message: error.message || '开发者登录失败' })
     }
 }

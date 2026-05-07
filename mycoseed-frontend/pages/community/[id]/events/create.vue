@@ -39,7 +39,7 @@
         <label class="text-sm font-bold text-text-body">日历标签（单选）</label>
         <select v-model="tagId" class="w-full h-11 px-3 rounded-xl border border-border bg-input-bg mt-1">
           <option value="">不选</option>
-          <option v-for="t in tags" :key="t.id" :value="t.id">{{ t.name }}</option>
+          <option v-for="t in tags.filter(t => !t.archived)" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
       </div>
 
@@ -61,7 +61,7 @@
         />
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div v-if="kind !== 'pack'" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <label class="text-sm font-bold">报名开始</label>
           <input v-model="registrationStart" type="datetime-local" class="w-full h-10 px-2 rounded-xl border border-border bg-input-bg mt-1" />
@@ -85,7 +85,7 @@
         </div>
         <div>
           <label class="text-sm font-bold">金额（可为 0）</label>
-          <input v-model.number="singlePrice" type="number" min="0" step="0.01" class="w-full h-11 px-3 rounded-xl border border-border bg-input-bg mt-1" />
+          <input v-model.number="singlePrice" type="number" min="0" step="0.5" class="w-full h-11 px-3 rounded-xl border border-border bg-input-bg mt-1" />
         </div>
       </template>
 
@@ -107,7 +107,7 @@
           </div>
           <div v-for="(o, i) in subOptions" :key="i" class="flex gap-2 items-center">
             <input v-model="o.title" placeholder="名称" class="flex-1 h-10 px-2 rounded-xl border border-border bg-input-bg" />
-            <input v-model.number="o.price" type="number" min="0" step="0.01" class="w-24 h-10 px-2 rounded-xl border border-border bg-input-bg" />
+            <input v-model.number="o.price" type="number" min="0" step="0.5" class="w-24 h-10 px-2 rounded-xl border border-border bg-input-bg" />
             <button type="button" class="text-red-500" @click="subOptions.splice(i, 1)">×</button>
           </div>
         </div>
@@ -119,10 +119,9 @@
           <select v-model="packFrequency" class="w-full h-11 px-3 rounded-xl border border-border bg-input-bg mt-1">
             <option value="daily">每天</option>
             <option value="weekly">每周（勾选星期）</option>
-            <option value="custom">自定义（勾选星期）</option>
           </select>
         </div>
-        <div v-if="packFrequency === 'weekly' || packFrequency === 'custom'" class="flex flex-wrap gap-2">
+        <div v-if="packFrequency === 'weekly'" class="flex flex-wrap gap-2">
           <label v-for="(d, i) in weekLabels" :key="i" class="flex items-center gap-1 text-sm">
             <input v-model="weekPick[i]" type="checkbox" />
             {{ d }}
@@ -148,13 +147,24 @@
             <input v-model="slotTimeEnd" type="time" class="w-full h-10 px-2 rounded-xl border border-border bg-input-bg mt-1" />
           </div>
         </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-sm font-bold">每场报名开始时刻</label>
+            <input v-model="slotRegTimeStart" type="time" class="w-full h-10 px-2 rounded-xl border border-border bg-input-bg mt-1" />
+          </div>
+          <div>
+            <label class="text-sm font-bold">每场报名结束时刻</label>
+            <input v-model="slotRegTimeEnd" type="time" class="w-full h-10 px-2 rounded-xl border border-border bg-input-bg mt-1" />
+          </div>
+        </div>
+        <p class="text-xs text-text-placeholder">每场报名窗口 = 当天日期 + 对应时刻。例如报名开始 08:00、报名结束 09:30，则每场在活动当天 08:00–09:30 开放报名。</p>
         <p class="text-xs text-text-placeholder">将生成 {{ generatedOccurrences.length }} 个期次（预览）：每期需单独报名。</p>
         <div class="space-y-2">
-          <label class="text-sm font-bold">活动包选项（与子活动金额）</label>
+          <label class="text-sm font-bold">活动包选项（只填一个选项为单一活动）</label>
           <button type="button" class="text-primary text-sm" @click="packOptions.push({ title: '', price: 0 })">+ 添加选项</button>
           <div v-for="(o, i) in packOptions" :key="i" class="flex gap-2 items-center">
             <input v-model="o.title" placeholder="名称" class="flex-1 h-10 px-2 rounded-xl border border-border bg-input-bg" />
-            <input v-model.number="o.price" type="number" min="0" step="0.01" class="w-24 h-10 px-2 rounded-xl border border-border bg-input-bg" />
+            <input v-model.number="o.price" type="number" min="0" step="0.5" class="w-24 h-10 px-2 rounded-xl border border-border bg-input-bg" />
             <button type="button" class="text-red-500" @click="packOptions.splice(i, 1)">×</button>
           </div>
         </div>
@@ -203,11 +213,13 @@ const actStart = ref('')
 const actEnd = ref('')
 const singlePrice = ref(0)
 const subOptions = ref<{ title: string; price: number }[]>([{ title: '', price: 0 }])
-const packFrequency = ref<'daily' | 'weekly' | 'custom'>('daily')
+const packFrequency = ref<'daily' | 'weekly'>('daily')
 const packRangeStart = ref('')
 const packRangeEnd = ref('')
 const slotTimeStart = ref('09:00')
 const slotTimeEnd = ref('11:00')
+const slotRegTimeStart = ref('08:00')
+const slotRegTimeEnd = ref('09:30')
 const weekPick = ref([false, false, false, false, false, false, false])
 const weekLabels = ['日', '一', '二', '三', '四', '五', '六']
 const packOptions = ref<{ title: string; price: number }[]>([{ title: '', price: 0 }])
@@ -215,6 +227,11 @@ const packOptions = ref<{ title: string; price: number }[]>([{ title: '', price:
 const tags = ref<CalendarTag[]>([])
 const saving = ref(false)
 const err = ref('')
+
+function parseTimeMinutes(t: string) {
+  const [h, m] = t.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
 
 function padLocal(dt: Date) {
   const y = dt.getFullYear()
@@ -278,9 +295,7 @@ function applyDeleteDraft(raw: Record<string, unknown>) {
     }
   } else {
     const freq = raw.packFrequency
-    if (freq === 'custom') {
-      packFrequency.value = 'custom'
-    } else if (freq === 'weekly') {
+    if (freq === 'weekly') {
       packFrequency.value = 'weekly'
     } else {
       packFrequency.value = 'daily'
@@ -318,19 +333,24 @@ const generatedOccurrences = computed(() => {
     return []
   const start = new Date(packRangeStart.value + 'T00:00:00')
   const end = new Date(packRangeEnd.value + 'T23:59:59')
-  const out: { activityStart: string; activityEnd: string }[] = []
+  const out: { activityStart: string; activityEnd: string; registrationStart: string; registrationEnd: string }[] = []
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const copy = new Date(d)
     const day = copy.getDay()
     if (
       packFrequency.value === 'daily' ||
-      ((packFrequency.value === 'weekly' || packFrequency.value === 'custom') && weekPick.value[day])
+      (packFrequency.value === 'weekly' && weekPick.value[day])
     ) {
-      const ds = copy.toISOString().slice(0, 10)
+      const y = copy.getFullYear()
+      const m = String(copy.getMonth() + 1).padStart(2, '0')
+      const dd = String(copy.getDate()).padStart(2, '0')
+      const ds = `${y}-${m}-${dd}`
       const s = new Date(`${ds}T${slotTimeStart.value}:00`)
       const e = new Date(`${ds}T${slotTimeEnd.value}:00`)
       if (e <= s) e.setDate(e.getDate() + 1)
-      out.push({ activityStart: s.toISOString(), activityEnd: e.toISOString() })
+      const rs = new Date(`${ds}T${slotRegTimeStart.value || '00:00'}:00`)
+      const re = new Date(`${ds}T${slotRegTimeEnd.value || '23:59'}:00`)
+      out.push({ activityStart: s.toISOString(), activityEnd: e.toISOString(), registrationStart: rs.toISOString(), registrationEnd: re.toISOString() })
     }
   }
   return out
@@ -342,17 +362,36 @@ async function submit() {
     err.value = '请填写标题'
     return
   }
-  if (!registrationStart.value || !registrationEnd.value) {
+  if (kind.value !== 'pack' && (!registrationStart.value || !registrationEnd.value)) {
     err.value = '请填写报名时间段'
     return
   }
+  if (kind.value !== 'pack') {
+    const rs = new Date(registrationStart.value).getTime()
+    const re = new Date(registrationEnd.value).getTime()
+    if (re <= rs) {
+      err.value = '报名结束时间必须晚于报名开始时间'
+      return
+    }
+  }
 
   let options: { title: string; price: number }[] = []
-  let occurrences: { activityStart: string; activityEnd: string }[] = []
+  let occurrences: { activityStart: string; activityEnd: string; registrationStart?: string; registrationEnd?: string }[] = []
 
   if (kind.value === 'single') {
     if (!actStart.value || !actEnd.value) {
       err.value = '请填写活动时间'
+      return
+    }
+    const as = new Date(actStart.value).getTime()
+    const ae = new Date(actEnd.value).getTime()
+    if (ae <= as) {
+      err.value = '活动结束时间必须晚于活动开始时间'
+      return
+    }
+    const re = new Date(registrationEnd.value).getTime()
+    if (re > ae) {
+      err.value = '报名结束时间必须在活动结束时间之前'
       return
     }
     options = [{ title: '默认', price: Math.max(0, Number(singlePrice.value) || 0) }]
@@ -362,6 +401,17 @@ async function submit() {
       err.value = '请填写活动时间'
       return
     }
+    const as = new Date(actStart.value).getTime()
+    const ae = new Date(actEnd.value).getTime()
+    if (ae <= as) {
+      err.value = '活动结束时间必须晚于活动开始时间'
+      return
+    }
+    const re = new Date(registrationEnd.value).getTime()
+    if (re > ae) {
+      err.value = '报名结束时间必须在活动结束时间之前'
+      return
+    }
     options = subOptions.value.filter((o) => o.title.trim()).map((o) => ({ title: o.title.trim(), price: Math.max(0, Number(o.price) || 0) }))
     if (!options.length) {
       err.value = '请至少填写一个子选项'
@@ -369,6 +419,26 @@ async function submit() {
     }
     occurrences = [{ activityStart: new Date(actStart.value).toISOString(), activityEnd: new Date(actEnd.value).toISOString() }]
   } else {
+    if (!slotRegTimeStart.value || !slotRegTimeEnd.value) {
+      err.value = '请填写每场报名开始/结束时刻'
+      return
+    }
+    const rst = parseTimeMinutes(slotRegTimeStart.value)
+    const ret = parseTimeMinutes(slotRegTimeEnd.value)
+    if (ret <= rst) {
+      err.value = '每场报名结束时刻必须晚于报名开始时刻'
+      return
+    }
+    const ast = parseTimeMinutes(slotTimeStart.value)
+    const aet = parseTimeMinutes(slotTimeEnd.value)
+    if (aet <= ast) {
+      err.value = '每场结束时刻必须晚于开始时刻'
+      return
+    }
+    if (ret > aet) {
+      err.value = '每场报名结束时刻必须在活动结束时刻之前'
+      return
+    }
     options = packOptions.value.filter((o) => o.title.trim()).map((o) => ({ title: o.title.trim(), price: Math.max(0, Number(o.price) || 0) }))
     if (!options.length) {
       err.value = '活动包至少一个选项'
@@ -380,7 +450,7 @@ async function submit() {
       return
     }
     if (
-      (packFrequency.value === 'weekly' || packFrequency.value === 'custom') &&
+      packFrequency.value === 'weekly' &&
       !weekPick.value.some(Boolean)
     ) {
       err.value = '每周/自定义模式请至少勾选一天'
@@ -403,15 +473,19 @@ async function submit() {
       tagId: tagId.value || null,
       noteEnabled: noteEnabled.value,
       paymentAddress: paymentAddress.value.trim(),
-      registrationStart: new Date(registrationStart.value).toISOString(),
-      registrationEnd: new Date(registrationEnd.value).toISOString(),
+      registrationStart: kind.value === 'pack'
+        ? (occurrences[0]?.registrationStart || new Date().toISOString())
+        : new Date(registrationStart.value).toISOString(),
+      registrationEnd: kind.value === 'pack'
+        ? (occurrences[occurrences.length - 1]?.registrationEnd || new Date().toISOString())
+        : new Date(registrationEnd.value).toISOString(),
       options,
       occurrences,
       packFrequency: kind.value === 'pack' ? packFrequency.value : null,
       packRangeStart: kind.value === 'pack' ? packRangeStart.value : null,
       packRangeEnd: kind.value === 'pack' ? packRangeEnd.value : null,
       packCustomWeekdays:
-        kind.value === 'pack' && (packFrequency.value === 'weekly' || packFrequency.value === 'custom')
+        kind.value === 'pack' && packFrequency.value === 'weekly'
           ? weekPick.value.map((x, i) => (x ? i : -1)).filter((i) => i >= 0)
           : null
     })

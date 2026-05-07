@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 
 const DEFAULT_TAGS: { name: string; color_hex: string; sort_order: number }[] = [
-    { name: '户外', color_hex: '#22c55e', sort_order: 0 },
+    { name: '户外', color_hex: '#f87171', sort_order: 0 },
     { name: '室内', color_hex: '#3b82f6', sort_order: 1 },
     { name: '讲座', color_hex: '#a855f7', sort_order: 2 },
     { name: '聚会', color_hex: '#eab308', sort_order: 3 },

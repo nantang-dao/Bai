@@ -79,8 +79,8 @@ SELECT c.id, t.name, t.color, t.ord
 FROM communities c
 CROSS JOIN (
     VALUES
-        (0, '户外', '#22c55e'),
-        (1, '室内', '#3b82f6'),
+        (0, '户外活动', '#f87171'),
+        (1, '课程', '#3b82f6'),
         (2, '讲座', '#a855f7'),
         (3, '聚会', '#eab308')
 ) AS t(ord, name, color)

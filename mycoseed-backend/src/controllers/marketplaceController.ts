@@ -86,7 +86,7 @@ export const listTags = async (req: AuthRequest, res: Response) => {
         await ensureDefaultMarketplaceTags(communityId)
         const { data, error } = await supabase
             .from('community_marketplace_tags')
-            .select('id, name, color_hex, sort_order, created_at')
+            .select('id, name, color_hex, sort_order, created_at, archived')
             .eq('community_id', communityId)
             .order('sort_order', { ascending: true })
         if (error) throw error
@@ -97,6 +97,7 @@ export const listTags = async (req: AuthRequest, res: Response) => {
                 colorHex: t.color_hex,
                 sortOrder: t.sort_order,
                 createdAt: t.created_at,
+                archived: t.archived || false,
             })),
         })
     } catch (e: any) {
@@ -171,20 +172,14 @@ export const updateTag = async (req: AuthRequest, res: Response) => {
     }
 }
 
-/** DELETE .../tags/:tagId */
+/** DELETE .../tags/:tagId — archive instead of hard delete */
 export const deleteTag = async (req: AuthRequest, res: Response) => {
     try {
         const communityId = req.params.communityId
         const tagId = req.params.tagId
-        const { count } = await supabase
-            .from('community_marketplace_listing_tags')
-            .select('*', { count: 'exact', head: true })
-            .eq('tag_id', tagId)
-        if ((count ?? 0) > 0)
-            return res.status(400).json({ result: 'error', message: '仍有商品使用该标签，无法删除' })
         const { error } = await supabase
             .from('community_marketplace_tags')
-            .delete()
+            .update({ archived: true })
             .eq('id', tagId)
             .eq('community_id', communityId)
         if (error) throw error
@@ -353,7 +348,7 @@ export const createListing = async (req: AuthRequest, res: Response) => {
         const listingId = clientId && isUuid(String(clientId)) ? String(clientId) : randomUUID()
         if (!title || !String(title).trim()) return res.status(400).json({ result: 'error', message: '标题必填' })
         const urls: string[] = Array.isArray(imageUrls) ? imageUrls.filter((u: any) => typeof u === 'string') : []
-        if (urls.length < 1 || urls.length > 3) return res.status(400).json({ result: 'error', message: '请上传 1–3 张图' })
+        if (urls.length > 3) return res.status(400).json({ result: 'error', message: '最多上传 3 张图' })
         const p = Number(price)
         if (Number.isNaN(p) || p < 0) return res.status(400).json({ result: 'error', message: '价格无效' })
 

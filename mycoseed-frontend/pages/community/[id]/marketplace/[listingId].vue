@@ -53,7 +53,7 @@
           ¥ {{ formatPrice(listing.price) }}
         </p>
         <p class="text-sm text-text-placeholder mt-1">
-          <span v-if="listing.status === 'locked'">已预订 · 等待买家付款</span>
+          <span v-if="listing.status === 'locked'">已预订 · 等待买家确认</span>
           <span v-else-if="listing.status === 'sold'">已售出</span>
           <span v-else-if="listing.status === 'active'">在售</span>
         </p>

@@ -68,7 +68,7 @@ SELECT c.id, t.name, t.color, t.ord
 FROM communities c
 CROSS JOIN (
     VALUES
-        (0, '闲置物品', '#22c55e'),
+        (0, '闲置物品', '#f87171'),
         (1, '技能服务', '#3b82f6'),
         (2, '代购跑腿', '#eab308'),
         (3, '珍藏好物', '#a855f7')

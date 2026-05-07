@@ -2,14 +2,6 @@
   <div class="min-h-screen pb-28">
     <header class="sticky top-0 z-40 bg-card border-b border-border px-3 py-3">
       <div class="max-w-3xl mx-auto flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2 min-w-0">
-          <button type="button" class="p-2 -ml-1 rounded-xl hover:bg-input-bg" @click="router.back()">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h1 class="text-lg font-bold text-text-title truncate">活动</h1>
-        </div>
         <NuxtLink
           v-if="isAdmin"
           :to="`/community/${communityId}/events/create`"
@@ -29,7 +21,7 @@
           全部
         </button>
         <button
-          v-for="t in tags"
+          v-for="t in tags.filter(t => !t.archived)"
           :key="t.id"
           type="button"
           class="px-2 py-0.5 rounded-full text-xs text-white"

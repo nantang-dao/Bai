@@ -20,6 +20,7 @@ export const useApi = () => {
     signIn: (identifier: string, code: string) => api.signIn(identifier, code, apiBaseUrl),
     signInWithEmail: (email: string, code: string, userType?: 'member' | 'community') => 
       api.signInWithEmail(email, code, apiBaseUrl, userType),
+    devLogin: (userIndex: number) => api.devLogin(userIndex, apiBaseUrl),  // [DEV_BYPASS]
     getMe: () => api.getMe(apiBaseUrl),
     
     getActivityFeed: () => api.getActivityFeed(),
