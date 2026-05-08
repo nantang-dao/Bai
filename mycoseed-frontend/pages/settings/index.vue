@@ -82,6 +82,7 @@
           </svg>
         </NuxtLink>
         <NuxtLink
+          v-if="isSuperAdmin"
           :to="`/community/${communityStore.currentCommunityId}/settings`"
           class="flex items-center gap-3 px-4 py-4 active:bg-input-bg transition-colors"
         >
@@ -289,6 +290,7 @@ const isCommunityAdmin = computed(() => {
   const r = communityStore.currentCommunity?.myRole
   return r === 'super_admin' || r === 'sub_admin'
 })
+const isSuperAdmin = computed(() => communityStore.currentCommunity?.myRole === 'super_admin')
 const toast = useToast()
 const { updateUserProfile, getMe } = useApi()
 const {

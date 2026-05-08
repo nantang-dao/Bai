@@ -58,7 +58,7 @@ const navItems = computed(() => {
   return [
     { label: '社区', path: communityPath.value, icon: '🏠' },
     { label: '任务', path: '/tasks', icon: '📋' },
-    { label: '活动', path: eventsPath.value, icon: '📅' },
+    // { label: '活动', path: eventsPath.value, icon: '📅' },
     { label: '我的', path: getMyProfilePath(), icon: '👤' }
   ]
 })

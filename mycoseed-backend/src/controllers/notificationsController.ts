@@ -27,79 +27,103 @@ async function getOrCreateSettings(userId: string) {
   return created
 }
 
-/**
- * 生成到期提醒（1h/3h）并写入 notifications（带去重）
- * 仅在 due_enabled=true 且传入 communityId 时生成
- */
 async function ensureDueReminders(userId: string, communityId: string) {
   const settings = await getOrCreateSettings(userId)
   if (!settings.due_enabled) return
 
-  // 找到我领取但未完成/未终止的任务（同社区）
-  // 通过 tasks.claimer_id=user 且 status not in (completed,rejected)
-  const { data: myTasks, error } = await supabase
+  const now = Date.now()
+  const ONE_HOUR = 60 * 60 * 1000
+  const inserts: any[] = []
+
+  // --- 任务到期提醒（1小时前） ---
+  const { data: myTasks } = await supabase
     .from('tasks')
     .select('id, task_info_id, status')
     .eq('claimer_id', userId)
     .not('status', 'in', '("completed","rejected")')
 
-  if (error) throw error
-  if (!myTasks || myTasks.length === 0) return
+  if (myTasks && myTasks.length > 0) {
+    const taskInfoIds = [...new Set(myTasks.map((t: any) => t.task_info_id).filter(Boolean))]
+    if (taskInfoIds.length > 0) {
+      const { data: infos } = await supabase
+        .from('task_info')
+        .select('id, title, submit_deadline, deadline, community_id')
+        .in('id', taskInfoIds)
+        .eq('community_id', communityId)
 
-  const taskInfoIds = [...new Set(myTasks.map((t: any) => t.task_info_id).filter(Boolean))]
-  if (taskInfoIds.length === 0) return
+      if (infos && infos.length > 0) {
+        const infoMap = new Map<string, any>(infos.map((i: any) => [i.id, i]))
+        for (const t of myTasks) {
+          const info = infoMap.get(t.task_info_id)
+          if (!info) continue
+          const deadlineStr = info.submit_deadline || info.deadline
+          if (!deadlineStr) continue
+          const endTs = new Date(deadlineStr).getTime()
+          if (!Number.isFinite(endTs)) continue
+          const remaining = endTs - now
+          if (remaining <= 0 || remaining > ONE_HOUR) continue
+          inserts.push({
+            user_id: userId,
+            community_id: communityId,
+            category: 'due',
+            type: 'task_due_1h',
+            title: `任务到期提醒：${info.title}`,
+            body: '距离截止还有 1 小时',
+            data: { taskId: t.id, taskInfoId: info.id, title: info.title, deadline: deadlineStr, window: '1h' },
+            dedupe_key: `due:${t.id}:1h`
+          })
+        }
+      }
+    }
+  }
 
-  const { data: infos, error: infoError } = await supabase
-    .from('task_info')
-    .select('id, title, submit_deadline, deadline, community_id')
-    .in('id', taskInfoIds)
-    .eq('community_id', communityId)
+  // --- 活动到期提醒（1小时前） ---
+  const { data: myParticipations } = await supabase
+    .from('community_event_participations')
+    .select('occurrence_id')
+    .eq('user_id', userId)
+    .eq('status', 'registered')
 
-  if (infoError) throw infoError
-  if (!infos || infos.length === 0) return
+  if (myParticipations && myParticipations.length > 0) {
+    const occIds = myParticipations.map((p: any) => p.occurrence_id)
+    const { data: occs } = await supabase
+      .from('community_event_occurrences')
+      .select('id, event_id, activity_start')
+      .in('id', occIds)
 
-  const infoMap = new Map<string, any>(infos.map((i: any) => [i.id, i]))
+    if (occs && occs.length > 0) {
+      const eventIds = [...new Set(occs.map((o: any) => o.event_id))]
+      const { data: events } = await supabase
+        .from('community_events')
+        .select('id, title, community_id')
+        .in('id', eventIds)
+        .eq('community_id', communityId)
 
-  const now = Date.now()
-  const windows = [
-    { key: '3h', ms: 3 * 60 * 60 * 1000, type: 'task_due_3h', titleSuffix: '距离截止还有 3 小时' },
-    { key: '1h', ms: 1 * 60 * 60 * 1000, type: 'task_due_1h', titleSuffix: '距离截止还有 1 小时' }
-  ] as const
-
-  const inserts: any[] = []
-  for (const t of myTasks) {
-    const info = infoMap.get(t.task_info_id)
-    if (!info) continue
-    const deadlineStr = info.submit_deadline || info.deadline
-    if (!deadlineStr) continue
-    const endTs = new Date(deadlineStr).getTime()
-    if (!Number.isFinite(endTs)) continue
-
-    const remaining = endTs - now
-    if (remaining <= 0) continue
-
-    for (const w of windows) {
-      // 进入窗口：<= w.ms 且 > w.ms - 10min（给个容忍区，避免频繁生成）
-      // 这里只做“窗口内存在”触发，靠去重保证不会重复插入
-      if (remaining <= w.ms) {
-        const dedupeKey = `due:${t.id}:${w.key}`
-        inserts.push({
-          user_id: userId,
-          community_id: communityId,
-          category: 'due',
-          type: w.type,
-          title: `任务到期提醒：${info.title}`,
-          body: w.titleSuffix,
-          data: { taskId: t.id, taskInfoId: info.id, title: info.title, deadline: deadlineStr, window: w.key },
-          dedupe_key: dedupeKey
-        })
+      if (events && events.length > 0) {
+        const eventMap = new Map<string, any>(events.map((e: any) => [e.id, e]))
+        for (const occ of occs) {
+          const ev = eventMap.get(occ.event_id)
+          if (!ev) continue
+          const startTs = new Date(occ.activity_start).getTime()
+          if (!Number.isFinite(startTs)) continue
+          const remaining = startTs - now
+          if (remaining <= 0 || remaining > ONE_HOUR) continue
+          inserts.push({
+            user_id: userId,
+            community_id: communityId,
+            category: 'due',
+            type: 'event_due_1h',
+            title: `活动即将开始：${ev.title}`,
+            body: '活动将在 1 小时后开始',
+            data: { eventId: ev.id, occurrenceId: occ.id, title: ev.title, activityStart: occ.activity_start, window: '1h' },
+            dedupe_key: `event_due:${occ.id}:1h`
+          })
+        }
       }
     }
   }
 
   if (inserts.length === 0) return
-
-  // upsert by unique index (user_id, dedupe_key)
   await supabase.from('notifications').upsert(inserts, { onConflict: 'user_id,dedupe_key' })
 }
 
@@ -110,11 +134,9 @@ export const getSummary = async (req: AuthRequest, res: Response) => {
 
     const communityId = typeof req.query.communityId === 'string' ? req.query.communityId.trim() : ''
     if (communityId) {
-      // 仅在请求 summary 时顺便生成 due 通知
       await ensureDueReminders(user.id, communityId)
     }
 
-    // 未读总数 & 各分类未读
     const base = supabase
       .from('notifications')
       .select('id', { count: 'exact', head: true })
@@ -192,7 +214,6 @@ export const markRead = async (req: AuthRequest, res: Response) => {
       q = q.eq('category', category)
       if (communityId) q = q.eq('community_id', communityId)
     } else {
-      // 未提供 ids/category：默认全部已读
       if (communityId) q = q.eq('community_id', communityId)
     }
 
@@ -205,4 +226,3 @@ export const markRead = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: error?.message || '标记已读失败' })
   }
 }
-

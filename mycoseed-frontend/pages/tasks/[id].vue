@@ -89,6 +89,7 @@
                     <span class="text-xl">📍</span>
                     <h4 class="font-bold text-xs uppercase text-text-title">位置定位</h4>
                   </div>
+                  <div class="text-sm text-text-body">提交时需要提供位置信息</div>
                 </div>
 
                 <!-- 文字描述 -->
@@ -254,6 +255,12 @@
                       <div class="font-bold text-xs uppercase text-text-title mb-2">位置信息</div>
                       <p>纬度: {{ parsedProofContent(task.proof).gps!.latitude || (parsedProofContent(task.proof).gps as any).lat }}</p>
                       <p>经度: {{ parsedProofContent(task.proof).gps!.longitude || (parsedProofContent(task.proof).gps as any).lng }}</p>
+                      <a
+                        :href="`https://uri.amap.com/marker?position=${parsedProofContent(task.proof).gps!.longitude || (parsedProofContent(task.proof).gps as any).lng},${parsedProofContent(task.proof).gps!.latitude || (parsedProofContent(task.proof).gps as any).lat}&name=任务位置`"
+                        target="_blank"
+                        rel="noopener"
+                        class="inline-block mt-2 text-sm text-primary underline"
+                      >在地图中查看</a>
                     </div>
                   </template>
                   <div v-else class="p-3 bg-input-bg border border-border rounded-2xl text-text-placeholder text-sm">

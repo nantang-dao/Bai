@@ -47,7 +47,7 @@
               <input type="checkbox" v-model="form.task_enabled" @change="save" />
             </label>
             <label class="flex items-center justify-between">
-              <span class="text-text-body">任务时效提醒（1h/3h）</span>
+              <span class="text-text-body">任务时效提醒（1h）</span>
               <input type="checkbox" v-model="form.due_enabled" @change="save" />
             </label>
           </div>
