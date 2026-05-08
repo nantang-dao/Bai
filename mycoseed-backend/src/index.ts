@@ -13,6 +13,8 @@ import postRouter from './routes/post'
 import commentsRouter from './routes/comments'
 import faqRouter from './routes/faq'
 import notificationsRouter from './routes/notifications'
+import marketplaceRouter from './routes/marketplace'
+import communityEventsRouter from './routes/communityEvents'
 
 const nodeEnv = process.env.NODE_ENV || 'development'
 
@@ -79,6 +81,8 @@ app.use('/api/posts', postRouter)         // 单个动态相关路由
 app.use('/api/comments', commentsRouter)  // 评论删除路由
 app.use('/api/faq', faqRouter)            // FAQ（帮助与反馈）
 app.use('/api/notifications', notificationsRouter) // 站内消息通知 & 设置
+app.use('/api/marketplace', marketplaceRouter) // 社区商城
+app.use('/api/community-events', communityEventsRouter) // 社区活动
 
 
 // 启动服务器（监听 0.0.0.0 以支持 Fly.io 等云环境）

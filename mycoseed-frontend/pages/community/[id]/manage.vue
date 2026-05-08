@@ -26,6 +26,33 @@
             </div>
           </section>
 
+          <!-- 总管理员：社区设置 -->
+          <section v-if="community.myRole === 'super_admin'" class="bg-card rounded-2xl border border-border p-4 space-y-3">
+            <h2 class="font-bold text-text-title">社区设置</h2>
+            <NuxtLink
+              :to="`/community/${id}/marketplace/settings`"
+              class="flex items-center justify-between py-3 border-b border-border"
+            >
+              <span class="text-text-body">商城标签管理</span>
+              <span class="text-text-placeholder">›</span>
+            </NuxtLink>
+            <NuxtLink
+              :to="`/community/${id}/events/calendar-settings`"
+              class="flex items-center justify-between py-3 border-b border-border"
+            >
+              <span class="text-text-body">日历标签管理</span>
+              <span class="text-text-placeholder">›</span>
+            </NuxtLink>
+            <div class="flex items-center justify-between py-3 border-b border-border opacity-50 cursor-not-allowed">
+              <span class="text-text-body">任务标签管理</span>
+              <span class="text-xs text-text-placeholder">待完善</span>
+            </div>
+            <div class="flex items-center justify-between py-3 opacity-50 cursor-not-allowed">
+              <span class="text-text-body">社区功能包管理</span>
+              <span class="text-xs text-text-placeholder">待完善</span>
+            </div>
+          </section>
+
           <!-- 总管理员：转让总管理员 -->
           <section v-if="community.myRole === 'super_admin'" class="bg-card rounded-2xl border border-border p-4 space-y-3">
             <h2 class="font-bold text-text-title">转让总管理员</h2>

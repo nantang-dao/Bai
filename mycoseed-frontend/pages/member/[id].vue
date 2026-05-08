@@ -92,6 +92,28 @@
       </div>
     </div>
 
+    <!-- 商城付款提示（从预订跳转而来，默认在买家本人主页展示付款金额与备注） -->
+    <div v-if="marketPayHint" class="mx-4 mt-4 p-4 rounded-2xl border-2 border-amber-500 bg-amber-50">
+      <div class="text-sm font-bold text-amber-900 mb-2">商城付款信息</div>
+      <p v-if="marketPayToId" class="text-sm text-amber-900 mb-2">
+        请将款项转至
+        <NuxtLink :to="`/member/${marketPayToId}`" class="underline font-bold text-primary">卖家主页</NuxtLink>
+        展示的钱包地址。
+      </p>
+      <p v-else class="text-sm text-amber-900">请在钱包转账时填写以下金额与备注。</p>
+      <ul class="mt-2 text-sm text-amber-900 space-y-1">
+        <li>金额：<span class="font-mono font-bold">{{ marketPayHint.amount }}</span></li>
+        <li>备注：<span class="font-mono break-all">{{ marketPayHint.remark }}</span></li>
+      </ul>
+      <button
+        type="button"
+        class="mt-3 text-xs text-amber-800 underline"
+        @click="copyMarketPaySummary"
+      >
+        复制金额与备注
+      </button>
+    </div>
+
     <!-- 下方 Tab 区域 -->
     <div class="mt-4 px-4">
       <!-- Tab 导航 -->
@@ -180,6 +202,27 @@ definePageMeta({
 const route = useRoute()
 const router = useRouter()
 const memberId = route.params.id as string  // UUID是字符串，不需要parseInt
+
+const marketPayHint = computed(() => {
+  const amount = route.query.marketAmount as string | undefined
+  const remark = route.query.marketRemark as string | undefined
+  if (!amount && !remark) return null
+  return { amount: amount || '—', remark: remark || '—' }
+})
+
+const marketPayToId = computed(() => (route.query.marketPayTo as string) || '')
+
+async function copyMarketPaySummary() {
+  const amount = route.query.marketAmount as string | undefined
+  const remark = route.query.marketRemark as string | undefined
+  const text = `金额：${amount || ''}\n备注：${remark || ''}`
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.add({ title: '已复制', color: 'green' })
+  } catch {
+    toast.add({ title: '请手动复制：' + text, color: 'red' })
+  }
+}
 const activeTab = ref('HISTORY')
 const isFlipped = ref(false)
 const userStore = useUserStore()

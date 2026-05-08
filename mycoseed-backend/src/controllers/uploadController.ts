@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { uploadAvatar, uploadTaskProof, uploadPostImage } from '../services/storage'
+import { uploadAvatar, uploadTaskProof, uploadPostImage, uploadMarketplaceImage } from '../services/storage'
 import { AuthRequest, MulterFile } from '../middleware/auth'
 import { DEFAULT_COMMUNITY_UUID } from '../constants/community'
 
@@ -187,5 +187,50 @@ export const uploadPostImageController = async (req: AuthRequest, res: Response)
   } catch (error: any) {
     console.error('Upload post image error:', error)
     res.status(500).json({ success: false, message: error.message || '上传图片失败' })
+  }
+}
+
+/** 商城商品图（最多 3 张） */
+export const uploadMarketplaceImageController = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) return res.status(401).json({ success: false, message: '未授权' })
+
+    const files = req.files as MulterFile[]
+    if (!files?.length) return res.status(400).json({ success: false, message: '请选择文件' })
+    if (files.length > 3) return res.status(400).json({ success: false, message: '最多 3 张图片' })
+
+    const { communityId, listingId } = req.body as { communityId?: string; listingId?: string }
+    if (!communityId?.trim() || !listingId?.trim()) {
+      return res.status(400).json({ success: false, message: '缺少 communityId 或 listingId' })
+    }
+
+    for (const file of files) {
+      if (!file.mimetype.startsWith('image/')) {
+        return res.status(400).json({ success: false, message: '只能上传图片' })
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        return res.status(400).json({ success: false, message: '单张图片不超过 5MB' })
+      }
+    }
+
+    const uploadResults = await Promise.all(
+      files.map((file, index) =>
+        uploadMarketplaceImage(file.buffer, communityId.trim(), listingId.trim(), index, file.mimetype)
+      )
+    )
+
+    const fileInfos = uploadResults.map((result, index) => ({
+      url: result.url,
+      hash: result.hash,
+      name: files[index].originalname,
+      size: files[index].size,
+      type: files[index].mimetype
+    }))
+
+    res.json({ success: true, files: fileInfos })
+  } catch (error: any) {
+    console.error('Upload marketplace image error:', error)
+    res.status(500).json({ success: false, message: error.message || '上传失败' })
   }
 }

@@ -55,7 +55,13 @@
 
       <!-- Navigation -->
       <nav class="flex items-center gap-4">
-        <PixelButton variant="warning" size="sm" @click="navigateTo('tasks')">🛒 商城</PixelButton>
+        <NuxtLink
+          :to="mallPath"
+          class="inline-flex items-center justify-center px-3 py-1.5 rounded-xl bg-amber-500 text-white text-sm font-bold shadow-soft hover:opacity-95 transition-opacity"
+          title="社区商城"
+        >
+          🛒 商城
+        </NuxtLink>
 
         <NuxtLink
           v-if="userStore.isAuthenticated"
@@ -199,6 +205,13 @@ const currentCommunityName = computed(() => {
 const communitiesPathWithFrom = computed(() => {
   const from = route.fullPath && route.fullPath !== '/communities' ? encodeURIComponent(route.fullPath) : ''
   return from ? `/communities?from=${from}` : '/communities'
+})
+
+/** 商城与当前所选社区绑定；未选社区时进入广场引导选择 */
+const mallPath = computed(() => {
+  const id = communityStore.currentCommunityId
+  if (!id) return '/communities'
+  return `/community/${id}/marketplace`
 })
 
 function toggleCommunityDropdown() {

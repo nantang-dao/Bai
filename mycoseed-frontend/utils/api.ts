@@ -2035,6 +2035,31 @@ export async function uploadPostImage (params: {
   return res.json()
 }
 
+export async function uploadMarketplaceImages(params: {
+  communityId: string
+  listingId: string
+  files: File[]
+  baseUrl?: string
+}): Promise<{ success: boolean; files: { url: string; hash?: string; name?: string; size?: number; type?: string }[] }> {
+  const url = params.baseUrl ?? getApiBaseUrl()
+  const form = new FormData()
+  form.append('communityId', params.communityId)
+  form.append('listingId', params.listingId)
+  params.files.forEach((file) => form.append('files', file))
+  const headers = getAuthHeaders()
+  delete (headers as Record<string, string>)['Content-Type']
+  const res = await fetch(`${url}/api/upload/marketplace-image`, {
+    method: 'POST',
+    headers,
+    body: form
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { message?: string }).message || '上传图片失败')
+  }
+  return res.json()
+}
+
 // Mock 社群数据（两个社区）
 const mockCommunities: Community[] = [
   {
@@ -2920,4 +2945,405 @@ export async function getWalletAddressByUserId(
     console.error('Get wallet address error:', error)
     return null
   }
+}
+
+// ==================== 社区商城 API ====================
+
+export interface MarketplaceTag {
+  id: string
+  name: string
+  colorHex: string
+  sortOrder?: number
+  createdAt?: string
+}
+
+export interface MarketplaceSeller {
+  id: string
+  name: string | null
+  avatar: string | null
+  semiId?: string | null
+  handle?: string | null
+}
+
+export interface MarketplaceListing {
+  id: string
+  communityId: string
+  sellerId: string
+  title: string
+  description: string
+  price: number
+  status: 'active' | 'locked' | 'sold' | 'withdrawn'
+  buyerId: string | null
+  lockedAt: string | null
+  soldAt: string | null
+  createdAt: string
+  imageUrls: string[]
+  tags: MarketplaceTag[]
+  seller: MarketplaceSeller | null
+  buyer?: MarketplaceSeller | null
+}
+
+export interface MarketplaceReviewItem {
+  id: string
+  listingId: string
+  rating: number
+  content: string
+  createdAt: string
+  productTitle: string
+  buyer: { id: string; name: string | null; avatar: string | null } | null
+  seller: { id: string; name: string | null; avatar: string | null } | null
+}
+
+async function marketplaceFetch<T>(
+  baseUrl: string,
+  communityId: string,
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const res = await fetch(`${baseUrl}/api/marketplace/${communityId}${path}`, {
+    ...options,
+    headers: { ...getAuthHeaders(), ...options.headers }
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const d = data as { message?: string; result?: string }
+    throw new Error(d.message || `请求失败 ${res.status}`)
+  }
+  return data as T
+}
+
+export async function getMarketplaceTags(communityId: string, baseUrl: string): Promise<MarketplaceTag[]> {
+  const data = await marketplaceFetch<{ tags: MarketplaceTag[] }>(baseUrl, communityId, '/tags')
+  return data.tags || []
+}
+
+export async function createMarketplaceTag(
+  communityId: string,
+  body: { name: string; colorHex?: string },
+  baseUrl: string
+): Promise<MarketplaceTag> {
+  const data = await marketplaceFetch<{ tag: MarketplaceTag }>(baseUrl, communityId, '/tags', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function updateMarketplaceTag(
+  communityId: string,
+  tagId: string,
+  body: { name?: string; colorHex?: string },
+  baseUrl: string
+): Promise<MarketplaceTag> {
+  const data = await marketplaceFetch<{ tag: MarketplaceTag }>(baseUrl, communityId, `/tags/${tagId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function deleteMarketplaceTag(communityId: string, tagId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/tags/${tagId}`, { method: 'DELETE' })
+}
+
+export async function listMarketplaceListings(
+  communityId: string,
+  params: { q?: string; tagId?: string; limit?: number; offset?: number },
+  baseUrl: string
+): Promise<{ listings: MarketplaceListing[]; total: number }> {
+  const sp = new URLSearchParams()
+  if (params.q) sp.set('q', params.q)
+  if (params.tagId) sp.set('tagId', params.tagId)
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.offset != null) sp.set('offset', String(params.offset))
+  const q = sp.toString()
+  return marketplaceFetch(baseUrl, communityId, `/listings${q ? `?${q}` : ''}`)
+}
+
+export async function getMarketplaceListing(
+  communityId: string,
+  listingId: string,
+  baseUrl: string
+): Promise<{ listing: MarketplaceListing; review: any | null }> {
+  return marketplaceFetch(baseUrl, communityId, `/listings/${listingId}`)
+}
+
+export async function createMarketplaceListing(
+  communityId: string,
+  body: {
+    id?: string
+    title: string
+    description: string
+    price: number
+    imageUrls: string[]
+    tagIds: string[]
+  },
+  baseUrl: string
+): Promise<MarketplaceListing> {
+  const data = await marketplaceFetch<{ listing: MarketplaceListing }>(baseUrl, communityId, '/listings', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+  return data.listing
+}
+
+export async function updateMarketplaceListing(
+  communityId: string,
+  listingId: string,
+  body: Partial<{ title: string; description: string; price: number; imageUrls: string[]; tagIds: string[] }>,
+  baseUrl: string
+): Promise<MarketplaceListing> {
+  const data = await marketplaceFetch<{ listing: MarketplaceListing }>(
+    baseUrl,
+    communityId,
+    `/listings/${listingId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    }
+  )
+  return data.listing
+}
+
+export async function withdrawMarketplaceListing(communityId: string, listingId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/withdraw`, { method: 'POST' })
+}
+
+export async function lockMarketplaceListing(communityId: string, listingId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/lock`, { method: 'POST' })
+}
+
+export async function confirmMarketplaceSold(communityId: string, listingId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/confirm-sold`, { method: 'POST' })
+}
+
+export async function cancelMarketplaceLock(communityId: string, listingId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/cancel-lock`, { method: 'POST' })
+}
+
+export async function submitMarketplaceReview(
+  communityId: string,
+  listingId: string,
+  body: { rating: number; content?: string },
+  baseUrl: string
+): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/review`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
+export async function listMarketplaceCommunityReviews(
+  communityId: string,
+  params: { limit?: number; offset?: number },
+  baseUrl: string
+): Promise<{ reviews: MarketplaceReviewItem[]; total: number }> {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.offset != null) sp.set('offset', String(params.offset))
+  const q = sp.toString()
+  return marketplaceFetch(baseUrl, communityId, `/reviews${q ? `?${q}` : ''}`)
+}
+
+// ==================== 社区活动 API ====================
+
+export interface CalendarTag {
+  id: string
+  name: string
+  colorHex: string
+  sortOrder?: number
+}
+
+export interface CommunityEventOccurrence {
+  id: string
+  sequenceNo: number
+  activityStart: string
+  activityEnd: string
+}
+
+export interface CommunityEventOption {
+  id: string
+  title: string
+  price: number
+}
+
+export interface CommunityEventListItem {
+  id: string
+  communityId: string
+  creatorId: string
+  kind: 'single' | 'composite' | 'pack'
+  title: string
+  description: string
+  noteEnabled: boolean
+  isPinned?: boolean
+  registrationStart: string
+  registrationEnd: string
+  /** 付费时 Semi 转账目标地址（非发布人个人钱包时由发布方填写） */
+  paymentAddress: string
+  tag: { id: string; name: string; colorHex: string } | null
+  packFrequency?: string | null
+  packRangeStart?: string | null
+  packRangeEnd?: string | null
+  options: CommunityEventOption[]
+  occurrences: CommunityEventOccurrence[]
+  participantCount: number
+}
+
+async function communityEventsFetch<T>(
+  baseUrl: string,
+  communityId: string,
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const res = await fetch(`${baseUrl}/api/community-events/${communityId}${path}`, {
+    ...options,
+    headers: { ...getAuthHeaders(), ...options.headers }
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const d = data as { message?: string }
+    throw new Error(d.message || `请求失败 ${res.status}`)
+  }
+  return data as T
+}
+
+export async function listCalendarTags(communityId: string, baseUrl: string): Promise<CalendarTag[]> {
+  const data = await communityEventsFetch<{ tags: CalendarTag[] }>(baseUrl, communityId, '/calendar-tags')
+  return data.tags || []
+}
+
+export async function createCalendarTag(
+  communityId: string,
+  body: { name: string; colorHex?: string },
+  baseUrl: string
+): Promise<CalendarTag> {
+  const data = await communityEventsFetch<{ tag: CalendarTag }>(baseUrl, communityId, '/calendar-tags', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function updateCalendarTag(
+  communityId: string,
+  tagId: string,
+  body: { name?: string; colorHex?: string },
+  baseUrl: string
+): Promise<CalendarTag> {
+  const data = await communityEventsFetch<{ tag: CalendarTag }>(baseUrl, communityId, `/calendar-tags/${tagId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function deleteCalendarTag(communityId: string, tagId: string, baseUrl: string): Promise<void> {
+  await communityEventsFetch(baseUrl, communityId, `/calendar-tags/${tagId}`, { method: 'DELETE' })
+}
+
+export async function listCommunityEvents(
+  communityId: string,
+  params: { tagId?: string; mine?: boolean; limit?: number; offset?: number },
+  baseUrl: string
+): Promise<{ events: CommunityEventListItem[]; total: number }> {
+  const sp = new URLSearchParams()
+  if (params.tagId) sp.set('tagId', params.tagId)
+  if (params.mine) sp.set('mine', '1')
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.offset != null) sp.set('offset', String(params.offset))
+  const q = sp.toString()
+  return communityEventsFetch(baseUrl, communityId, `/events${q ? `?${q}` : ''}`)
+}
+
+/** 日历视图：按本地区间加载与该时间段有场次交集的活动（月/周/日切换时调用） */
+export async function listCommunityEventsCalendar(
+  communityId: string,
+  params: { from: string; to: string; tagId?: string; mine?: boolean },
+  baseUrl: string
+): Promise<{ events: CommunityEventListItem[]; total: number }> {
+  const sp = new URLSearchParams()
+  sp.set('from', params.from)
+  sp.set('to', params.to)
+  if (params.tagId) sp.set('tagId', params.tagId)
+  if (params.mine) sp.set('mine', '1')
+  return communityEventsFetch(baseUrl, communityId, `/events/calendar?${sp.toString()}`)
+}
+
+export async function getCommunityEvent(
+  communityId: string,
+  eventId: string,
+  baseUrl: string
+): Promise<{
+  event: CommunityEventListItem
+  participations: Array<{
+    id: string
+    occurrenceId: string
+    userId: string
+    user: { id: string; name: string | null; avatar: string | null } | null
+    optionTitle: string
+    remark: string
+    createdAt: string
+  }>
+  matrixUsers: Array<{ user: any; cells: Record<string, { optionTitle: string; remark: string }> }>
+  currentOccurrenceId: string | null
+  registrationOpen: boolean
+}> {
+  return communityEventsFetch(baseUrl, communityId, `/events/${eventId}`)
+}
+
+export async function createCommunityEvent(
+  communityId: string,
+  body: Record<string, unknown>,
+  baseUrl: string
+): Promise<{ event: CommunityEventListItem }> {
+  return communityEventsFetch(baseUrl, communityId, '/events', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
+export async function deleteCommunityEvent(
+  communityId: string,
+  eventId: string,
+  baseUrl: string
+): Promise<{ ok: boolean; draft?: Record<string, unknown> }> {
+  return communityEventsFetch(baseUrl, communityId, `/events/${eventId}`, { method: 'DELETE' })
+}
+
+export async function pinCommunityEvent(
+  communityId: string,
+  eventId: string,
+  isPinned: boolean,
+  baseUrl: string
+): Promise<void> {
+  await communityEventsFetch(baseUrl, communityId, `/events/${eventId}/pin`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isPinned })
+  })
+}
+
+export async function registerCommunityEvent(
+  communityId: string,
+  eventId: string,
+  body: { occurrenceId: string; optionId?: string; remark?: string },
+  baseUrl: string
+): Promise<{ ok: boolean; price: number; paymentAddress: string; optionTitle: string }> {
+  return communityEventsFetch(baseUrl, communityId, `/events/${eventId}/register`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
+export async function cancelCommunityEventRegistration(
+  communityId: string,
+  eventId: string,
+  occurrenceId: string,
+  baseUrl: string
+): Promise<void> {
+  await communityEventsFetch(
+    baseUrl,
+    communityId,
+    `/events/${eventId}/occurrences/${occurrenceId}/register`,
+    { method: 'DELETE' }
+  )
 }
