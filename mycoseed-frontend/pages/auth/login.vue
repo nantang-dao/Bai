@@ -38,7 +38,6 @@
 </template>
 
 <script setup lang="ts">
-import { buildOAuthUrl, generateRandomState } from '~/utils/api'
 import { useToast } from '~/composables/useToast'
 definePageMeta({
   layout: 'unauth'
@@ -49,30 +48,18 @@ const toast = useToast()
 const config = useRuntimeConfig()
 
 const handleOAuth2Login = () => {
-  const clientId = config.public.semiClientId
-  const redirectUri = config.public.semiRedirectUri
-  const oauthUrl = config.public.semiOAuthUrl
-
-  // 检查必要的配置
-  if (!clientId || !redirectUri || !oauthUrl) {
+  const apiUrl = config.public.apiUrl
+  if (!apiUrl) {
     toast.add({
       title: '配置错误',
-      description: 'OAuth2 配置不完整，请检查环境变量设置',
+      description: '后端 API URL 未配置（NUXT_PUBLIC_API_URL）',
       color: 'red'
     })
-    console.error('OAuth2 配置缺失:', { clientId, redirectUri, oauthUrl })
     return
   }
 
-  // 生成随机 state, 存储到 sessionStorage（用于回调时验证）
-  const state = generateRandomState()
-  if (typeof window !== 'undefined') {
-    sessionStorage.setItem('oauth_state', state)
-  }
-
-  // 构建授权 URL 并跳转
-  const authUrl = buildOAuthUrl(clientId, redirectUri, state, oauthUrl)
-  window.location.href = authUrl
+  // Hola-aligned：OAuth 逻辑全部由后端完成（PKCE / token exchange / session）
+  window.location.href = `${apiUrl}/api/auth/semi/login`
 }
 
 </script>

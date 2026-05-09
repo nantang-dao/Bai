@@ -18,21 +18,20 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
     public: {
-      // 开发环境默认使用本地后端，生产环境使用云端
-      apiUrl: env.NUXT_PUBLIC_API_URL || (nodeEnv === 'development' ? 'http://localhost:3001' : 'https://mycoseed-backend.fly.dev'),
-      amapApiKey: env.AMAP_API_KEY || 'YOUR_AMAP_API_KEY_HERE',
-      // Semi 前端跳转基址（用于打开 /transfer 等页面）
+      // Mycoseed Backend base URL (auth/session + business APIs)
+      apiUrl: env.NUXT_PUBLIC_API_URL || (nodeEnv === 'development' ? 'http://localhost:3001' : ''),
+
+      // Frontend base URL (optional; used for absolute links if needed)
+      appUrl: env.NUXT_PUBLIC_APP_URL || (nodeEnv === 'development' ? 'http://localhost:3003' : ''),
+
+      // Semi App base URL (business-page jumps: /transfer, /taskpool/prepay, etc.)
       semiAppUrl: env.NUXT_PUBLIC_SEMI_APP_URL || (nodeEnv === 'development' ? 'http://localhost:3000' : ''),
-      // Semi Rails API（/get_me 等）：必须通过 NUXT_PUBLIC_SEMI_API_URL 配置，无内置默认
-      // 其余 OAuth 项亦依赖环境变量；redirect URI 在开发环境仍有下方默认回调地址
-      semiApiUrl: env.NUXT_PUBLIC_SEMI_API_URL || '',
-      semiOAuthUrl: env.NUXT_PUBLIC_SEMI_OAUTH_URL || '',
-      // clientId 不提供默认值，必须通过环境变量配置（安全考虑）
-      semiClientId: env.NUXT_PUBLIC_SEMI_CLIENT_ID || '',
-      semiRedirectUri: env.NUXT_PUBLIC_SEMI_REDIRECT_URI || 
-        (nodeEnv === 'development' 
-          ? 'http://localhost:3003/auth/callback'
-          : ''),
+
+      // Chain / TaskPool config (exposed to client)
+      chainId: Number(env.NUXT_PUBLIC_CHAIN_ID || '10'),
+      taskpoolProxyAddress: env.NUXT_PUBLIC_TASKPOOL_PROXY_ADDRESS,
+      ntTokenAddress: env.NUXT_PUBLIC_NT_TOKEN_ADDRESS || '0x7563cb33148cD2b929ed85e69F697be13b515Bd0',
+      opRpcUrl: env.NUXT_PUBLIC_OP_RPC_URL || 'https://mainnet.optimism.io',
     }
   },
   // 配置UI主题
