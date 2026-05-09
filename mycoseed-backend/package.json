@@ -7,7 +7,9 @@
     "dev": "cross-env NODE_ENV=development tsx watch src/index.ts",
     "build": "tsc",
     "start": "cross-env NODE_ENV=production node dist/index.js",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "oauth-diagnose": "cross-env NODE_ENV=development tsx scripts/oauth-diagnose.ts",
+    "test:resolve-semi-user": "cross-env NODE_ENV=development tsx scripts/test-resolve-semi-user.ts"
   },
   "keywords": [],
   "author": "",
