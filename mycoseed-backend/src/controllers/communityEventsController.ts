@@ -123,7 +123,7 @@ async function loadEventBundle(eventId: string) {
         .order('sort_order', { ascending: true })
     const { data: occurrences } = await supabase
         .from('community_event_occurrences')
-        .select('id, sequence_no, activity_start, activity_end')
+        .select('id, sequence_no, activity_start, activity_end, registration_start, registration_end')
         .eq('event_id', eventId)
         .order('sequence_no', { ascending: true })
     return { ev, options: options || [], occurrences: occurrences || [] }
@@ -329,6 +329,8 @@ async function formatEventListItem(bundle: NonNullable<Awaited<ReturnType<typeof
             sequenceNo: o.sequence_no,
             activityStart: o.activity_start,
             activityEnd: o.activity_end,
+            registrationStart: o.registration_start || null,
+            registrationEnd: o.registration_end || null,
         })),
         participantCount: pCount,
     }
@@ -385,20 +387,48 @@ export const getEvent = async (req: AuthRequest, res: Response) => {
         }
 
         const now = Date.now()
-        const regStart = new Date(bundle.ev.registration_start).getTime()
-        const regEnd = new Date(bundle.ev.registration_end).getTime()
-        let currentOccurrenceId: string | null = null
-        const regOk = now >= regStart && now <= regEnd
         const sortedOcc = [...bundle.occurrences].sort((a, b) => a.sequence_no - b.sequence_no)
-        if (regOk) {
-            const open = sortedOcc.find((o) => {
-                const aend = new Date(o.activity_end).getTime()
-                return now <= aend
+        let currentOccurrenceId: string | null = null
+        let registrationOpen = false
+
+        if (bundle.ev.kind === 'pack' && sortedOcc.length) {
+            const openOcc = sortedOcc.find((o) => {
+                const occRegStart = o.registration_start
+                    ? new Date(o.registration_start).getTime()
+                    : new Date(bundle.ev.registration_start).getTime()
+                const occRegEnd = o.registration_end
+                    ? new Date(o.registration_end).getTime()
+                    : new Date(bundle.ev.registration_end).getTime()
+                const actEnd = new Date(o.activity_end).getTime()
+                return now >= occRegStart && now <= occRegEnd && now <= actEnd
             })
-            currentOccurrenceId = open?.id || sortedOcc[sortedOcc.length - 1]?.id || null
-        } else if (sortedOcc.length) {
-            const future = sortedOcc.find((o) => new Date(o.activity_start).getTime() > now)
-            currentOccurrenceId = future?.id || sortedOcc[sortedOcc.length - 1].id
+            if (openOcc) {
+                currentOccurrenceId = openOcc.id
+                registrationOpen = true
+            } else {
+                const future = sortedOcc.find((o) => {
+                    const occRegStart = o.registration_start
+                        ? new Date(o.registration_start).getTime()
+                        : new Date(bundle.ev.registration_start).getTime()
+                    return now < occRegStart
+                })
+                currentOccurrenceId = future?.id || sortedOcc[sortedOcc.length - 1].id
+                registrationOpen = false
+            }
+        } else {
+            const regStart = new Date(bundle.ev.registration_start).getTime()
+            const regEnd = new Date(bundle.ev.registration_end).getTime()
+            registrationOpen = now >= regStart && now <= regEnd
+            if (registrationOpen) {
+                const open = sortedOcc.find((o) => {
+                    const aend = new Date(o.activity_end).getTime()
+                    return now <= aend
+                })
+                currentOccurrenceId = open?.id || sortedOcc[sortedOcc.length - 1]?.id || null
+            } else if (sortedOcc.length) {
+                const future = sortedOcc.find((o) => new Date(o.activity_start).getTime() > now)
+                currentOccurrenceId = future?.id || sortedOcc[sortedOcc.length - 1].id
+            }
         }
 
         const participationsList = parts.map((p) => {
@@ -420,7 +450,7 @@ export const getEvent = async (req: AuthRequest, res: Response) => {
             participations: participationsList,
             matrixUsers: Object.values(byUser),
             currentOccurrenceId,
-            registrationOpen: now >= regStart && now <= regEnd,
+            registrationOpen,
         })
     } catch (e: any) {
         console.error(e)
@@ -508,6 +538,8 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
             sequence_no: i + 1,
             activity_start: o.activityStart,
             activity_end: o.activityEnd,
+            registration_start: o.registrationStart || null,
+            registration_end: o.registrationEnd || null,
         }))
         const { error: e3 } = await supabase.from('community_event_occurrences').insert(occRows)
         if (e3) throw e3
@@ -672,9 +704,15 @@ export const registerEvent = async (req: AuthRequest, res: Response) => {
         if (!occ) return res.status(400).json({ result: 'error', message: '期次无效' })
 
         const now = Date.now()
-        const rs = new Date(bundle.ev.registration_start).getTime()
-        const re = new Date(bundle.ev.registration_end).getTime()
-        if (now < rs || now > re) return res.status(400).json({ result: 'error', message: '不在报名时间内' })
+        if (bundle.ev.kind === 'pack' && occ.registration_start && occ.registration_end) {
+            const rs = new Date(occ.registration_start).getTime()
+            const re = new Date(occ.registration_end).getTime()
+            if (now < rs || now > re) return res.status(400).json({ result: 'error', message: '不在当前期次报名时间内' })
+        } else {
+            const rs = new Date(bundle.ev.registration_start).getTime()
+            const re = new Date(bundle.ev.registration_end).getTime()
+            if (now < rs || now > re) return res.status(400).json({ result: 'error', message: '不在报名时间内' })
+        }
 
         let opt: any = bundle.options[0]
         if (bundle.ev.kind === 'composite' || bundle.ev.kind === 'pack') {
@@ -737,8 +775,14 @@ export const cancelRegistration = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ result: 'error', message: '期次无效' })
 
         const now = Date.now()
-        const re = new Date(bundle.ev.registration_end).getTime()
-        if (now > re) return res.status(400).json({ result: 'error', message: '报名已截止，无法取消' })
+        const occ = bundle.occurrences.find((o) => o.id === occurrenceId)
+        if (bundle.ev.kind === 'pack' && occ?.registration_end) {
+            if (now > new Date(occ.registration_end).getTime())
+                return res.status(400).json({ result: 'error', message: '当前期次报名已截止，无法取消' })
+        } else {
+            const re = new Date(bundle.ev.registration_end).getTime()
+            if (now > re) return res.status(400).json({ result: 'error', message: '报名已截止，无法取消' })
+        }
 
         const { error } = await supabase
             .from('community_event_participations')
