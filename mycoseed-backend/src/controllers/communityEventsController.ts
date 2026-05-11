@@ -372,7 +372,7 @@ export const getEvent = async (req: AuthRequest, res: Response) => {
             if (!byUser[uid]) {
                 byUser[uid] = {
                     user: mapUser(userMap[uid]),
-                    cells: {} as Record<string, { optionTitle: string; remark: string }>,
+                    cells: {} as Record<string, { optionTitle: string; remark: string; price: number }>,
                 }
             }
             const oid = p.occurrence_id
@@ -380,6 +380,7 @@ export const getEvent = async (req: AuthRequest, res: Response) => {
             byUser[uid].cells[oid] = {
                 optionTitle: op?.title || '',
                 remark: p.remark || '',
+                price: Number(op?.price || 0),
             }
         }
 

@@ -15,14 +15,6 @@
       >
         删除
       </button>
-      <button
-        v-if="isAdmin && detail?.participations.length"
-        type="button"
-        class="text-sm text-primary"
-        @click="exportExcel"
-      >
-        导出Excel
-      </button>
     </header>
 
     <div v-if="loading" class="p-8 text-center text-text-placeholder">加载中…</div>
@@ -92,7 +84,12 @@
         </section>
 
         <section v-if="detail.event.kind === 'pack' && detail.event.occurrences.length > 1">
-          <h2 class="font-bold text-text-title mb-3">参与矩阵（期次 × 成员）</h2>
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="font-bold text-text-title">参与矩阵（期次 × 成员）</h2>
+            <PixelButton variant="secondary" size="sm" @click="downloadExcel">
+              📥 下载Excel
+            </PixelButton>
+          </div>
           <div class="overflow-x-auto border border-border rounded-xl">
             <table class="min-w-full text-xs text-left">
               <thead>
@@ -119,8 +116,16 @@
                     class="p-2 border-b border-border text-center align-top"
                   >
                     <template v-if="row.cells[o.id]">
-                      <span class="text-green-600">✓</span>
-                      <div class="text-[10px] text-text-placeholder">{{ row.cells[o.id].optionTitle }}</div>
+                      <div class="flex flex-col items-center gap-1">
+                        <span class="text-green-600 font-bold">✓</span>
+                        <div class="text-[10px] text-text-placeholder text-center leading-tight">
+                          {{ row.cells[o.id].optionTitle }}
+                          <span v-if="row.cells[o.id].price > 0" class="text-primary font-medium">
+                            (¥{{ row.cells[o.id].price }})
+                          </span>
+                        </div>
+                        <span v-if="row.cells[o.id].remark" class="text-[10px] text-orange-500">📝</span>
+                      </div>
                     </template>
                     <span v-else class="text-text-placeholder">—</span>
                   </td>
@@ -187,11 +192,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import * as XLSX from 'xlsx'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { buildSemiTransferUrl } from '~/utils/api'
 import { useCommunityStore } from '~/stores/community'
+import * as XLSX from 'xlsx'
 
 definePageMeta({ layout: 'default', middleware: 'auth' })
 
@@ -383,6 +388,84 @@ async function cancelOcc(occurrenceId: string) {
   }
 }
 
+function downloadExcel() {
+  if (!detail.value) return
+  
+  const users = detail.value.matrixUsers
+  const occs = sortedOcc.value
+  
+  // Sheet1: 金额汇总表
+  const sheet1Data: (string | number)[][] = []
+  // Sheet1 header
+  const sheet1Header = ['成员']
+  occs.forEach(o => sheet1Header.push(`#${o.sequenceNo} ${shortDate(o.activityStart)}`))
+  sheet1Header.push('合计')
+  sheet1Data.push(sheet1Header)
+  
+  let totalColSum = 0
+  users.forEach(user => {
+    const row: (string | number)[] = [user.user?.name || '—']
+    let rowSum = 0
+    occs.forEach(o => {
+      const cell = user.cells[o.id]
+      const price = cell?.price || 0
+      row.push(price)
+      rowSum += price
+    })
+    row.push(rowSum)
+    totalColSum += rowSum
+    sheet1Data.push(row)
+  })
+  
+  // 添加列合计行
+  const colSumRow: (string | number)[] = ['合计']
+  occs.forEach(o => {
+    let colSum = 0
+    users.forEach(user => {
+      const cell = user.cells[o.id]
+      colSum += cell?.price || 0
+    })
+    colSumRow.push(colSum)
+  })
+  colSumRow.push(totalColSum)
+  sheet1Data.push(colSumRow)
+  
+  // Sheet2: 详细信息表
+  const sheet2Data: string[][] = []
+  // Sheet2 header
+  const sheet2Header = ['成员']
+  occs.forEach(o => sheet2Header.push(`#${o.sequenceNo} ${shortDate(o.activityStart)}`))
+  sheet2Data.push(sheet2Header)
+  
+  users.forEach(user => {
+    const row: string[] = [user.user?.name || '—']
+    occs.forEach(o => {
+      const cell = user.cells[o.id]
+      if (cell) {
+        const opt = cell.optionTitle || '-'
+        const remark = cell.remark || '-'
+        const price = cell.price
+        row.push(`${opt}|${remark}|${price}`)
+      } else {
+        row.push('-')
+      }
+    })
+    sheet2Data.push(row)
+  })
+  
+  // 创建工作簿
+  const workbook = XLSX.utils.book_new()
+  const sheet1 = XLSX.utils.aoa_to_sheet(sheet1Data)
+  const sheet2 = XLSX.utils.aoa_to_sheet(sheet2Data)
+  
+  XLSX.utils.book_append_sheet(workbook, sheet1, '金额汇总')
+  XLSX.utils.book_append_sheet(workbook, sheet2, '详细信息')
+  
+  // 下载
+  const fileName = `${detail.value.event.title}-参与矩阵.xlsx`
+  XLSX.writeFile(workbook, fileName)
+}
+
 async function doDelete() {
   if (!detail.value || detail.value.event.participantCount > 0) return
   const ok = window.confirm('确认删除？删除后将回到发布页，并保留你之前填写的内容（无人报名时可用）。')
@@ -397,39 +480,6 @@ async function doDelete() {
   } catch (e: any) {
     toast.add({ title: e?.message || '删除失败', color: 'red' })
   }
-}
-
-function exportExcel() {
-  if (!detail.value) return
-  const ev = detail.value.event
-  const occMap = new Map(detail.value.event.occurrences.map((o: any) => [o.id, o]))
-  const isPack = ev.kind === 'pack'
-
-  const rows: { userName: string; occurrences: string; options: string; remark: string; registeredAt: string }[] = []
-  for (const p of detail.value.participations) {
-    const occ = occMap.get(p.occurrenceId)
-    const dateStr = occ
-      ? `${new Date(occ.activityStart).toLocaleDateString('zh-CN')} ${new Date(occ.activityStart).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(occ.activityEnd).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-      : p.occurrenceId
-    rows.push({
-      userName: p.user?.name || '—',
-      occurrences: isPack ? (occ ? `#${occ.sequenceNo} ${shortDate(occ.activityStart)}` : '—') : dateStr,
-      options: p.optionTitle || '—',
-      remark: p.remark || '—',
-      registeredAt: fmt(p.createdAt)
-    })
-  }
-
-  const wsData = [
-    ['姓名', '活动时间', '子选项', '备注', '报名时间'],
-    ...rows.map((r) => [r.userName, r.occurrences, r.options, r.remark, r.registeredAt])
-  ]
-  const ws = XLSX.utils.aoa_to_sheet(wsData)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '报名列表')
-  const evTitle = ev.title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 30)
-  const dateStr = new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')
-  XLSX.writeFile(wb, `${evTitle}_报名列表_${dateStr}.xlsx`)
 }
 
 onMounted(async () => {
