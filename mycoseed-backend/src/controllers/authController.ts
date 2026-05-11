@@ -1023,6 +1023,27 @@ export const devLoginController = async (req: Request, res: Response) => {
         delete userResponse.image_url
         delete userResponse.password_hash
 
+        const sessionSecret = process.env.SESSION_SECRET
+        if (sessionSecret) {
+            const redirectUri = process.env.REDIRECT_URI || ''
+            const frontendUrl = process.env.FRONTEND_URL || ''
+            const secure = redirectUri.startsWith('https://')
+            const backendOrigin = redirectUri ? new URL(redirectUri).origin : ''
+            const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : ''
+            const crossSite = backendOrigin && frontendOrigin && backendOrigin !== frontendOrigin
+            const sameSite = crossSite ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
+            const domain = process.env.SESSION_DOMAIN
+            const sessionCookie = createSessionCookie({
+                userId: user.id,
+                sessionSecret,
+                secure,
+                sameSite,
+                domain,
+                maxAgeSeconds: Number(process.env.SESSION_MAX_AGE_SECONDS || String(60 * 60 * 24 * 30)),
+            })
+            res.setHeader('Set-Cookie', sessionCookie)
+        }
+
         console.log(`[DEV_BYPASS] 开发者登录: ${devUser.name} (${devUser.phone})`)
         res.json({ result: 'ok', auth_token: token, user: userResponse, address_type: 'phone' })
     } catch (error: any) {
@@ -1059,7 +1080,10 @@ export const semiOauthLoginController = async (req: Request, res: Response) => {
     authz.searchParams.set('code_challenge_method', 'S256')
 
     const secure = redirectUri.startsWith('https://')
-    const sameSite = (process.env.SESSION_SAMESITE as any) || 'Lax'
+    const backendOrigin = new URL(redirectUri).origin
+    const frontendOrigin = new URL(frontendUrl).origin
+    const crossSite = backendOrigin !== frontendOrigin
+    const sameSite = crossSite ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
     const domain = process.env.SESSION_DOMAIN
     res.setHeader('Set-Cookie', createPkceCookie({ state, verifier: codeVerifier, secure, sameSite, domain }))
     return res.redirect(302, authz.toString())
@@ -1097,7 +1121,10 @@ export const semiOauthCallbackController = async (req: Request, res: Response) =
     }
 
     const secure = redirectUri.startsWith('https://')
-    const sameSite = (process.env.SESSION_SAMESITE as any) || 'Lax'
+    const backendOrigin = new URL(redirectUri).origin
+    const frontendOrigin = new URL(frontendUrl).origin
+    const crossSite = backendOrigin !== frontendOrigin
+    const sameSite = crossSite ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
     const domain = process.env.SESSION_DOMAIN
 
     // Exchange code -> token
@@ -1187,6 +1214,8 @@ export const semiOauthCallbackController = async (req: Request, res: Response) =
         sessionCookie,
     ])
 
+    console.log(`[semi/callback] user=${user.id} crossSite=${crossSite} sameSite=${sameSite} secure=${secure} domain=${domain || '(none)'}`)
+
     // Decide redirect
     const needsProfileSetup = !user.name && !user.handle
     const dest = new URL(needsProfileSetup ? '/profile/setup' : '/', frontendUrl).toString()
@@ -1204,8 +1233,13 @@ export const semiOauthCallbackController = async (req: Request, res: Response) =
 }
 
 export const logoutController = async (_req: Request, res: Response) => {
-    const secure = (process.env.FRONTEND_URL || '').startsWith('https://')
-    const sameSite = (process.env.SESSION_SAMESITE as any) || 'Lax'
+    const redirectUri = process.env.REDIRECT_URI || ''
+    const frontendUrl = process.env.FRONTEND_URL || ''
+    const secure = (frontendUrl || redirectUri).startsWith('https://')
+    const backendOrigin = redirectUri ? new URL(redirectUri).origin : ''
+    const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : ''
+    const crossSite = backendOrigin && frontendOrigin && backendOrigin !== frontendOrigin
+    const sameSite = crossSite ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
     const domain = process.env.SESSION_DOMAIN
     res.setHeader('Set-Cookie', clearSessionCookie({ secure, sameSite, domain }))
     return res.json({ result: 'ok' })

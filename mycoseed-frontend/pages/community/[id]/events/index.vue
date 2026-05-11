@@ -59,24 +59,32 @@
             📌
           </button>
           <NuxtLink :to="`/community/${communityId}/events/${ev.id}`" class="block pr-8">
-            <div class="flex items-start gap-2 mb-2">
-              <span
-                v-if="ev.tag"
-                class="shrink-0 px-2 py-0.5 rounded text-xs text-white font-medium"
-                :style="{ backgroundColor: ev.tag.colorHex }"
-              >
-                {{ ev.tag.name }}
-              </span>
-              <span v-if="ev.isPinned" class="text-xs text-amber-600 font-bold">置顶</span>
-            </div>
-            <h2 class="font-bold text-text-title text-lg leading-snug">{{ ev.title }}</h2>
-            <p class="text-xs text-text-placeholder mt-1 line-clamp-2">{{ ev.description }}</p>
-            <div class="mt-2 text-sm text-text-body">
-              <span>{{ fmtRange(ev) }}</span>
-              <span class="mx-1">·</span>
-              <span>{{ priceSummary(ev) }}</span>
-              <span class="mx-1">·</span>
-              <span>已报 {{ ev.participantCount }} 人</span>
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start gap-2 mb-2">
+                  <span
+                    v-if="ev.tag"
+                    class="shrink-0 px-2 py-0.5 rounded text-xs text-white font-medium"
+                    :style="{ backgroundColor: ev.tag.colorHex }"
+                  >
+                    {{ ev.tag.name }}
+                  </span>
+                  <span v-if="ev.isPinned" class="text-xs text-amber-600 font-bold">置顶</span>
+                </div>
+                <h2 class="font-bold text-text-title text-lg leading-snug">{{ ev.title }}</h2>
+                <p class="text-xs text-text-placeholder mt-1 line-clamp-2">{{ ev.description }}</p>
+                <div class="mt-2 text-sm text-text-body">
+                  <span>{{ fmtRange(ev) }}</span>
+                  <span class="mx-1">·</span>
+                  <span>{{ priceSummary(ev) }}</span>
+                  <span class="mx-1">·</span>
+                  <span>已报 {{ ev.participantCount }} 人</span>
+                </div>
+              </div>
+              <div v-if="isRegisteredForCurrent(ev)" class="shrink-0 self-center flex items-center gap-1 text-green-600 text-sm font-bold">
+                <span>✓</span>
+                <span class="text-xs">已报名</span>
+              </div>
             </div>
           </NuxtLink>
         </li>
@@ -121,20 +129,23 @@
               v-for="(cell, idx) in monthCells"
               :key="idx"
               type="button"
-              class="min-h-[72px] p-1 text-left bg-card hover:bg-input-bg/80 transition-colors disabled:opacity-40"
+              class="min-h-[90px] p-1 text-left bg-card hover:bg-input-bg/80 transition-colors disabled:opacity-40"
               :disabled="!cell.dayKey"
               @click="cell.dayKey && openDayModal(cell.dayKey)"
             >
               <template v-if="cell.dayKey">
                 <div class="text-xs font-medium text-text-title mb-1">{{ cell.dayNum }}</div>
-                <div class="flex flex-wrap gap-0.5">
-                  <span
-                    v-for="(dot, di) in dotsForDay(cell.dayKey).slice(0, 4)"
-                    :key="di"
-                    class="w-2 h-2 rounded-full shrink-0"
-                    :style="{ backgroundColor: dot.color }"
-                  />
-                  <span v-if="dotsForDay(cell.dayKey).length > 4" class="text-[10px] text-text-placeholder">+</span>
+                <div class="space-y-0.5">
+                  <div
+                    v-for="item in eventsForDay(cell.dayKey).slice(0, 3)"
+                    :key="item.ev.id + item.occ.id"
+                    class="text-[10px] truncate rounded px-0.5 leading-tight flex items-center gap-0.5"
+                    :style="{ backgroundColor: item.ev.tag?.colorHex || '#64748b', color: '#fff' }"
+                  >
+                    <span class="truncate flex-1">{{ item.ev.title }}</span>
+                    <span v-if="isOccRegistered(item.ev, item.occ.id)" class="shrink-0">✓</span>
+                  </div>
+                  <span v-if="eventsForDay(cell.dayKey).length > 3" class="text-[10px] text-text-placeholder">+{{ eventsForDay(cell.dayKey).length - 3 }}更多</span>
                 </div>
               </template>
             </button>
@@ -153,13 +164,15 @@
             <div class="text-xs font-bold text-text-title">{{ wd.label }}</div>
             <div class="mt-2 space-y-1">
               <div
-                v-for="ev in uniqueEventsForDay(wd.dayKey).slice(0, 4)"
-                :key="ev.id"
-                class="text-[10px] truncate rounded px-1 text-white"
-                :style="{ backgroundColor: ev.tag?.colorHex || '#64748b' }"
+                v-for="item in eventsForDay(wd.dayKey).slice(0, 4)"
+                :key="item.ev.id + item.occ.id"
+                class="text-[10px] truncate rounded px-1 text-white flex items-center gap-0.5"
+                :style="{ backgroundColor: item.ev.tag?.colorHex || '#64748b' }"
               >
-                {{ ev.title }}
+                <span class="truncate flex-1">{{ item.ev.title }}</span>
+                <span v-if="isOccRegistered(item.ev, item.occ.id)" class="shrink-0">✓</span>
               </div>
+              <span v-if="eventsForDay(wd.dayKey).length > 4" class="text-[10px] text-text-placeholder">+{{ eventsForDay(wd.dayKey).length - 4 }}更多</span>
             </div>
           </button>
         </div>
@@ -173,19 +186,27 @@
             :to="`/community/${communityId}/events/${item.ev.id}`"
             class="block rounded-2xl border border-border bg-card p-4 hover:bg-input-bg/50"
           >
-            <div class="flex items-start gap-2">
-              <span
-                v-if="item.ev.tag"
-                class="shrink-0 px-2 py-0.5 rounded text-xs text-white"
-                :style="{ backgroundColor: item.ev.tag.colorHex }"
-              >
-                {{ item.ev.tag.name }}
-              </span>
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start gap-2">
+                  <span
+                    v-if="item.ev.tag"
+                    class="shrink-0 px-2 py-0.5 rounded text-xs text-white"
+                    :style="{ backgroundColor: item.ev.tag.colorHex }"
+                  >
+                    {{ item.ev.tag.name }}
+                  </span>
+                </div>
+                <h3 class="font-bold text-text-title mt-1">{{ item.ev.title }}</h3>
+                <p class="text-xs text-text-placeholder mt-1">
+                  {{ fmtOcc(item.occ) }}
+                </p>
+              </div>
+              <div v-if="isOccRegistered(item.ev, item.occ.id)" class="shrink-0 self-center flex items-center gap-1 text-green-600 text-sm font-bold">
+                <span>✓</span>
+                <span class="text-xs">已报名</span>
+              </div>
             </div>
-            <h3 class="font-bold text-text-title mt-1">{{ item.ev.title }}</h3>
-            <p class="text-xs text-text-placeholder mt-1">
-              {{ fmtOcc(item.occ) }}
-            </p>
           </NuxtLink>
         </div>
       </template>
@@ -233,15 +254,18 @@
                 class="block rounded-xl border border-border p-3 hover:bg-input-bg"
                 @click="modalDayKey = null"
               >
-                <div class="flex gap-2 items-center">
-                  <span
-                    v-if="item.ev.tag"
-                    class="px-2 py-0.5 rounded text-xs text-white shrink-0"
-                    :style="{ backgroundColor: item.ev.tag.colorHex }"
-                  >
-                    {{ item.ev.tag.name }}
-                  </span>
-                  <span class="font-medium text-text-title truncate">{{ item.ev.title }}</span>
+                <div class="flex gap-2 items-center justify-between">
+                  <div class="flex gap-2 items-center min-w-0">
+                    <span
+                      v-if="item.ev.tag"
+                      class="px-2 py-0.5 rounded text-xs text-white shrink-0"
+                      :style="{ backgroundColor: item.ev.tag.colorHex }"
+                    >
+                      {{ item.ev.tag.name }}
+                    </span>
+                    <span class="font-medium text-text-title truncate">{{ item.ev.title }}</span>
+                  </div>
+                  <span v-if="isOccRegistered(item.ev, item.occ.id)" class="shrink-0 text-green-600 text-sm font-bold">✓</span>
                 </div>
                 <p class="text-xs text-text-placeholder mt-1">{{ fmtOcc(item.occ) }}</p>
               </NuxtLink>
@@ -387,28 +411,20 @@ function occOnDay(ev: CommunityEventListItem, dayKey: string): CommunityEventOcc
   return ev.occurrences.filter((o) => localDayKey(o.activityStart) === dayKey)
 }
 
-function uniqueEventsForDay(dayKey: string): CommunityEventListItem[] {
+function eventsForDay(dayKey: string): { ev: CommunityEventListItem; occ: CommunityEventOccurrence }[] {
+  const items: { ev: CommunityEventListItem; occ: CommunityEventOccurrence }[] = []
   const seen = new Set<string>()
-  const out: CommunityEventListItem[] = []
   for (const ev of calendarEvents.value) {
-    if (occOnDay(ev, dayKey).length && !seen.has(ev.id)) {
-      seen.add(ev.id)
-      out.push(ev)
+    for (const occ of occOnDay(ev, dayKey)) {
+      const key = ev.id + occ.id
+      if (!seen.has(key)) {
+        seen.add(key)
+        items.push({ ev, occ })
+      }
     }
   }
-  return out
-}
-
-function dotsForDay(dayKey: string): { color: string }[] {
-  const seen = new Set<string>()
-  const dots: { color: string }[] = []
-  for (const ev of calendarEvents.value) {
-    if (!occOnDay(ev, dayKey).length) continue
-    if (seen.has(ev.id)) continue
-    seen.add(ev.id)
-    dots.push({ color: ev.tag?.colorHex || '#64748b' })
-  }
-  return dots
+  items.sort((a, b) => new Date(a.occ.activityStart).getTime() - new Date(b.occ.activityStart).getTime())
+  return items
 }
 
 const dayList = computed(() => {
@@ -587,6 +603,24 @@ async function togglePin(ev: CommunityEventListItem) {
   } catch (e: any) {
     toast.add({ title: e?.message || '操作失败', color: 'red' })
   }
+}
+
+function isRegisteredForCurrent(ev: CommunityEventListItem): boolean {
+  if (!ev.myOccIds?.length) return false
+  if (ev.kind === 'pack') {
+    const now = Date.now()
+    const sorted = [...ev.occurrences].sort((a, b) => new Date(a.activityStart).getTime() - new Date(b.activityStart).getTime())
+    const currentOcc = sorted.find(o => {
+      const actEnd = new Date(o.activityEnd).getTime()
+      return now <= actEnd
+    }) || sorted[sorted.length - 1]
+    return currentOcc ? ev.myOccIds.includes(currentOcc.id) : false
+  }
+  return true
+}
+
+function isOccRegistered(ev: CommunityEventListItem, occId: string): boolean {
+  return ev.myOccIds?.includes(occId) ?? false
 }
 
 watch([filterTagId, mineOnly], () => {

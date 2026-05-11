@@ -4,6 +4,31 @@ import { AuthRequest } from '../middleware/auth'
 import { getMemberRole } from '../middleware/communityAdmin'
 import { ensureDefaultCalendarTags } from '../services/calendarTagsSeed'
 
+function getOccRegistrationWindow(ev: any, occ: any): { start: number; end: number } {
+    if (occ.registration_start && occ.registration_end) {
+        return {
+            start: new Date(occ.registration_start).getTime(),
+            end: new Date(occ.registration_end).getTime(),
+        }
+    }
+    if (ev.kind === 'pack') {
+        const occDate = new Date(occ.activity_start)
+        const y = occDate.getFullYear()
+        const m = occDate.getMonth()
+        const d = occDate.getDate()
+        const evRegStart = new Date(ev.registration_start)
+        const evRegEnd = new Date(ev.registration_end)
+        return {
+            start: new Date(y, m, d, evRegStart.getHours(), evRegStart.getMinutes(), evRegStart.getSeconds()).getTime(),
+            end: new Date(y, m, d, evRegEnd.getHours(), evRegEnd.getMinutes(), evRegEnd.getSeconds()).getTime(),
+        }
+    }
+    return {
+        start: new Date(ev.registration_start).getTime(),
+        end: new Date(ev.registration_end).getTime(),
+    }
+}
+
 async function participationCountForEvent(eventId: string): Promise<number> {
     const { data: occ } = await supabase.from('community_event_occurrences').select('id').eq('event_id', eventId)
     const ids = (occ || []).map((o) => o.id)
@@ -212,7 +237,7 @@ export const listEvents = async (req: AuthRequest, res: Response) => {
         const bundles: any[] = []
         for (const id of ids) {
             const b = await loadEventBundle(id)
-            if (b) bundles.push(await formatEventListItem(b))
+            if (b) bundles.push(await formatEventListItem(b, req.user!.id))
         }
         const sorted = sortEventsForList(bundles)
         const slice = sorted.slice(offset, offset + limit)
@@ -288,7 +313,7 @@ export const listEventsCalendar = async (req: AuthRequest, res: Response) => {
         const bundles: any[] = []
         for (const id of ids) {
             const b = await loadEventBundle(id)
-            if (b) bundles.push(await formatEventListItem(b))
+            if (b) bundles.push(await formatEventListItem(b, req.user!.id))
         }
         const sorted = sortEventsForList(bundles)
         res.json({ events: sorted, total: sorted.length })
@@ -298,10 +323,23 @@ export const listEventsCalendar = async (req: AuthRequest, res: Response) => {
     }
 }
 
-async function formatEventListItem(bundle: NonNullable<Awaited<ReturnType<typeof loadEventBundle>>>) {
+async function formatEventListItem(bundle: NonNullable<Awaited<ReturnType<typeof loadEventBundle>>>, userId?: string) {
     const { ev, options, occurrences } = bundle
     const pCount = await participationCountForEvent(ev.id)
     const tag = ev.tag ? { id: ev.tag.id, name: ev.tag.name, colorHex: ev.tag.color_hex } : null
+    let myOccIds: string[] = []
+    if (userId) {
+        const occIds = occurrences.map((o: any) => o.id)
+        if (occIds.length) {
+            const { data: myParts } = await supabase
+                .from('community_event_participations')
+                .select('occurrence_id')
+                .eq('user_id', userId)
+                .eq('status', 'registered')
+                .in('occurrence_id', occIds)
+            myOccIds = (myParts || []).map((p: any) => p.occurrence_id as string)
+        }
+    }
     return {
         id: ev.id,
         communityId: ev.community_id,
@@ -333,6 +371,7 @@ async function formatEventListItem(bundle: NonNullable<Awaited<ReturnType<typeof
             registrationEnd: o.registration_end || null,
         })),
         participantCount: pCount,
+        myOccIds,
     }
 }
 
@@ -348,7 +387,7 @@ export const getEvent = async (req: AuthRequest, res: Response) => {
 
         const bundle = await loadEventBundle(eventId)
         if (!bundle) return res.status(404).json({ result: 'error', message: '活动不存在' })
-        const listItem = await formatEventListItem(bundle)
+        const listItem = await formatEventListItem(bundle, req.user!.id)
         const occIds = bundle.occurrences.map((o) => o.id)
         let parts: any[] = []
         if (occIds.length) {
@@ -393,24 +432,17 @@ export const getEvent = async (req: AuthRequest, res: Response) => {
 
         if (bundle.ev.kind === 'pack' && sortedOcc.length) {
             const openOcc = sortedOcc.find((o) => {
-                const occRegStart = o.registration_start
-                    ? new Date(o.registration_start).getTime()
-                    : new Date(bundle.ev.registration_start).getTime()
-                const occRegEnd = o.registration_end
-                    ? new Date(o.registration_end).getTime()
-                    : new Date(bundle.ev.registration_end).getTime()
+                const regWin = getOccRegistrationWindow(bundle.ev, o)
                 const actEnd = new Date(o.activity_end).getTime()
-                return now >= occRegStart && now <= occRegEnd && now <= actEnd
+                return now >= regWin.start && now <= regWin.end && now <= actEnd
             })
             if (openOcc) {
                 currentOccurrenceId = openOcc.id
                 registrationOpen = true
             } else {
                 const future = sortedOcc.find((o) => {
-                    const occRegStart = o.registration_start
-                        ? new Date(o.registration_start).getTime()
-                        : new Date(bundle.ev.registration_start).getTime()
-                    return now < occRegStart
+                    const regWin = getOccRegistrationWindow(bundle.ev, o)
+                    return now < regWin.start
                 })
                 currentOccurrenceId = future?.id || sortedOcc[sortedOcc.length - 1].id
                 registrationOpen = false
@@ -545,7 +577,7 @@ export const createEvent = async (req: AuthRequest, res: Response) => {
         if (e3) throw e3
 
         const bundle = await loadEventBundle(eventId)
-        res.status(201).json({ event: bundle ? await formatEventListItem(bundle) : null })
+        res.status(201).json({ event: bundle ? await formatEventListItem(bundle, req.user!.id) : null })
     } catch (e: any) {
         console.error(e)
         res.status(500).json({ result: 'error', message: e.message })
@@ -704,14 +736,9 @@ export const registerEvent = async (req: AuthRequest, res: Response) => {
         if (!occ) return res.status(400).json({ result: 'error', message: '期次无效' })
 
         const now = Date.now()
-        if (bundle.ev.kind === 'pack' && occ.registration_start && occ.registration_end) {
-            const rs = new Date(occ.registration_start).getTime()
-            const re = new Date(occ.registration_end).getTime()
-            if (now < rs || now > re) return res.status(400).json({ result: 'error', message: '不在当前期次报名时间内' })
-        } else {
-            const rs = new Date(bundle.ev.registration_start).getTime()
-            const re = new Date(bundle.ev.registration_end).getTime()
-            if (now < rs || now > re) return res.status(400).json({ result: 'error', message: '不在报名时间内' })
+        const regWin = getOccRegistrationWindow(bundle.ev, occ)
+        if (now < regWin.start || now > regWin.end) {
+            return res.status(400).json({ result: 'error', message: bundle.ev.kind === 'pack' ? '不在当前期次报名时间内' : '不在报名时间内' })
         }
 
         let opt: any = bundle.options[0]
@@ -776,12 +803,10 @@ export const cancelRegistration = async (req: AuthRequest, res: Response) => {
 
         const now = Date.now()
         const occ = bundle.occurrences.find((o) => o.id === occurrenceId)
-        if (bundle.ev.kind === 'pack' && occ?.registration_end) {
-            if (now > new Date(occ.registration_end).getTime())
-                return res.status(400).json({ result: 'error', message: '当前期次报名已截止，无法取消' })
-        } else {
-            const re = new Date(bundle.ev.registration_end).getTime()
-            if (now > re) return res.status(400).json({ result: 'error', message: '报名已截止，无法取消' })
+        if (occ) {
+            const regWin = getOccRegistrationWindow(bundle.ev, occ)
+            if (now > regWin.end)
+                return res.status(400).json({ result: 'error', message: bundle.ev.kind === 'pack' ? '当前期次报名已截止，无法取消' : '报名已截止，无法取消' })
         }
 
         const { error } = await supabase

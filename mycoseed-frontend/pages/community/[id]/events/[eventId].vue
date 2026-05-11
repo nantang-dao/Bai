@@ -56,32 +56,14 @@
           </PixelButton>
         </div>
 
-        <div v-if="myOccIds.size && detail.registrationOpen" class="text-sm text-text-body space-y-1">
-          <div class="font-bold">我的报名（可取消）</div>
+        <div v-if="myOccIds.size" class="text-sm text-text-body space-y-1">
+          <div class="font-bold">我的报名</div>
           <div v-for="oid in [...myOccIds]" :key="oid" class="flex items-center gap-2">
             <span class="text-xs text-text-placeholder">{{ occLabel(oid) }}</span>
-            <button type="button" class="text-primary text-xs underline" @click="cancelOcc(oid)">取消报名</button>
+            <button v-if="canCancelOcc(oid)" type="button" class="text-primary text-xs underline" @click="cancelOcc(oid)">取消报名</button>
+            <span v-else class="text-xs text-text-placeholder">报名已截止</span>
           </div>
         </div>
-
-        <section>
-          <h2 class="font-bold text-text-title mb-3">报名列表</h2>
-          <ul class="space-y-2">
-            <li
-              v-for="p in detail.participations"
-              :key="p.id"
-              class="p-3 rounded-xl bg-card border border-border text-sm"
-            >
-              <div class="flex items-center gap-2">
-                <PixelAvatar :src="p.user?.avatar || undefined" :seed="p.user?.name || 'u'" size="sm" />
-                <span class="font-medium">{{ p.user?.name || '用户' }}</span>
-                <span v-if="p.optionTitle" class="text-xs px-1.5 py-0.5 rounded bg-input-bg">{{ p.optionTitle }}</span>
-              </div>
-              <p v-if="p.remark" class="mt-1 text-text-placeholder text-xs">备注：{{ p.remark }}</p>
-              <p class="text-xs text-text-placeholder mt-1">{{ fmt(p.createdAt) }}</p>
-            </li>
-          </ul>
-        </section>
 
         <section v-if="detail.event.kind === 'pack' && detail.event.occurrences.length > 1">
           <div class="flex items-center justify-between mb-3">
@@ -124,7 +106,9 @@
                             (¥{{ row.cells[o.id].price }})
                           </span>
                         </div>
-                        <span v-if="row.cells[o.id].remark" class="text-[10px] text-orange-500">📝</span>
+                        <div v-if="row.cells[o.id].remark" class="text-[10px] text-orange-500 leading-tight">
+                          📝 {{ row.cells[o.id].remark }}
+                        </div>
                       </div>
                     </template>
                     <span v-else class="text-text-placeholder">—</span>
@@ -133,6 +117,25 @@
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section>
+          <h2 class="font-bold text-text-title mb-3">报名列表</h2>
+          <ul class="space-y-2">
+            <li
+              v-for="p in detail.participations"
+              :key="p.id"
+              class="p-3 rounded-xl bg-card border border-border text-sm"
+            >
+              <div class="flex items-center gap-2">
+                <PixelAvatar :src="p.user?.avatar || undefined" :seed="p.user?.name || 'u'" size="sm" />
+                <span class="font-medium">{{ p.user?.name || '用户' }}</span>
+                <span v-if="p.optionTitle" class="text-xs px-1.5 py-0.5 rounded bg-input-bg">{{ p.optionTitle }}</span>
+              </div>
+              <p v-if="p.remark" class="mt-1 text-text-placeholder text-xs">备注：{{ p.remark }}</p>
+              <p class="text-xs text-text-placeholder mt-1">{{ fmt(p.createdAt) }}</p>
+            </li>
+          </ul>
         </section>
       </div>
     </template>
@@ -376,6 +379,27 @@ async function doRegister() {
   } finally {
     regLoading.value = false
   }
+}
+
+function canCancelOcc(occId: string): boolean {
+  if (!detail.value) return false
+  const ev = detail.value.event
+  const occ = ev.occurrences.find(o => o.id === occId)
+  if (!occ) return false
+  const now = Date.now()
+  if (occ.registrationStart && occ.registrationEnd) {
+    return now <= new Date(occ.registrationEnd).getTime()
+  }
+  if (ev.kind === 'pack') {
+    const occDate = new Date(occ.activityStart)
+    const y = occDate.getFullYear()
+    const m = occDate.getMonth()
+    const d = occDate.getDate()
+    const evRegEnd = new Date(ev.registrationEnd)
+    const occRegEnd = new Date(y, m, d, evRegEnd.getHours(), evRegEnd.getMinutes(), evRegEnd.getSeconds())
+    return now <= occRegEnd.getTime()
+  }
+  return now <= new Date(ev.registrationEnd).getTime()
 }
 
 async function cancelOcc(occurrenceId: string) {

@@ -1114,10 +1114,6 @@ export const devLogin = async (userIndex: number, baseUrl: string): Promise<{ re
 
   const data = await response.json()
 
-  if (data.auth_token) {
-    setCookie(AUTH_TOKEN_KEY, data.auth_token)
-  }
-
   return data
 }
 
@@ -1177,7 +1173,9 @@ export const getMe = async (baseUrl: string): Promise<any> => {
   {
     if(response.status===401)
     {
-      clearAuthToken()
+      if (typeof window !== 'undefined') {
+        document.cookie = 'mycoseed_sid=; Path=/; Max-Age=0'
+      }
     }
     throw new Error('Failed to get user info')
   }
@@ -3045,6 +3043,7 @@ export interface CommunityEventListItem {
   options: CommunityEventOption[]
   occurrences: CommunityEventOccurrence[]
   participantCount: number
+  myOccIds: string[]
 }
 
 async function communityEventsFetch<T>(
