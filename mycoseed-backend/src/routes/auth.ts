@@ -12,6 +12,9 @@ import
     setPasswordController,
     syncFromSemiController,
     devLoginController,
+    semiOauthLoginController,
+    semiOauthCallbackController,
+    logoutController,
 } from '../controllers/authController'
 import {authenticate} from '../middleware/auth'
 
@@ -25,6 +28,9 @@ router.post('/login', passwordLoginController)  // 密码登录
 router.post('/set-password', setPasswordController)  // 设置密码（验证码验证后）
 router.post('/sync-from-semi', syncFromSemiController)  // 从 Semi 同步用户信息
 router.post('/dev-login', devLoginController)  // [DEV_BYPASS] 开发者免验登录
+router.get('/semi/login', semiOauthLoginController) // Semi OAuth2 (code+PKCE) login entry
+router.get('/semi/callback', semiOauthCallbackController) // Semi OAuth2 callback
+router.post('/logout', logoutController) // Clear HttpOnly session cookie
 router.get('/me',authenticate,getMeController)  // 获取当前用户信息
 router.patch('/me', authenticate, updateProfileController)  // 更新用户资料
 router.get('/users', authenticate, getAllUsersController)  // 获取所有用户列表（需要认证）- 必须在 /users/:id 之前

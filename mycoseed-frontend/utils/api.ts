@@ -395,19 +395,18 @@ export const getFinalReward = (task: Task): number => {
   return task.reward
 }
 
+// IMPORTANT: use HttpOnly session cookie for auth.
+// Nuxt dev uses different ports (3003 frontend, 3001 backend) which is cross-origin,
+// so we must always send credentials for backend API calls.
+const rawFetch: typeof fetch = globalThis.fetch.bind(globalThis)
+const fetchWithCreds = (input: RequestInfo | URL, init?: RequestInit) =>
+  rawFetch(input, { ...(init || {}), credentials: 'include' })
+// Shadow global fetch in this module so every call includes credentials.
+// eslint-disable-next-line @typescript-eslint/no-shadow
+const fetch: typeof globalThis.fetch = fetchWithCreds as any
+
 const getAuthHeaders = (): Record<string, string> => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
-  }
-
-  if (typeof window !== 'undefined') {
-    const token = getCookie(AUTH_TOKEN_KEY)
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-  }
-
-  return headers
+  return { 'Content-Type': 'application/json' }
 }
 
 /**
@@ -1129,7 +1128,7 @@ export const devLogin = async (userIndex: number, baseUrl: string): Promise<{ re
  * @param baseUrl API 基础 URL
  */
 export const signIn = async (identifier: string, code: string, baseUrl: string): Promise<{ result: string; auth_token?:string }> => {
-  const response = await fetch(`${baseUrl}/api/auth/signin`,
+  const response = await fetchWithCreds(`${baseUrl}/api/auth/signin`,
     {
       method:'POST',
       headers:
@@ -1147,12 +1146,6 @@ export const signIn = async (identifier: string, code: string, baseUrl: string):
   }
 
   const data = await response.json()
-
-  // 保存token到cookie
-  if (data.auth_token)
-  {
-    setCookie(AUTH_TOKEN_KEY,data.auth_token)
-  }
 
   return data
 }
@@ -1173,7 +1166,7 @@ export const signInWithEmail = async (email: string, code: string, baseUrl: stri
  * @param baseUrl API 基础 URL
  */
 export const getMe = async (baseUrl: string): Promise<any> => {
-  const response = await fetch(`${baseUrl}/api/auth/me`,
+  const response = await fetchWithCreds(`${baseUrl}/api/auth/me`,
     {
       method:'GET',
       headers: getAuthHeaders(),
@@ -1229,79 +1222,9 @@ export const setEncryptedKeys = async (keys: string): Promise<{ result: string }
   return { result: 'ok' }
 }
 
-export const AUTH_TOKEN_KEY = 'auth_token'
-
-// 使用 localStorage 存储 token，避免部署后丢失
-export const getCookie = (key: string): string | null => {
-  if(typeof window === 'undefined') return null
-  try {
-    // 优先从 localStorage 读取
-    let token = localStorage.getItem(key)
-    
-    // 如果 localStorage 中没有，尝试从 cookie 读取（兼容旧数据）
-    if (!token) {
-      const cookies = document.cookie.split(';')
-      for (let cookie of cookies)
-      {
-        const [name,value]= cookie.trim().split('=')
-        if(name===key)
-        {
-          token = decodeURIComponent(value)
-          // 迁移到 localStorage
-          if (token) {
-            localStorage.setItem(key, token)
-            // 删除旧的 cookie
-            document.cookie=`${key}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/`
-          }
-          break
-        }
-      }
-    }
-    
-    return token
-  } catch (e) {
-    // 如果 localStorage 不可用，回退到 cookie
-    const cookies = document.cookie.split(';')
-    for (let cookie of cookies)
-    {
-      const [name,value]= cookie.trim().split('=')
-      if(name===key)
-      {
-        return decodeURIComponent(value)
-      }
-    }
-    return null
-  }
-}
-
-export const setCookie = (key:string,value:string,days:number=365)=>
-{
-  if (typeof window ==='undefined') return
-  try {
-    // 优先使用 localStorage
-    localStorage.setItem(key, value)
-  } catch (e) {
-    // 如果 localStorage 不可用，回退到 cookie
-    const expires=new Date()
-    expires.setTime(expires.getTime()+days*24*60*60*1000)
-    document.cookie=`${key}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Lax`
-  }
-}
-
-export const deleteCookie = (key:string)=>
-{
-  if(typeof window ==='undefined') return
-  try {
-    localStorage.removeItem(key)
-  } catch (e) {
-    // 如果 localStorage 不可用，回退到 cookie
-    document.cookie=`${key}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/`
-  }
-}
-
-export const clearAuthToken =(): void=>
-{
-  deleteCookie(AUTH_TOKEN_KEY)
+export async function logout(baseUrl: string): Promise<void> {
+  const res = await fetchWithCreds(`${baseUrl}/api/auth/logout`, { method: 'POST' })
+  if (!res.ok) throw new Error('logout failed')
 }
 
 // 保存当前登录标识符
@@ -2809,99 +2732,6 @@ export const getCommunityTransactions = async (communityId: number): Promise<Com
     console.error('Failed to load community transactions:', error)
     return []
   }
-}
-
-// ==================== Semi OAuth2 相关 API ====================
-
-/**
- * 从 Semi 获取用户信息
- * @param accessToken Semi 的 access_token
- * @param semiApiUrl Semi API 基础 URL
- */
-export const getSemiUserInfo = async (accessToken: string, semiApiUrl: string): Promise<any> => {
-  const response = await fetch(`${semiApiUrl}/get_me`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`
-    }
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || error.message || 'Failed to get user info from Semi')
-  }
-
-  return response.json()
-}
-
-/**
- * 同步 Semi 用户信息到 Mycoseed
- * @param semiUserData Semi 用户数据
- * @param baseUrl Mycoseed API 基础 URL
- */
-export const syncFromSemi = async (semiUserData: any, baseUrl: string): Promise<{ result: string; auth_token?: string; user?: any}> => {
-  const response = await fetch(`${baseUrl}/api/auth/sync-from-semi`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(semiUserData)
-  })
-
-  if (!response.ok) {
-    const raw = await response.text()
-    try {
-      const parsed = JSON.parse(raw)
-      throw new Error(parsed.message || 'Failed to sync user from Semi')
-    } catch {
-      throw new Error(`Failed to sync user from Semi (HTTP ${response.status}): ${raw.slice(0, 120)}`)
-    }
-  }
-
-  return response.json()
-}
-
-/**
- * 生成随机 state（用于 OAuth2 CSRF 防护）
- */
-export const generateRandomState = (): string => {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-}
-
-/**
- * 构建 OAuth2 授权 URL
- * @param clientId 客户端 ID
- * @param redirectUri 回调地址
- * @param state 状态参数（用于 CSRF 防护）
- * @param oauthUrl OAuth 服务器地址
- */
-export const buildOAuthUrl = (clientId: string, redirectUri: string, state: string, oauthUrl: string): string => {
-  const params = new URLSearchParams({
-    client_id: clientId,
-    response_type: 'token',
-    redirect_uri: redirectUri,
-    state: state,
-    scope: 'read:user'
-  })
-  return `${oauthUrl}/api/oauth/authorize?${params.toString()}`
-}
-
-/**
- * 解析 URL fragment（用于提取 OAuth2 返回的 token）
- * @param fragment URL fragment（例如：#access_token=xxx&token_type=Bearer）
- */
-export const parseFragment = (fragment: string): Record<string, string> => {
-  const params: Record<string, string> = {}
-  if (fragment && fragment.startsWith('#')) {
-    fragment.substring(1).split('&').forEach(param => {
-      const [key, value] = param.split('=')
-      if (key && value) {
-        params[key] = decodeURIComponent(value)
-      }
-    })
-  }
-  return params
 }
 
 // ==================== Semi转账跳转相关 ====================

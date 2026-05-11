@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { AUTH_TOKEN_KEY, getCookie, getCommunities, getCommunityById, type Community } from '~/utils/api'
+import { getCommunities, getCommunityById, type Community } from '~/utils/api'
 
 const STORAGE_KEY = 'mycoseed_current_community_id'
 
@@ -39,11 +39,6 @@ export const useCommunityStore = defineStore('community', {
     async initialize() {
       this.loadFromStorage()
       if (this.currentCommunityId) {
-        // 未登录/无 token 时不要清空本地选择，等用户完成登录后再自动恢复详情
-        if (!getCookie(AUTH_TOKEN_KEY)) {
-          this.currentCommunity = null
-          return
-        }
         try {
           this.currentCommunity = await getCommunityById(this.currentCommunityId)
           return

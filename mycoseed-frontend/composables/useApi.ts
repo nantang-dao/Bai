@@ -139,11 +139,6 @@ export const useApi = () => {
       api.cancelCommunityEventRegistration(communityId, eventId, occurrenceId, apiBaseUrl),
     
     // 其他工具函数（不需要 API URL）
-    AUTH_TOKEN_KEY: api.AUTH_TOKEN_KEY,
-    getCookie: api.getCookie,
-    setCookie: api.setCookie,
-    deleteCookie: api.deleteCookie,
-    clearAuthToken: api.clearAuthToken,
     setCurrentIdentifier: api.setCurrentIdentifier,
     getFinalReward: api.getFinalReward,
     updateUserProfile: (userId: string | number, profile: UserProfile) => api.updateUserProfile(userId, profile, apiBaseUrl),
