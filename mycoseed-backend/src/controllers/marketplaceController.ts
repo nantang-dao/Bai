@@ -88,6 +88,7 @@ export const listTags = async (req: AuthRequest, res: Response) => {
             .from('community_marketplace_tags')
             .select('id, name, color_hex, sort_order, created_at, archived')
             .eq('community_id', communityId)
+            .or('archived.is.null,archived.eq.false')
             .order('sort_order', { ascending: true })
         if (error) throw error
         res.json({

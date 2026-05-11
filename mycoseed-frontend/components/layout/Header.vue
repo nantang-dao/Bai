@@ -56,7 +56,6 @@
       <!-- Navigation -->
       <nav class="flex items-center gap-4">
         <NuxtLink
-          v-if="false"
           :to="mallPath"
           class="inline-flex items-center justify-center px-3 py-1.5 rounded-xl bg-amber-500 text-white text-sm font-bold shadow-soft hover:opacity-95 transition-opacity"
           title="社区商城"

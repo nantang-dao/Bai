@@ -32,6 +32,7 @@ export const listCalendarTags = async (req: AuthRequest, res: Response) => {
             .from('community_calendar_tags')
             .select('id, name, color_hex, sort_order, archived')
             .eq('community_id', communityId)
+            .or('archived.is.null,archived.eq.false')
             .order('sort_order', { ascending: true })
         if (error) throw error
         res.json({ tags: (data || []).map((t) => ({ id: t.id, name: t.name, colorHex: t.color_hex, sortOrder: t.sort_order, archived: t.archived || false })) })
