@@ -19,7 +19,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       // Mycoseed Backend base URL (auth/session + business APIs)
-      apiUrl: env.NUXT_PUBLIC_API_URL || (nodeEnv === 'development' ? 'http://localhost:3001' : ''),
+      apiUrl: env.NUXT_PUBLIC_API_URL || '',
 
       // Frontend base URL (optional; used for absolute links if needed)
       appUrl: env.NUXT_PUBLIC_APP_URL || (nodeEnv === 'development' ? 'http://localhost:3003' : ''),

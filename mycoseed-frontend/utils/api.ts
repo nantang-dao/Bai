@@ -414,22 +414,18 @@ const getAuthHeaders = (): Record<string, string> => {
  * 优先从环境变量读取，否则使用默认值
  */
 export const getApiBaseUrl = (): string => {
-  // 优先使用环境变量（兼容客户端和服务器端）
   if (typeof window !== 'undefined') {
-    // 客户端环境：使用 import.meta.env
     const env = (import.meta as any).env
     if (env?.NUXT_PUBLIC_API_URL) {
       return env.NUXT_PUBLIC_API_URL
     }
   } else {
-    // 服务器端环境：使用 process.env
     const processEnv = (globalThis as any).process?.env || {}
     if (processEnv.NUXT_PUBLIC_API_URL) {
       return processEnv.NUXT_PUBLIC_API_URL
     }
   }
   
-  // 尝试从 Nuxt 运行时配置获取（如果可用）
   if (typeof window !== 'undefined') {
     try {
       const nuxtApp = (window as any).__NUXT__
@@ -437,12 +433,10 @@ export const getApiBaseUrl = (): string => {
         return nuxtApp.config.public.apiUrl
       }
     } catch (e) {
-      // 忽略错误
     }
   }
   
-  // 默认值（开发环境）
-  return 'http://localhost:3001'
+  return ''
 }
 
 // ==================== 活动相关 API ====================

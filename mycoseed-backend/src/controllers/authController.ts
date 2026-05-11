@@ -1030,8 +1030,8 @@ export const devLoginController = async (req: Request, res: Response) => {
             const secure = redirectUri.startsWith('https://')
             const backendOrigin = redirectUri ? new URL(redirectUri).origin : ''
             const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : ''
-            const crossSite = backendOrigin && frontendOrigin && backendOrigin !== frontendOrigin
-            const sameSite = crossSite ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
+            const crossSite = !!(backendOrigin && frontendOrigin && backendOrigin !== frontendOrigin)
+            const sameSite = (crossSite && secure) ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
             const domain = process.env.SESSION_DOMAIN
             const sessionCookie = createSessionCookie({
                 userId: user.id,
@@ -1059,7 +1059,19 @@ export const devLoginController = async (req: Request, res: Response) => {
 export const semiOauthLoginController = async (req: Request, res: Response) => {
     const semiClientId = process.env.SEMI_CLIENT_ID
     const semiFrontendUrl = process.env.SEMI_FRONTEND_URL
-    const redirectUri = process.env.REDIRECT_URI
+    const envRedirectUri = process.env.REDIRECT_URI
+    const queryRedirectUri = (req.query as any)?.redirect_uri as string | undefined
+    let redirectUri = envRedirectUri
+
+    if (queryRedirectUri && envRedirectUri) {
+        try {
+            const qUrl = new URL(queryRedirectUri)
+            const eUrl = new URL(envRedirectUri)
+            if (qUrl.pathname === eUrl.pathname && qUrl.protocol === eUrl.protocol) {
+                redirectUri = queryRedirectUri
+            }
+        } catch {}
+    }
 
     if (!semiClientId || !semiFrontendUrl || !redirectUri) {
         return res.status(500).json({ result: 'error', message: 'Semi OAuth env vars missing (SEMI_CLIENT_ID/SEMI_FRONTEND_URL/REDIRECT_URI)' })
@@ -1080,10 +1092,11 @@ export const semiOauthLoginController = async (req: Request, res: Response) => {
     authz.searchParams.set('code_challenge_method', 'S256')
 
     const secure = redirectUri.startsWith('https://')
+    const frontendUrl = process.env.FRONTEND_URL || ''
     const backendOrigin = new URL(redirectUri).origin
-    const frontendOrigin = new URL(frontendUrl).origin
+    const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : backendOrigin
     const crossSite = backendOrigin !== frontendOrigin
-    const sameSite = crossSite ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
+    const sameSite = (crossSite && secure) ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
     const domain = process.env.SESSION_DOMAIN
     res.setHeader('Set-Cookie', createPkceCookie({ state, verifier: codeVerifier, secure, sameSite, domain }))
     return res.redirect(302, authz.toString())
@@ -1124,7 +1137,7 @@ export const semiOauthCallbackController = async (req: Request, res: Response) =
     const backendOrigin = new URL(redirectUri).origin
     const frontendOrigin = new URL(frontendUrl).origin
     const crossSite = backendOrigin !== frontendOrigin
-    const sameSite = crossSite ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
+    const sameSite = (crossSite && secure) ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
     const domain = process.env.SESSION_DOMAIN
 
     // Exchange code -> token
@@ -1238,8 +1251,8 @@ export const logoutController = async (_req: Request, res: Response) => {
     const secure = (frontendUrl || redirectUri).startsWith('https://')
     const backendOrigin = redirectUri ? new URL(redirectUri).origin : ''
     const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : ''
-    const crossSite = backendOrigin && frontendOrigin && backendOrigin !== frontendOrigin
-    const sameSite = crossSite ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
+    const crossSite = !!(backendOrigin && frontendOrigin && backendOrigin !== frontendOrigin)
+    const sameSite = (crossSite && secure) ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
     const domain = process.env.SESSION_DOMAIN
     res.setHeader('Set-Cookie', clearSessionCookie({ secure, sameSite, domain }))
     return res.json({ result: 'ok' })

@@ -80,7 +80,7 @@ const { devLogin } = useApi()
 const isDev = computed(() => {
   if (process.server) return false
   const url = config.public.apiUrl || ''
-  return url.includes('localhost') || url.includes('127.0.0.1')
+  return !url || url.includes('localhost') || url.includes('127.0.0.1')
 })
 
 const devLoggingIn = ref(false)
@@ -102,18 +102,12 @@ const handleDevLogin = async (userIndex: number) => {
 }
 
 const handleOAuth2Login = () => {
-  const apiUrl = config.public.apiUrl
-  if (!apiUrl) {
-    toast.add({
-      title: '配置错误',
-      description: '后端 API URL 未配置（NUXT_PUBLIC_API_URL）',
-      color: 'red'
-    })
-    return
-  }
-
-  // Hola-aligned：OAuth 逻辑全部由后端完成（PKCE / token exchange / session）
-  window.location.href = `${apiUrl}/api/auth/semi/login`
+  const apiUrl = config.public.apiUrl as string
+  const callbackUrl = `${window.location.origin}/api/auth/semi/callback`
+  const loginBase = apiUrl ? `${apiUrl}/api/auth/semi/login` : '/api/auth/semi/login'
+  const loginUrl = new URL(loginBase, window.location.origin)
+  loginUrl.searchParams.set('redirect_uri', callbackUrl)
+  window.location.href = loginUrl.toString()
 }
 
 </script>

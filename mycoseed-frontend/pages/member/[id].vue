@@ -1,7 +1,15 @@
 <template>
   <div class="min-h-screen pb-24">
     <!-- 顶部个人信息区域 -->
-    <div class="mx-4 mt-4">
+    <div class="mx-4 mt-4 relative">
+      <NuxtLink
+        v-if="isMyProfile"
+        to="/settings"
+        class="absolute top-2 right-2 z-10 w-10 h-10 flex items-center justify-center rounded-xl bg-input-bg border border-border text-text-title transition-all hover:scale-105 shadow-soft"
+        title="设置"
+      >
+        ⚙️
+      </NuxtLink>
       <!-- 翻转卡片容器 -->
       <div 
         class="flip-card-container"
@@ -10,7 +18,7 @@
       >
         <div class="flip-card-inner">
           <!-- 卡片正面 -->
-          <div class="flip-card-face flip-card-front bg-white border border-border rounded-2xl shadow-soft p-6 pb-8 relative">
+          <div class="flip-card-face flip-card-front bg-white border border-border rounded-2xl shadow-soft p-6 pb-8 relative min-h-[340px] flex items-center justify-center">
             <div class="flex flex-col items-center gap-4">
         <!-- 头像 -->
         <div class="relative">
@@ -40,7 +48,7 @@
           </div>
 
           <!-- 卡片背面：整面阻止点击冒泡，避免误触翻转；需点击「返回」才翻回正面 -->
-          <div class="flip-card-face flip-card-back bg-white border border-border rounded-2xl shadow-soft p-6 pb-8 relative" @click.stop>
+          <div class="flip-card-face flip-card-back bg-white border border-border rounded-2xl shadow-soft p-6 pt-14 pb-8 relative" @click.stop>
             <div class="flex flex-col gap-4">
               <!-- 钱包地址（含链标识） -->
               <div class="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border border-border rounded-2xl shadow-soft-sm w-full min-w-0">
