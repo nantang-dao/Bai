@@ -15,6 +15,14 @@
       >
         删除
       </button>
+      <button
+        v-if="isAdmin && detail?.participations.length"
+        type="button"
+        class="text-sm text-primary"
+        @click="exportExcel"
+      >
+        导出Excel
+      </button>
     </header>
 
     <div v-if="loading" class="p-8 text-center text-text-placeholder">加载中…</div>
@@ -179,6 +187,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import * as XLSX from 'xlsx'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { buildSemiTransferUrl } from '~/utils/api'
@@ -388,6 +397,39 @@ async function doDelete() {
   } catch (e: any) {
     toast.add({ title: e?.message || '删除失败', color: 'red' })
   }
+}
+
+function exportExcel() {
+  if (!detail.value) return
+  const ev = detail.value.event
+  const occMap = new Map(detail.value.event.occurrences.map((o: any) => [o.id, o]))
+  const isPack = ev.kind === 'pack'
+
+  const rows: { userName: string; occurrences: string; options: string; remark: string; registeredAt: string }[] = []
+  for (const p of detail.value.participations) {
+    const occ = occMap.get(p.occurrenceId)
+    const dateStr = occ
+      ? `${new Date(occ.activityStart).toLocaleDateString('zh-CN')} ${new Date(occ.activityStart).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(occ.activityEnd).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+      : p.occurrenceId
+    rows.push({
+      userName: p.user?.name || '—',
+      occurrences: isPack ? (occ ? `#${occ.sequenceNo} ${shortDate(occ.activityStart)}` : '—') : dateStr,
+      options: p.optionTitle || '—',
+      remark: p.remark || '—',
+      registeredAt: fmt(p.createdAt)
+    })
+  }
+
+  const wsData = [
+    ['姓名', '活动时间', '子选项', '备注', '报名时间'],
+    ...rows.map((r) => [r.userName, r.occurrences, r.options, r.remark, r.registeredAt])
+  ]
+  const ws = XLSX.utils.aoa_to_sheet(wsData)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '报名列表')
+  const evTitle = ev.title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 30)
+  const dateStr = new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')
+  XLSX.writeFile(wb, `${evTitle}_报名列表_${dateStr}.xlsx`)
 }
 
 onMounted(async () => {
