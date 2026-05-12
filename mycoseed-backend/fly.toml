@@ -1,10 +1,10 @@
-# fly.toml app configuration file generated for mycoseed-backend on 2026-02-10T15:00:06Z
+# fly.toml app configuration file generated for bai-backend on 2026-05-12T04:36:32Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'mycoseed-backend'
-primary_region = 'syd'
+app = 'bai-backend'
+primary_region = 'sin'
 
 [build]
 
