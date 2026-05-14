@@ -103,11 +103,16 @@ const handleDevLogin = async (userIndex: number) => {
 
 const handleOAuth2Login = () => {
   const apiUrl = config.public.apiUrl as string
-  const callbackUrl = `${window.location.origin}/api/auth/semi/callback`
-  const loginBase = apiUrl ? `${apiUrl}/api/auth/semi/login` : '/api/auth/semi/login'
-  const loginUrl = new URL(loginBase, window.location.origin)
-  loginUrl.searchParams.set('redirect_uri', callbackUrl)
-  window.location.href = loginUrl.toString()
+  if (!apiUrl) {
+    toast.add({
+      title: '配置错误',
+      description: '后端 API URL 未配置（NUXT_PUBLIC_API_URL）',
+      color: 'red',
+    })
+    return
+  }
+  // OAuth redirect_uri 仅由后端 Fly REDIRECT_URI 与 Semi 登记一致；不在此传 query
+  window.location.href = `${apiUrl}/api/auth/semi/login`
 }
 
 </script>
