@@ -3048,7 +3048,6 @@ async function communityEventsFetch<T>(
 ): Promise<T> {
   const res = await fetch(`${baseUrl}/api/community-events/${communityId}${path}`, {
     ...options,
-    credentials: 'include',
     headers: { ...getAuthHeaders(), ...options.headers }
   })
   const data = await res.json().catch(() => ({}))
