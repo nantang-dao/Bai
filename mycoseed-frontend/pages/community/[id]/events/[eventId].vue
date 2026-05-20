@@ -199,7 +199,6 @@ import PixelButton from '~/components/pixel/PixelButton.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { buildSemiTransferUrl } from '~/utils/api'
 import { useCommunityStore } from '~/stores/community'
-import * as XLSX from 'xlsx'
 
 definePageMeta({ layout: 'default', middleware: 'auth' })
 
@@ -412,8 +411,10 @@ async function cancelOcc(occurrenceId: string) {
   }
 }
 
-function downloadExcel() {
+async function downloadExcel() {
   if (!detail.value) return
+
+  const XLSX = await import('xlsx').then(m => m.default || m)
   
   const users = detail.value.matrixUsers
   const occs = sortedOcc.value
