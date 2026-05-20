@@ -15,6 +15,7 @@ import faqRouter from './routes/faq'
 import notificationsRouter from './routes/notifications'
 import marketplaceRouter from './routes/marketplace'
 import communityEventsRouter from './routes/communityEvents'
+import { getAllowedFrontendOrigins } from './utils/frontendOrigins'
 
 const nodeEnv = process.env.NODE_ENV || 'development'
 
@@ -26,12 +27,7 @@ const PORT = nodeEnv === 'production' ? 8080 : (Number(process.env.PORT) || 3001
 const corsOptions = {
   origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
     // 允许的域名列表
-    const allowedOrigins = [
-      process.env.FRONTEND_URL, // Vercel 部署的前端 URL
-      'http://localhost:3000',   // 本地开发
-      'http://localhost:5173', // VITE默认端口
-      'http://localhost:3003'  
-    ].filter(Boolean) // 过滤掉 undefined
+    const allowedOrigins = getAllowedFrontendOrigins()
     
     // 开发环境允许所有来源，生产环境只允许配置的域名
     if (nodeEnv === 'development' || !origin || allowedOrigins.includes(origin)) {

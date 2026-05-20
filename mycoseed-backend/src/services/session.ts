@@ -93,27 +93,42 @@ export function getSession(req: CookieHeaderSource, sessionSecret: string): Sess
   }
 }
 
-export function getPkceCookie(req: CookieHeaderSource): { state: string; verifier: string } | null {
+export function getPkceCookie(
+  req: CookieHeaderSource
+): { state: string; verifier: string; returnOrigin?: string } | null {
   const raw = getCookieValue(req, 'mycoseed_pkce')
   if (!raw) return null
-  const tilde = raw.indexOf('~')
-  if (tilde === -1) return null
-  const state = raw.slice(0, tilde)
-  const verifier = raw.slice(tilde + 1)
+  const parts = raw.split('~')
+  if (parts.length < 2) return null
+  const state = parts[0]
+  const verifier = parts[1]
   if (!state || !verifier) return null
-  return { state, verifier }
+  let returnOrigin: string | undefined
+  if (parts.length >= 3 && parts[2]) {
+    try {
+      returnOrigin = decodeURIComponent(parts[2])
+    } catch {
+      returnOrigin = undefined
+    }
+  }
+  return { state, verifier, returnOrigin }
 }
 
 export function createPkceCookie(opts: {
   state: string
   verifier: string
+  returnOrigin?: string
   maxAgeSeconds?: number
   secure?: boolean
   sameSite?: 'Lax' | 'Strict' | 'None'
   domain?: string
 }): string {
+  let value = `${opts.state}~${opts.verifier}`
+  if (opts.returnOrigin) {
+    value += `~${encodeURIComponent(opts.returnOrigin)}`
+  }
   const parts = [
-    `mycoseed_pkce=${opts.state}~${opts.verifier}`,
+    `mycoseed_pkce=${value}`,
     'HttpOnly',
     'Path=/',
     `Max-Age=${Math.max(1, opts.maxAgeSeconds ?? 600)}`,

@@ -111,8 +111,9 @@ const handleOAuth2Login = () => {
     })
     return
   }
-  // OAuth redirect_uri 仅由后端 Fly REDIRECT_URI 与 Semi 登记一致；不在此传 query
-  window.location.href = `${apiUrl}/api/auth/semi/login`
+  // redirect_uri 仍由后端 REDIRECT_URI；return_origin 让登录后回到当前 BAI 域名
+  const returnOrigin = encodeURIComponent(window.location.origin)
+  window.location.href = `${apiUrl}/api/auth/semi/login?return_origin=${returnOrigin}`
 }
 
 </script>

@@ -7,6 +7,8 @@ import {DEV_BYPASS_AUTH} from '../config/env'
 import crypto from 'crypto'
 import { promisify } from 'util'
 import { clearPkceCookie, clearSessionCookie, createPkceCookie, createSessionCookie, getPkceCookie } from '../services/session'
+import { getDefaultFrontendOrigin, resolveReturnOrigin } from '../utils/frontendOrigins'
+import { cookieOptsForFrontend } from '../utils/sessionCookieOpts'
 
 // 使用 Node.js 内置的 crypto 进行密码哈希（使用 pbkdf2）
 const pbkdf2Async = promisify(crypto.pbkdf2)
@@ -1091,14 +1093,14 @@ export const semiOauthLoginController = async (req: Request, res: Response) => {
     authz.searchParams.set('code_challenge', codeChallenge)
     authz.searchParams.set('code_challenge_method', 'S256')
 
-    const secure = redirectUri.startsWith('https://')
-    const frontendUrl = process.env.FRONTEND_URL || ''
-    const backendOrigin = new URL(redirectUri).origin
-    const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : backendOrigin
-    const crossSite = backendOrigin !== frontendOrigin
-    const sameSite = (crossSite && secure) ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
-    const domain = process.env.SESSION_DOMAIN
-    res.setHeader('Set-Cookie', createPkceCookie({ state, verifier: codeVerifier, secure, sameSite, domain }))
+    const queryReturnOrigin = (req.query as { return_origin?: string }).return_origin
+    const headerOrigin = req.headers.origin
+    const returnOrigin = resolveReturnOrigin(queryReturnOrigin, headerOrigin)
+    const { secure, sameSite, domain } = cookieOptsForFrontend(redirectUri, returnOrigin)
+    res.setHeader(
+        'Set-Cookie',
+        createPkceCookie({ state, verifier: codeVerifier, returnOrigin, secure, sameSite, domain })
+    )
     return res.redirect(302, authz.toString())
 }
 
@@ -1120,11 +1122,10 @@ export const semiOauthCallbackController = async (req: Request, res: Response) =
     const semiClientSecret = process.env.SEMI_CLIENT_SECRET
     const semiBackendUrl = process.env.SEMI_BACKEND_URL || process.env.SEMI_BACKEND_BASE_URL
     const redirectUri = process.env.REDIRECT_URI
-    const frontendUrl = process.env.FRONTEND_URL
     const sessionSecret = process.env.SESSION_SECRET
 
-    if (!semiClientId || !semiClientSecret || !semiBackendUrl || !redirectUri || !frontendUrl || !sessionSecret) {
-        return res.status(500).send('服务端 OAuth 配置缺失（SEMI_CLIENT_ID/SEMI_CLIENT_SECRET/SEMI_BACKEND_URL 或 SEMI_BACKEND_BASE_URL/REDIRECT_URI/FRONTEND_URL/SESSION_SECRET）')
+    if (!semiClientId || !semiClientSecret || !semiBackendUrl || !redirectUri || !sessionSecret) {
+        return res.status(500).send('服务端 OAuth 配置缺失（SEMI_CLIENT_ID/SEMI_CLIENT_SECRET/SEMI_BACKEND_URL 或 SEMI_BACKEND_BASE_URL/REDIRECT_URI/SESSION_SECRET）')
     }
 
     // PKCE state cookie (mycoseed_pkce) is HttpOnly; validate state below
@@ -1133,12 +1134,8 @@ export const semiOauthCallbackController = async (req: Request, res: Response) =
         return res.status(400).send('state 不匹配或已过期，请重新登录')
     }
 
-    const secure = redirectUri.startsWith('https://')
-    const backendOrigin = new URL(redirectUri).origin
-    const frontendOrigin = new URL(frontendUrl).origin
-    const crossSite = backendOrigin !== frontendOrigin
-    const sameSite = (crossSite && secure) ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
-    const domain = process.env.SESSION_DOMAIN
+    const returnOrigin = resolveReturnOrigin(pk.returnOrigin) || getDefaultFrontendOrigin()
+    const { secure, sameSite, domain, crossSite } = cookieOptsForFrontend(redirectUri, returnOrigin)
 
     // Exchange code -> token
     const tokenRes = await fetch(new URL('/oauth/token', semiBackendUrl).toString(), {
@@ -1229,9 +1226,9 @@ export const semiOauthCallbackController = async (req: Request, res: Response) =
 
     console.log(`[semi/callback] user=${user.id} crossSite=${crossSite} sameSite=${sameSite} secure=${secure} domain=${domain || '(none)'}`)
 
-    // Decide redirect
+    // Decide redirect — same BAI origin the user started login from
     const needsProfileSetup = !user.name && !user.handle
-    const dest = new URL(needsProfileSetup ? '/profile/setup' : '/', frontendUrl).toString()
+    const dest = new URL(needsProfileSetup ? '/profile/setup' : '/', returnOrigin).toString()
     return res.redirect(302, dest)
     } catch (err: unknown) {
         console.error('[semi/callback] fatal', err)
