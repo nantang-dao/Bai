@@ -28,7 +28,7 @@ export const getTransactions = async (req: AuthRequest, res: Response) => {
 // 任务付款查询：按 taskId 精确匹配
 async function handleTaskTransaction(req: AuthRequest, res: Response, taskId: string) {
   // 1. 先查本地缓存
-  const { data: localRecords, error: localError } = await supabase
+  let { data: localRecords, error: localError } = await supabase
     .from('transactions')
     .select('*')
     .eq('task_id', taskId)
@@ -36,7 +36,7 @@ async function handleTaskTransaction(req: AuthRequest, res: Response, taskId: st
 
   if (localError) {
     console.error('[handleTaskTransaction] local query error:', localError)
-    return res.status(500).json({ error: 'Failed to query transactions' })
+    localRecords = []
   }
 
   if (localRecords && localRecords.length > 0) {
@@ -102,7 +102,7 @@ async function handleTaskTransaction(req: AuthRequest, res: Response, taskId: st
 // 活动付款查询：按 eventId 查所有参与者转账
 async function handleEventTransactions(req: AuthRequest, res: Response, eventId: string) {
   // 1. 先查本地缓存
-  const { data: localRecords, error: localError } = await supabase
+  let { data: localRecords, error: localError } = await supabase
     .from('transactions')
     .select('*')
     .eq('event_id', eventId)
@@ -110,7 +110,7 @@ async function handleEventTransactions(req: AuthRequest, res: Response, eventId:
 
   if (localError) {
     console.error('[handleEventTransactions] local query error:', localError)
-    return res.status(500).json({ error: 'Failed to query transactions' })
+    localRecords = []
   }
 
   if (localRecords && localRecords.length > 0) {

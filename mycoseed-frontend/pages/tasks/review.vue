@@ -425,7 +425,6 @@
 
 <script setup lang="ts">
 import { getTaskById, approveTask, rejectTask, getApiBaseUrl, buildSemiTransferUrl, getWalletAddressByUserId, markTransferCompleted } from '~/utils/api'
-import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'

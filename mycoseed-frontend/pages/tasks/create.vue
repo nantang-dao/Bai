@@ -373,7 +373,6 @@ import { useRouter } from 'vue-router'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import { createTask, getApiBaseUrl, getCommunityMembers } from '~/utils/api'
-import { useToast } from '~/composables/useToast'
 import { getCurrentBeijingTime } from '~/utils/time'
 import { useCommunityStore } from '~/stores/community'
 

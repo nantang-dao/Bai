@@ -65,7 +65,6 @@
 </template>
 
 <script setup lang="ts">
-import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
 definePageMeta({
   layout: 'unauth'

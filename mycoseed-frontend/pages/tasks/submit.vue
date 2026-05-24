@@ -254,7 +254,6 @@
 
 <script setup lang="ts">
 import { getTaskById, getApiBaseUrl, submitProof, uploadProofFile, type ProofData } from '~/utils/api'
-import { useToast } from '~/composables/useToast'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import { getTaskRewardSymbol } from '~/utils/display'

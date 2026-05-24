@@ -114,17 +114,25 @@
                             v-if="paymentMap[row.user.id]?.status === 'paid'"
                             class="text-[10px] text-green-600"
                           >
-                            💰已付
+                            💰已付 {{ paymentMap[row.user.id]?.amount }}
                           </span>
                           <span
                             v-else-if="paymentMap[row.user.id]?.status === 'partial'"
                             class="text-[10px] text-orange-500"
                           >
-                            💰不足
+                            💰{{ paymentMap[row.user.id]?.amount }}/{{ row.cells[o.id].price }}
                           </span>
                           <span v-else class="text-[10px] text-orange-500">
-                            💰待付
+                            💰待付 {{ row.cells[o.id].price }}
                           </span>
+                          <button
+                            v-if="row.user.id === userStore.user?.id && paymentMap[row.user.id]?.status !== 'paid'"
+                            type="button"
+                            class="text-[10px] px-1.5 py-0.5 rounded bg-primary text-white mt-0.5"
+                            @click="retryPayment({ userId: row.user.id, optionTitle: row.cells[o.id].optionTitle })"
+                          >
+                            去付款
+                          </button>
                         </template>
                       </div>
                     </template>
@@ -153,20 +161,28 @@
                     v-if="paymentMap[p.userId]?.status === 'paid'"
                     class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700"
                   >
-                    已付款
+                    已付 {{ paymentMap[p.userId]?.amount }} 积分
                   </span>
                   <span
                     v-else-if="paymentMap[p.userId]?.status === 'partial'"
                     class="text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-700"
                   >
-                    付款不足
+                    已付 {{ paymentMap[p.userId]?.amount }} / 预期 {{ getMyExpectedPrice(p) }} 积分
                   </span>
                   <span
                     v-else
                     class="text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-700"
                   >
-                    待付款
+                    待付 {{ getMyExpectedPrice(p) }} 积分
                   </span>
+                  <button
+                    v-if="p.userId === userStore.user?.id && paymentMap[p.userId]?.status !== 'paid'"
+                    type="button"
+                    class="text-xs px-2 py-0.5 rounded bg-primary text-white"
+                    @click="retryPayment(p)"
+                  >
+                    去付款
+                  </button>
                 </template>
               </div>
               <p v-if="p.remark" class="mt-1 text-text-placeholder text-xs">备注：{{ p.remark }}</p>
@@ -376,6 +392,40 @@ function shortDate(iso: string) {
 
 function kindLabel(k: string) {
   return { single: '单一', composite: '复合', pack: '活动包' }[k] || k
+}
+
+function getExpectedPrice(optionTitle: string): number {
+  if (!detail.value?.event?.options || !optionTitle) return 0
+  const opt = detail.value.event.options.find((o: any) => o.title === optionTitle)
+  return opt?.price || 0
+}
+
+function getMyExpectedPrice(p: any): number {
+  return getExpectedPrice(p.optionTitle)
+}
+
+function retryPayment(p: any) {
+  if (!detail.value) return
+  const config = useRuntimeConfig()
+  const semiAppUrl = String(config.public.semiAppUrl || '').trim()
+  if (!semiAppUrl) {
+    toast.add({ title: '未配置 Semi 钱包地址', color: 'orange' })
+    return
+  }
+  const payTo = detail.value.event.paymentAddress
+  if (!payTo) {
+    toast.add({ title: '活动未配置收款地址', color: 'orange' })
+    return
+  }
+  const price = getMyExpectedPrice(p)
+  if (price <= 0) {
+    toast.add({ title: '无法获取付款金额', color: 'orange' })
+    return
+  }
+  const title = detail.value.event.title
+  const memo = `活动：《${title}》`.slice(0, 32)
+  const url = buildSemiTransferUrl(payTo, String(price), { semiAppUrl, memo, pool_uuid: detail.value.event.id })
+  window.open(url, '_blank')
 }
 
 function occLabel(occurrenceId: string) {

@@ -20,7 +20,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useToast } from '~/composables/useToast'
 definePageMeta({
   layout: 'unauth',
   // 移除 ssr: false，确保路由在构建时被正确注册

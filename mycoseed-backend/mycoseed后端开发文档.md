@@ -31,7 +31,7 @@ SMS_ENABLED=ENABLED
 2.2 Supabase相关
 
 ```jsx
-// supabase服务角色秘钥：https://supabase.com/dashboard/project/hljbelljnoreahmyvydp/settings/api-keys 这里看service_role
+// supabase服务角色秘钥：https://supabase.com/dashboard/project/ucjwdikwtfoiuimxpxcg/settings/api-keys 这里看service_role
 SUPABASE_SERVICE_ROLE_KEY
 // supabase项目URL
 SUPABASE_URL=

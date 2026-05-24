@@ -196,7 +196,6 @@ import { useRouter } from 'vue-router'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import { createActivity, type CreateActivityParams } from '~/utils/api'
-import { useToast } from '~/composables/useToast'
 
 definePageMeta({
   layout: 'default'

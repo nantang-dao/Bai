@@ -183,11 +183,14 @@
                     进行中
                   </span>
                   <!-- 转账状态（仅已完成任务） -->
-                  <span v-if="task.status === 'completed' && task.transferredAt" class="font-bold text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded">
-                    已转账
+                  <span v-if="task.status === 'completed' && taskChainMap[task.id]?.length" class="font-bold text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded">
+                    已转账 {{ taskChainMap[task.id][0]?.actual_amount || taskChainMap[task.id][0]?.amount || task.reward }} 积分
+                  </span>
+                  <span v-else-if="task.status === 'completed' && task.transferredAt" class="font-bold text-[10px] text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
+                    已标记转账 {{ task.reward }} 积分
                   </span>
                   <span v-else-if="task.status === 'completed'" class="font-bold text-[10px] text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
-                    待转账
+                    待转账 {{ task.reward }} 积分
                   </span>
                 </div>
                 <div class="text-xs text-gray-500">
@@ -218,9 +221,8 @@ import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '~/stores/user'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
-import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, type Task, type Community } from '~/utils/api'
+import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, getTaskTransactions, type Task, type Community } from '~/utils/api'
 import { getTaskRewardSymbol } from '~/utils/display'
-import { useToast } from '~/composables/useToast'
 import { useApi } from '~/composables/useApi'
 
 definePageMeta({
@@ -308,6 +310,7 @@ const communities = ref<any[]>([])
 const allTasks = ref<Task[]>([])
 const loadingTasks = ref(false)
 const taskRewardSymbols = ref<Record<number, string>>({})
+const taskChainMap = ref<Record<string, any[]>>({})
 const activeFilter = ref('all')
 
 const navigateTo = (path: string) => {
@@ -454,6 +457,21 @@ const loadClaimedTasks = async () => {
       const symbol = await getTaskRewardSymbol(task, allCommunities)
       taskRewardSymbols.value[task.id] = symbol
     }
+
+    // 查询已完成任务的链上交易记录
+    const completedTasks = tasks.filter(t => t.status === 'completed')
+    if (completedTasks.length > 0) {
+      const chainMap: Record<string, any[]> = {}
+      await Promise.all(
+        completedTasks.map(async (t) => {
+          try {
+            const txs = await getTaskTransactions(t.id, baseUrl)
+            if (txs && txs.length > 0) chainMap[t.id] = txs
+          } catch { /* ignore */ }
+        })
+      )
+      taskChainMap.value = chainMap
+    }
   } catch (error) {
     console.error('Failed to load tasks:', error)
   } finally {
@@ -540,12 +558,6 @@ const formatTaskDate = (task: Task): string => {
   return `${action} ${timeStr}`
 }
 
-// 监听 activeTab，当切换到任务tab时刷新任务列表
-watch(() => activeTab.value, (newTab) => {
-  if (newTab === 'HISTORY') {
-    loadClaimedTasks()
-  }
-})
 
 onMounted(async () => {
   // 确保用户信息已加载
@@ -597,10 +609,8 @@ onMounted(async () => {
         },
       ]
       
-      // 如果当前是任务tab，加载任务列表
-      if (activeTab.value === 'HISTORY') {
-        loadClaimedTasks()
-      }
+      // 加载任务列表
+      loadClaimedTasks()
     }
   } catch (error) {
     console.error('Failed to load member data:', error)

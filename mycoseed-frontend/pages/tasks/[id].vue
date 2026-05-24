@@ -537,7 +537,7 @@
                   <span class="font-bold">✓</span> 已转账
                 </p>
                 <p class="text-sm text-text-body">
-                  金额：{{ task.reward }} 积分
+                  金额：{{ chainTransactions[0]?.actual_amount || chainTransactions[0]?.amount || task.reward }} 积分
                 </p>
                 <p class="text-sm text-text-body">
                   转账时间：{{ formatDate(chainTransactions[0].created_at) }}
@@ -563,6 +563,9 @@
               <div v-else class="bg-warning/20 border border-warning shadow-soft-sm p-4">
                 <p class="text-base text-text-title">
                   <span class="font-bold">⏳</span> 待转账
+                </p>
+                <p class="text-sm text-text-body">
+                  预期金额：{{ task.reward }} 积分
                 </p>
               </div>
             </div>
@@ -613,7 +616,6 @@
 
 <script setup lang="ts">
 import { getTaskById, claimTask, getApiBaseUrl, markTransferCompleted, unmarkTransferCompleted, buildSemiTransferUrl, getWalletAddressByUserId, getFinalReward, getTaskTransactions } from '~/utils/api'
-import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
