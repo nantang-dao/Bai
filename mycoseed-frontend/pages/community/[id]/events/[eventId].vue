@@ -109,6 +109,31 @@
                         <div v-if="row.cells[o.id].remark" class="text-[10px] text-orange-500 leading-tight">
                           📝 {{ row.cells[o.id].remark }}
                         </div>
+                        <template v-if="row.cells[o.id].price > 0 && row.user?.id">
+                          <span
+                            v-if="paymentMap[row.user.id]?.status === 'paid'"
+                            class="text-[10px] text-green-600"
+                          >
+                            💰已付 {{ paymentMap[row.user.id]?.amount }}
+                          </span>
+                          <span
+                            v-else-if="paymentMap[row.user.id]?.status === 'partial'"
+                            class="text-[10px] text-orange-500"
+                          >
+                            💰{{ paymentMap[row.user.id]?.amount }}/{{ row.cells[o.id].price }}
+                          </span>
+                          <span v-else class="text-[10px] text-orange-500">
+                            💰待付 {{ row.cells[o.id].price }}
+                          </span>
+                          <button
+                            v-if="row.user.id === userStore.user?.id && paymentMap[row.user.id]?.status !== 'paid'"
+                            type="button"
+                            class="text-[10px] px-1.5 py-0.5 rounded bg-primary text-white mt-0.5"
+                            @click="retryPayment({ userId: row.user.id, optionTitle: row.cells[o.id].optionTitle })"
+                          >
+                            去付款
+                          </button>
+                        </template>
                       </div>
                     </template>
                     <span v-else class="text-text-placeholder">—</span>
@@ -131,9 +156,50 @@
                 <PixelAvatar :src="p.user?.avatar || undefined" :seed="p.user?.name || 'u'" size="sm" />
                 <span class="font-medium">{{ p.user?.name || '用户' }}</span>
                 <span v-if="p.optionTitle" class="text-xs px-1.5 py-0.5 rounded bg-input-bg">{{ p.optionTitle }}</span>
+                <template v-if="detail.event.options?.some((o: any) => o.price > 0)">
+                  <span
+                    v-if="paymentMap[p.userId]?.status === 'paid'"
+                    class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700"
+                  >
+                    已付 {{ paymentMap[p.userId]?.amount }} 积分
+                  </span>
+                  <span
+                    v-else-if="paymentMap[p.userId]?.status === 'partial'"
+                    class="text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-700"
+                  >
+                    已付 {{ paymentMap[p.userId]?.amount }} / 预期 {{ getMyExpectedPrice(p) }} 积分
+                  </span>
+                  <span
+                    v-else
+                    class="text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-700"
+                  >
+                    待付 {{ getMyExpectedPrice(p) }} 积分
+                  </span>
+                  <button
+                    v-if="p.userId === userStore.user?.id && paymentMap[p.userId]?.status !== 'paid'"
+                    type="button"
+                    class="text-xs px-2 py-0.5 rounded bg-primary text-white"
+                    @click="retryPayment(p)"
+                  >
+                    去付款
+                  </button>
+                </template>
               </div>
               <p v-if="p.remark" class="mt-1 text-text-placeholder text-xs">备注：{{ p.remark }}</p>
               <p class="text-xs text-text-placeholder mt-1">{{ fmt(p.createdAt) }}</p>
+              <p
+                v-if="paymentMap[p.userId]?.txHash"
+                class="text-xs text-primary mt-1"
+              >
+                <a
+                  :href="`https://optimistic.etherscan.io/tx/${paymentMap[p.userId].txHash}`"
+                  target="_blank"
+                  rel="noopener"
+                  class="underline"
+                >
+                  查看交易
+                </a>
+              </p>
             </li>
           </ul>
         </section>
@@ -222,6 +288,8 @@ const pickOptOpen = ref(false)
 const selectedOpt = ref('')
 const remarkInput = ref('')
 const regLoading = ref(false)
+const eventTransactions = ref<any[]>([])
+const userWalletCache = ref<Record<string, string>>({}) // userId -> wallet address
 
 const isAdmin = computed(() => {
   const r = communityStore.currentCommunity?.myRole
@@ -273,6 +341,46 @@ const myOccIds = computed(() => {
   return s
 })
 
+// 付款状态映射：userId -> { status, amount, txHash }
+const paymentMap = computed(() => {
+  const map: Record<string, { status: 'paid' | 'partial' | 'pending'; amount: string; txHash: string }> = {}
+  if (!detail.value) return map
+
+  const hasPaidOptions = detail.value.event.options?.some((o: any) => o.price > 0)
+  if (!hasPaidOptions) return map
+
+  // 构建 wallet -> userId 反向映射
+  const walletToUser: Record<string, string> = {}
+  for (const [uid, wallet] of Object.entries(userWalletCache.value)) {
+    if (wallet) walletToUser[wallet.toLowerCase()] = uid
+  }
+
+  // 匹配交易到用户
+  for (const tx of eventTransactions.value) {
+    const sender = tx.sender_address?.toLowerCase()
+    if (!sender) continue
+
+    const userId = walletToUser[sender]
+    if (!userId) continue
+
+    const actualAmount = Number(tx.actual_amount || tx.amount || 0)
+    const expectedAmount = Number(tx.expected_amount || 0)
+
+    let status: 'paid' | 'partial' | 'pending' = 'paid'
+    if (expectedAmount > 0 && actualAmount < expectedAmount) {
+      status = 'partial'
+    }
+
+    map[userId] = {
+      status,
+      amount: String(actualAmount),
+      txHash: tx.tx_hash,
+    }
+  }
+
+  return map
+})
+
 function fmt(iso: string) {
   return new Date(iso).toLocaleString('zh-CN')
 }
@@ -286,6 +394,40 @@ function kindLabel(k: string) {
   return { single: '单一', composite: '复合', pack: '活动包' }[k] || k
 }
 
+function getExpectedPrice(optionTitle: string): number {
+  if (!detail.value?.event?.options || !optionTitle) return 0
+  const opt = detail.value.event.options.find((o: any) => o.title === optionTitle)
+  return opt?.price || 0
+}
+
+function getMyExpectedPrice(p: any): number {
+  return getExpectedPrice(p.optionTitle)
+}
+
+function retryPayment(p: any) {
+  if (!detail.value) return
+  const config = useRuntimeConfig()
+  const semiAppUrl = String(config.public.semiAppUrl || '').trim()
+  if (!semiAppUrl) {
+    toast.add({ title: '未配置 Semi 钱包地址', color: 'orange' })
+    return
+  }
+  const payTo = detail.value.event.paymentAddress
+  if (!payTo) {
+    toast.add({ title: '活动未配置收款地址', color: 'orange' })
+    return
+  }
+  const price = getMyExpectedPrice(p)
+  if (price <= 0) {
+    toast.add({ title: '无法获取付款金额', color: 'orange' })
+    return
+  }
+  const title = detail.value.event.title
+  const memo = `活动：《${title}》`.slice(0, 32)
+  const url = buildSemiTransferUrl(payTo, String(price), { semiAppUrl, memo, pool_uuid: detail.value.event.id })
+  window.open(url, '_blank')
+}
+
 function occLabel(occurrenceId: string) {
   const o = detail.value?.event.occurrences.find((x: any) => x.id === occurrenceId)
   if (!o) return occurrenceId.slice(0, 8)
@@ -296,6 +438,26 @@ async function load() {
   loading.value = true
   try {
     detail.value = await api.getCommunityEvent(communityId.value, eventId.value)
+    // 加载活动付款记录
+    try {
+      eventTransactions.value = await api.getEventTransactions(eventId.value)
+    } catch {
+      eventTransactions.value = []
+    }
+    // 加载参与者钱包地址（用于匹配链上付款）
+    if (detail.value?.participations?.length) {
+      const userIds = [...new Set(detail.value.participations.map((p: any) => p.userId))]
+      const walletMap: Record<string, string> = {}
+      await Promise.all(
+        userIds.map(async (uid: string) => {
+          try {
+            const addr = await api.getWalletAddressByUserId(uid)
+            if (addr) walletMap[uid] = addr
+          } catch { /* ignore */ }
+        })
+      )
+      userWalletCache.value = walletMap
+    }
   } catch (e: any) {
     toast.add({ title: e?.message || '加载失败', color: 'red' })
     detail.value = null
@@ -369,7 +531,7 @@ async function doRegister() {
       const hh = String(now.getHours()).padStart(2, '0')
       const mi = String(now.getMinutes()).padStart(2, '0')
       const memo = `活动：《${title}》${mo}${da}-${hh}:${mi}`.slice(0, 32)
-      const url = buildSemiTransferUrl(payTo, String(price), { semiAppUrl, memo })
+      const url = buildSemiTransferUrl(payTo, String(price), { semiAppUrl, memo, pool_uuid: detail.value.event.id })
       newWindow.location.href = url
     }
     await load()

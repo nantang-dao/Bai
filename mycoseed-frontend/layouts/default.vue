@@ -76,7 +76,8 @@
     <footer class="h-14 w-full bg-muted border-t border-border mt-auto hidden md:flex items-center justify-center">
       <span class="text-sm text-text-body">© 2024 MycoSeed</span>
     </footer>
-    
+
+    <UNotifications />
   </div>
 </template>
 

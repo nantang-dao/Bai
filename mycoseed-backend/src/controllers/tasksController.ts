@@ -521,7 +521,7 @@ const getTaskGroupFromDb = async (taskInfoId: string) => {
     // 获取所有关联的任务行（只选择存在的字段，排除已删除的字段）
     const { data: tasksData, error: tasksError } = await supabase
       .from('tasks')
-      .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+      .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at')
       .eq('task_info_id', taskInfoId)
       .order('participant_index', { ascending: true })
   
@@ -632,7 +632,7 @@ export const getAllTasks = async (req: Request, res: Response) => {
         }
         const { data, error } = await supabase
           .from('tasks')
-          .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+          .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at')
           .in('task_info_id', ids)
           .order('created_at', { ascending: false })
         if (error) throw error
@@ -640,7 +640,7 @@ export const getAllTasks = async (req: Request, res: Response) => {
       } else {
         const { data, error } = await supabase
           .from('tasks')
-          .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+          .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at')
           .order('created_at', { ascending: false })
         if (error) throw error
         tasksData = data || []
@@ -1200,7 +1200,7 @@ export const createTask = async (req: AuthRequest, res: Response) => {
       const { data: createdTasks, error: tasksError } = await supabase
         .from('tasks')
         .insert(taskRows)
-        .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, created_at, updated_at')
+        .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at')
   
       if (tasksError) {
         console.error('[CREATE TASK] Insert tasks error:', tasksError)

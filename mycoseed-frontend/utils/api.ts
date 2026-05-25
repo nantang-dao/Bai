@@ -796,6 +796,20 @@ export const getMyTasks = async (baseUrl: string): Promise<Task[]> => {
   }
 }
 
+// 查询任务的链上转账记录
+export const getTaskTransactions = async (taskId: string, baseUrl: string) => {
+  const response = await fetch(`${baseUrl}/api/transactions?task_id=${taskId}`)
+  if (!response.ok) throw new Error('Failed to fetch transactions')
+  return response.json()
+}
+
+// 查询活动的链上付款记录
+export const getEventTransactions = async (eventId: string, baseUrl: string) => {
+  const response = await fetch(`${baseUrl}/api/transactions?event_id=${eventId}`)
+  if (!response.ok) throw new Error('Failed to fetch event transactions')
+  return response.json()
+}
+
 /**
  * 提交任务完成凭证
  * @param taskId 任务 ID (UUID string)

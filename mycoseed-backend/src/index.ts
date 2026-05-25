@@ -15,6 +15,8 @@ import faqRouter from './routes/faq'
 import notificationsRouter from './routes/notifications'
 import marketplaceRouter from './routes/marketplace'
 import communityEventsRouter from './routes/communityEvents'
+import { authenticate } from './middleware/auth'
+import { getTransactions } from './controllers/transactionsController'
 import { getAllowedFrontendOrigins } from './utils/frontendOrigins'
 
 const nodeEnv = process.env.NODE_ENV || 'development'
@@ -79,6 +81,7 @@ app.use('/api/faq', faqRouter)            // FAQ（帮助与反馈）
 app.use('/api/notifications', notificationsRouter) // 站内消息通知 & 设置
 app.use('/api/marketplace', marketplaceRouter) // 社区商城
 app.use('/api/community-events', communityEventsRouter) // 社区活动
+app.get('/api/transactions', authenticate, getTransactions) // 链上转账记录查询
 
 
 // 启动服务器（监听 0.0.0.0 以支持 Fly.io 等云环境）

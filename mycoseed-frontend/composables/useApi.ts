@@ -128,6 +128,8 @@ export const useApi = () => {
     listCommunityEventsCalendar: (communityId: string, params: { from: string; to: string; tagId?: string; mine?: boolean }) =>
       api.listCommunityEventsCalendar(communityId, params, apiBaseUrl),
     getCommunityEvent: (communityId: string, eventId: string) => api.getCommunityEvent(communityId, eventId, apiBaseUrl),
+    getEventTransactions: (eventId: string) => api.getEventTransactions(eventId, apiBaseUrl),
+    getWalletAddressByUserId: (userId: string) => api.getWalletAddressByUserId(userId, apiBaseUrl),
     createCommunityEvent: (communityId: string, body: Record<string, unknown>) =>
       api.createCommunityEvent(communityId, body, apiBaseUrl),
     deleteCommunityEvent: (communityId: string, eventId: string) => api.deleteCommunityEvent(communityId, eventId, apiBaseUrl),
