@@ -1,4 +1,29 @@
-import { defineEventHandler, getRequestHeaders, readRawBody, sendStream, getHeader, setResponseStatus, sendRedirect } from 'h3'
+import {
+    defineEventHandler,
+    getRequestHeaders,
+    readRawBody,
+    sendStream,
+    getHeader,
+    setResponseStatus,
+    sendRedirect,
+    appendResponseHeader,
+    setResponseHeaders,
+    type H3Event,
+} from 'h3'
+
+function getUpstreamSetCookies(headers: Headers): string[] {
+    if (typeof headers.getSetCookie === 'function') {
+        return headers.getSetCookie()
+    }
+    const combined = headers.get('set-cookie')
+    return combined ? [combined] : []
+}
+
+function forwardSetCookies(event: H3Event, cookies: string[]) {
+    for (const cookie of cookies) {
+        appendResponseHeader(event, 'set-cookie', cookie)
+    }
+}
 
 export default defineEventHandler(async (event) => {
     const config = useRuntimeConfig()
@@ -27,7 +52,10 @@ export default defineEventHandler(async (event) => {
         redirect: 'manual',
     })
 
+    const setCookies = getUpstreamSetCookies(res.headers)
+
     if (res.status >= 300 && res.status < 400) {
+        forwardSetCookies(event, setCookies)
         const location = res.headers.get('location')
         if (location) {
             let rewritten = location
@@ -55,10 +83,11 @@ export default defineEventHandler(async (event) => {
     const resHeaders: Record<string, string> = {}
     res.headers.forEach((value, key) => {
         const lower = key.toLowerCase()
-        if (lower === 'transfer-encoding' || lower === 'location') return
+        if (lower === 'transfer-encoding' || lower === 'location' || lower === 'set-cookie') return
         resHeaders[key] = value
     })
 
+    forwardSetCookies(event, setCookies)
     setResponseHeaders(event, resHeaders)
     setResponseStatus(event, res.status)
 
