@@ -410,32 +410,30 @@ const getAuthHeaders = (): Record<string, string> => {
 }
 
 /**
- * 获取 API 基础 URL
- * 优先从环境变量读取，否则使用默认值
+ * 浏览器侧 API 基址：未配置 NUXT_PUBLIC_API_URL 时返回 ''，请求走同源 /api/*（经 Nuxt 反代）。
  */
 export const getApiBaseUrl = (): string => {
   if (typeof window !== 'undefined') {
-    const env = (import.meta as any).env
-    if (env?.NUXT_PUBLIC_API_URL) {
-      return env.NUXT_PUBLIC_API_URL
-    }
-  } else {
-    const processEnv = (globalThis as any).process?.env || {}
-    if (processEnv.NUXT_PUBLIC_API_URL) {
-      return processEnv.NUXT_PUBLIC_API_URL
-    }
-  }
-  
-  if (typeof window !== 'undefined') {
     try {
       const nuxtApp = (window as any).__NUXT__
-      if (nuxtApp?.config?.public?.apiUrl) {
-        return nuxtApp.config.public.apiUrl
+      const fromConfig = nuxtApp?.config?.public?.apiUrl as string | undefined
+      if (fromConfig?.trim()) {
+        return fromConfig.replace(/\/+$/, '')
       }
-    } catch (e) {
+    } catch {
+      // ignore
     }
+    const env = (import.meta as any).env
+    if (env?.NUXT_PUBLIC_API_URL?.trim()) {
+      return String(env.NUXT_PUBLIC_API_URL).replace(/\/+$/, '')
+    }
+    return ''
   }
-  
+
+  const processEnv = (globalThis as any).process?.env || {}
+  if (processEnv.NUXT_PUBLIC_API_URL?.trim()) {
+    return String(processEnv.NUXT_PUBLIC_API_URL).replace(/\/+$/, '')
+  }
   return ''
 }
 

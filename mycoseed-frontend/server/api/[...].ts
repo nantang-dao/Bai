@@ -1,11 +1,12 @@
 import { defineEventHandler, getRequestHeaders, readRawBody, sendStream, getHeader, setResponseStatus, sendRedirect } from 'h3'
 
-const BACKEND_URL = process.env.NUXT_PUBLIC_API_URL || 'http://localhost:3001'
-const FRONTEND_URL = process.env.NUXT_PUBLIC_APP_URL || ''
-
 export default defineEventHandler(async (event) => {
+    const config = useRuntimeConfig()
+    const backendUrl = String(config.backendUrl || 'http://localhost:3001').replace(/\/+$/, '')
+    const frontendUrl = String(config.public.appUrl || '').replace(/\/+$/, '')
+
     const path = event.path
-    const targetUrl = `${BACKEND_URL}${path}`
+    const targetUrl = `${backendUrl}${path}`
 
     const headers: Record<string, string> = {}
     const incoming = getRequestHeaders(event)
@@ -34,8 +35,8 @@ export default defineEventHandler(async (event) => {
                 const locUrl = new URL(location)
                 const reqHost = getHeader(event, 'host') || ''
                 const reqProto = (getHeader(event, 'x-forwarded-proto') || 'http')
-                const backendOrigin = new URL(BACKEND_URL).origin
-                const frontendOrigin = FRONTEND_URL ? new URL(FRONTEND_URL).origin : ''
+                const backendOrigin = new URL(backendUrl).origin
+                const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : ''
 
                 if (locUrl.origin === backendOrigin) {
                     locUrl.protocol = reqProto

@@ -17,8 +17,13 @@ export default defineNuxtConfig({
   // #endregion
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
+    // Upstream Fly/Rails URL for server/api/[...] proxy only (not exposed to client bundle)
+    backendUrl:
+      env.NUXT_BACKEND_URL ||
+      env.NUXT_PUBLIC_API_URL ||
+      'http://localhost:3001',
     public: {
-      // Mycoseed Backend base URL (auth/session + business APIs)
+      // Optional override; leave empty in production for same-origin /api via Vercel proxy
       apiUrl: env.NUXT_PUBLIC_API_URL || '',
 
       // Frontend base URL (optional; used for absolute links if needed)

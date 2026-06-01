@@ -67,6 +67,7 @@
 <script setup lang="ts">
 import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
+import { apiUrl, resolvePublicApiBase } from '~/utils/publicApiBase'
 definePageMeta({
   layout: 'unauth'
 })
@@ -79,8 +80,9 @@ const { devLogin } = useApi()
 
 const isDev = computed(() => {
   if (process.server) return false
+  if (import.meta.dev) return true
   const url = config.public.apiUrl || ''
-  return !url || url.includes('localhost') || url.includes('127.0.0.1')
+  return url.includes('localhost') || url.includes('127.0.0.1')
 })
 
 const devLoggingIn = ref(false)
@@ -102,18 +104,13 @@ const handleDevLogin = async (userIndex: number) => {
 }
 
 const handleOAuth2Login = () => {
-  const apiUrl = config.public.apiUrl as string
-  if (!apiUrl) {
-    toast.add({
-      title: '配置错误',
-      description: '后端 API URL 未配置（NUXT_PUBLIC_API_URL）',
-      color: 'red',
-    })
-    return
-  }
-  // redirect_uri 仍由后端 REDIRECT_URI；return_origin 让登录后回到当前 BAI 域名
+  const base = resolvePublicApiBase(config.public.apiUrl as string)
+  // redirect_uri 由 Fly REDIRECT_URI；return_origin 让登录后回到当前 BAI 域名
   const returnOrigin = encodeURIComponent(window.location.origin)
-  window.location.href = `${apiUrl}/api/auth/semi/login?return_origin=${returnOrigin}`
+  window.location.href = apiUrl(
+    `/api/auth/semi/login?return_origin=${returnOrigin}`,
+    base
+  )
 }
 
 </script>
