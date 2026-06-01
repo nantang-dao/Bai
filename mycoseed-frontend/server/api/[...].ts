@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const body = event.method !== 'GET' && event.method !== 'HEAD'
-        ? await readRawBody(event)
+        ? await readRawBody(event, false)
         : undefined
 
     const res = await fetch(targetUrl, {

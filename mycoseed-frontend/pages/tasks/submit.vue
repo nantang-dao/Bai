@@ -650,6 +650,12 @@ const submitForm = async () => {
         }))
       } catch (e) {
         console.error('文件上传失败:', e)
+        toast.add({
+          title: '文件上传失败',
+          description: '请检查网络后重试，或联系管理员',
+          color: 'red'
+        })
+        return
       }
     }
     
