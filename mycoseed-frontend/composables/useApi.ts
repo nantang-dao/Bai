@@ -20,6 +20,7 @@ export const useApi = () => {
     signIn: (identifier: string, code: string) => api.signIn(identifier, code, apiBaseUrl),
     signInWithEmail: (email: string, code: string, userType?: 'member' | 'community') => 
       api.signInWithEmail(email, code, apiBaseUrl, userType),
+    devLogin: (userIndex: number) => api.devLogin(userIndex, apiBaseUrl),  // [DEV_BYPASS]
     getMe: () => api.getMe(apiBaseUrl),
     
     getActivityFeed: () => api.getActivityFeed(),
@@ -85,13 +86,61 @@ export const useApi = () => {
     getNotificationSettings: () => api.getNotificationSettings(apiBaseUrl),
     updateNotificationSettings: (patch: Partial<Omit<api.NotificationSettings, 'user_id'>>) =>
       api.updateNotificationSettings(patch, apiBaseUrl),
+
+    // 社区商城
+    uploadMarketplaceImages: (params: Omit<Parameters<typeof api.uploadMarketplaceImages>[0], 'baseUrl'>) =>
+      api.uploadMarketplaceImages({ ...params, baseUrl: apiBaseUrl }),
+    getMarketplaceTags: (communityId: string) => api.getMarketplaceTags(communityId, apiBaseUrl),
+    createMarketplaceTag: (communityId: string, body: { name: string; colorHex?: string }) =>
+      api.createMarketplaceTag(communityId, body, apiBaseUrl),
+    updateMarketplaceTag: (communityId: string, tagId: string, body: { name?: string; colorHex?: string }) =>
+      api.updateMarketplaceTag(communityId, tagId, body, apiBaseUrl),
+    deleteMarketplaceTag: (communityId: string, tagId: string) => api.deleteMarketplaceTag(communityId, tagId, apiBaseUrl),
+    listMarketplaceListings: (communityId: string, params?: { q?: string; tagId?: string; limit?: number; offset?: number }) =>
+      api.listMarketplaceListings(communityId, params || {}, apiBaseUrl),
+    getMarketplaceListing: (communityId: string, listingId: string) =>
+      api.getMarketplaceListing(communityId, listingId, apiBaseUrl),
+    createMarketplaceListing: (communityId: string, body: Parameters<typeof api.createMarketplaceListing>[1]) =>
+      api.createMarketplaceListing(communityId, body, apiBaseUrl),
+    updateMarketplaceListing: (communityId: string, listingId: string, body: Parameters<typeof api.updateMarketplaceListing>[2]) =>
+      api.updateMarketplaceListing(communityId, listingId, body, apiBaseUrl),
+    withdrawMarketplaceListing: (communityId: string, listingId: string) =>
+      api.withdrawMarketplaceListing(communityId, listingId, apiBaseUrl),
+    lockMarketplaceListing: (communityId: string, listingId: string) =>
+      api.lockMarketplaceListing(communityId, listingId, apiBaseUrl),
+    confirmMarketplaceSold: (communityId: string, listingId: string) =>
+      api.confirmMarketplaceSold(communityId, listingId, apiBaseUrl),
+    cancelMarketplaceLock: (communityId: string, listingId: string) =>
+      api.cancelMarketplaceLock(communityId, listingId, apiBaseUrl),
+    submitMarketplaceReview: (communityId: string, listingId: string, body: { rating: number; content?: string }) =>
+      api.submitMarketplaceReview(communityId, listingId, body, apiBaseUrl),
+    listMarketplaceCommunityReviews: (communityId: string, params?: { limit?: number; offset?: number }) =>
+      api.listMarketplaceCommunityReviews(communityId, params || {}, apiBaseUrl),
+
+    listCalendarTags: (communityId: string) => api.listCalendarTags(communityId, apiBaseUrl),
+    createCalendarTag: (communityId: string, body: { name: string; colorHex?: string }) =>
+      api.createCalendarTag(communityId, body, apiBaseUrl),
+    updateCalendarTag: (communityId: string, tagId: string, body: { name?: string; colorHex?: string }) =>
+      api.updateCalendarTag(communityId, tagId, body, apiBaseUrl),
+    deleteCalendarTag: (communityId: string, tagId: string) => api.deleteCalendarTag(communityId, tagId, apiBaseUrl),
+    listCommunityEvents: (communityId: string, params?: { tagId?: string; mine?: boolean; limit?: number; offset?: number }) =>
+      api.listCommunityEvents(communityId, params || {}, apiBaseUrl),
+    listCommunityEventsCalendar: (communityId: string, params: { from: string; to: string; tagId?: string; mine?: boolean }) =>
+      api.listCommunityEventsCalendar(communityId, params, apiBaseUrl),
+    getCommunityEvent: (communityId: string, eventId: string) => api.getCommunityEvent(communityId, eventId, apiBaseUrl),
+    getEventTransactions: (eventId: string) => api.getEventTransactions(eventId, apiBaseUrl),
+    getWalletAddressByUserId: (userId: string) => api.getWalletAddressByUserId(userId, apiBaseUrl),
+    createCommunityEvent: (communityId: string, body: Record<string, unknown>) =>
+      api.createCommunityEvent(communityId, body, apiBaseUrl),
+    deleteCommunityEvent: (communityId: string, eventId: string) => api.deleteCommunityEvent(communityId, eventId, apiBaseUrl),
+    pinCommunityEvent: (communityId: string, eventId: string, isPinned: boolean) =>
+      api.pinCommunityEvent(communityId, eventId, isPinned, apiBaseUrl),
+    registerCommunityEvent: (communityId: string, eventId: string, body: { occurrenceId: string; optionId?: string; remark?: string }) =>
+      api.registerCommunityEvent(communityId, eventId, body, apiBaseUrl),
+    cancelCommunityEventRegistration: (communityId: string, eventId: string, occurrenceId: string) =>
+      api.cancelCommunityEventRegistration(communityId, eventId, occurrenceId, apiBaseUrl),
     
     // 其他工具函数（不需要 API URL）
-    AUTH_TOKEN_KEY: api.AUTH_TOKEN_KEY,
-    getCookie: api.getCookie,
-    setCookie: api.setCookie,
-    deleteCookie: api.deleteCookie,
-    clearAuthToken: api.clearAuthToken,
     setCurrentIdentifier: api.setCurrentIdentifier,
     getFinalReward: api.getFinalReward,
     updateUserProfile: (userId: string | number, profile: UserProfile) => api.updateUserProfile(userId, profile, apiBaseUrl),

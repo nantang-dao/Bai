@@ -3,8 +3,12 @@ import {AuthRequest} from '../middleware/auth'
 import {supabase} from '../services/supabase'
 import {sendSMS} from '../services/sms'
 import {User,SignInRequest} from '../types/auth'
+import {DEV_BYPASS_AUTH} from '../config/env'
 import crypto from 'crypto'
 import { promisify } from 'util'
+import { clearPkceCookie, clearSessionCookie, createPkceCookie, createSessionCookie, getPkceCookie } from '../services/session'
+import { getDefaultFrontendOrigin, resolveReturnOrigin } from '../utils/frontendOrigins'
+import { cookieOptsForFrontend } from '../utils/sessionCookieOpts'
 
 // 使用 Node.js 内置的 crypto 进行密码哈希（使用 pbkdf2）
 const pbkdf2Async = promisify(crypto.pbkdf2)
@@ -39,6 +43,16 @@ const generateToken = ():string=>
 {
     return crypto.randomBytes(16).toString('hex')
 }
+
+// Base64url helpers for PKCE + state
+const base64url = (buf: Buffer): string =>
+  buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+
+const sha256Base64url = (input: string): string =>
+  base64url(crypto.createHash('sha256').update(input).digest())
+
+const randomBase64url = (bytes: number): string =>
+  base64url(crypto.randomBytes(bytes))
 
 // 生成6位验证码
 const generateCode = ():string =>
@@ -772,6 +786,123 @@ export interface SyncFromSemiRequest {
     can_send_badge?: boolean
 }
 
+/**
+ * 与 POST /sync-from-semi、OAuth 回调共用：semi_id → phone → email → handle 多级查找后插入或更新。
+ * handle 一步用于 OAuth：已有同名 handle 但 semi_id 尚未写入时合并到同一行，避免违反 users_handle_key。
+ */
+export async function resolveUserFromSemiPayload(semiUserData: SyncFromSemiRequest): Promise<any> {
+    if (!semiUserData.id) {
+        throw new Error('Semi user ID is required')
+    }
+
+    let user: any = null
+    let userError: any = null
+
+    if (semiUserData.id) {
+        const result = await supabase
+            .from('users')
+            .select('*')
+            .eq('semi_id', semiUserData.id)
+            .maybeSingle()
+        user = result.data
+        userError = result.error
+        if (userError) throw userError
+    }
+
+    if (!user && semiUserData.phone && semiUserData.phone.trim() !== '') {
+        const result = await supabase
+            .from('users')
+            .select('*')
+            .eq('phone', semiUserData.phone.trim())
+            .maybeSingle()
+        user = result.data
+        userError = result.error
+        if (userError) throw userError
+    }
+
+    if (!user && semiUserData.email && semiUserData.email.trim() !== '') {
+        const result = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', semiUserData.email.trim())
+            .maybeSingle()
+        user = result.data
+        userError = result.error
+        if (userError) throw userError
+    }
+
+    if (!user && semiUserData.handle && semiUserData.handle.trim() !== '') {
+        const result = await supabase
+            .from('users')
+            .select('*')
+            .eq('handle', semiUserData.handle.trim())
+            .maybeSingle()
+        user = result.data
+        userError = result.error
+        if (userError) throw userError
+    }
+
+    if (!user) {
+        if (userError) throw userError
+
+        const { data: newUser, error: createError } = await supabase
+            .from('users')
+            .insert({
+                semi_id: semiUserData.id,
+                phone: semiUserData.phone?.trim() || null,
+                email: semiUserData.email?.trim() || null,
+                handle: semiUserData.handle || null,
+                name: semiUserData.handle || null,
+                image_url: semiUserData.image_url || null,
+                evm_chain_address: semiUserData.evm_chain_address || null,
+                evm_chain_active_key: semiUserData.evm_chain_active_key || null,
+                encrypted_keys: semiUserData.encrypted_keys || null,
+                phone_verified: !!semiUserData.phone,
+            })
+            .select()
+            .single()
+
+        if (createError) throw createError
+        user = newUser
+    } else {
+        const updateData: any = {}
+
+        if (semiUserData.id && !user.semi_id) {
+            updateData.semi_id = semiUserData.id
+        }
+
+        if (semiUserData.email?.trim()) updateData.email = semiUserData.email.trim()
+        if (semiUserData.handle) {
+            if (!user.name) {
+                updateData.name = semiUserData.handle
+            }
+            updateData.handle = semiUserData.handle
+        }
+        if (semiUserData.image_url) updateData.image_url = semiUserData.image_url
+        if (semiUserData.evm_chain_address) updateData.evm_chain_address = semiUserData.evm_chain_address
+        if (semiUserData.evm_chain_active_key) updateData.evm_chain_active_key = semiUserData.evm_chain_active_key
+        if (semiUserData.encrypted_keys) updateData.encrypted_keys = semiUserData.encrypted_keys
+        if (semiUserData.phone?.trim()) {
+            updateData.phone = semiUserData.phone.trim()
+            updateData.phone_verified = true
+        }
+
+        if (Object.keys(updateData).length > 0) {
+            const { data: updatedUser, error: updateError } = await supabase
+                .from('users')
+                .update(updateData)
+                .eq('id', user.id)
+                .select()
+                .single()
+
+            if (updateError) throw updateError
+            user = updatedUser
+        }
+    }
+
+    return user
+}
+
 export const syncFromSemiController = async (req: Request, res: Response) => {
     try {
         const semiUserData: SyncFromSemiRequest = req.body 
@@ -781,122 +912,7 @@ export const syncFromSemiController = async (req: Request, res: Response) => {
             return res.status(400).json({ result: 'error', message: 'Semi user ID is required'})
         }
 
-        // 用户查找优先级：semi_id > phone > email
-        let user = null
-        let userError = null
-
-        // 1. 优先用 semi_id 查找（最可靠）
-        if (semiUserData.id) {
-            const result = await supabase
-                .from('users')
-                .select('*')
-                .eq('semi_id', semiUserData.id)
-                .maybeSingle()  // 使用 maybeSingle 避免空结果报错
-            user = result.data
-            userError = result.error
-            // 如果有真正的错误（不是 maybeSingle 的 null），立即抛出
-            if (userError) {
-                throw userError
-            }
-        }
-
-        // 2. 如果没有找到，用 phone 查找
-        if (!user && semiUserData.phone && semiUserData.phone.trim() !== '') {
-            const result = await supabase
-                .from('users')
-                .select('*')
-                .eq('phone', semiUserData.phone.trim())
-                .maybeSingle()
-            user = result.data
-            userError = result.error
-            // 如果有真正的错误，立即抛出
-            if (userError) {
-                throw userError
-            }
-        }
-
-        // 3. 如果还没找到，用 email 查找
-        if (!user && semiUserData.email && semiUserData.email.trim() !== '') {
-            const result = await supabase
-                .from('users')
-                .select('*')
-                .eq('email', semiUserData.email.trim())
-                .maybeSingle()
-            user = result.data
-            userError = result.error
-            // 如果有真正的错误，立即抛出
-            if (userError) {
-                throw userError
-            }
-        }
-
-        // 如果用户不存在，创建新用户
-        if (!user) {
-            // 如果有真正的错误（不是 maybeSingle 的 null），抛出错误
-            if (userError) {
-                throw userError
-            }
-            
-            // 没有找到用户且没有错误，创建新用户
-            const { data: newUser, error: createError } = await supabase
-                .from('users')
-                .insert({
-                    semi_id: semiUserData.id,  // 保存 Semi ID
-                    phone: semiUserData.phone?.trim() || null,
-                    email: semiUserData.email?.trim() || null,
-                    handle: semiUserData.handle || null,
-                    name: semiUserData.handle || null,  // 将 handle 映射到 name
-                    image_url: semiUserData.image_url || null,
-                    evm_chain_address: semiUserData.evm_chain_address || null,
-                    evm_chain_active_key: semiUserData.evm_chain_active_key || null,
-                    encrypted_keys: semiUserData.encrypted_keys || null,
-                    phone_verified: !!semiUserData.phone,
-                })
-                .select()
-                .single()
-
-            if (createError) throw createError
-            user = newUser
-        } else if (user) {
-            // 用户已存在，更新 semi 的信息（保留业务数据 name, bio, avatar)
-            const updateData: any = {}
-
-            // 始终更新 semi_id（如果之前没有）
-            if (semiUserData.id && !user.semi_id) {
-                updateData.semi_id = semiUserData.id
-            }
-
-            // 更新其他字段
-            if (semiUserData.email?.trim()) updateData.email = semiUserData.email.trim()
-            if (semiUserData.handle) {
-                // 如果用户还没有 name，用 handle 填充
-                if (!user.name) {
-                    updateData.name = semiUserData.handle
-                }
-                updateData.handle = semiUserData.handle
-            }
-            if (semiUserData.image_url) updateData.image_url = semiUserData.image_url
-            if (semiUserData.evm_chain_address) updateData.evm_chain_address = semiUserData.evm_chain_address
-            if (semiUserData.evm_chain_active_key) updateData.evm_chain_active_key = semiUserData.evm_chain_active_key
-            if (semiUserData.encrypted_keys) updateData.encrypted_keys = semiUserData.encrypted_keys
-            if (semiUserData.phone?.trim()) {
-                updateData.phone = semiUserData.phone.trim()
-                updateData.phone_verified = true
-            }
-
-            // 只有有更新字段时才执行更新
-            if (Object.keys(updateData).length > 0) {
-                const { data: updatedUser, error: updateError} = await supabase
-                    .from('users')
-                    .update(updateData)
-                    .eq('id', user.id)
-                    .select()
-                    .single()
-
-                if (updateError) throw updateError
-                user = updatedUser
-            }
-        }
+        const user = await resolveUserFromSemiPayload(semiUserData)
         
         // 生成 mycoseed 的 auth_token
         const token = generateToken()
@@ -923,4 +939,318 @@ export const syncFromSemiController = async (req: Request, res: Response) => {
         console.error('Sync from Semi error:', error)
         res.status(500).json({ result: 'error', message: error.message || 'Failed to sync user from Semi'})
     }
+}
+
+// ==================== 开发者免验登录 ====================
+// [DEV_BYPASS] 仅在 DEV_BYPASS_AUTH=true 且 NODE_ENV !== 'production' 时可用
+// 删除提示：搜索 [DEV_BYPASS] 标记可定位所有绕过代码
+
+const DEV_USERS = [
+    {
+        phone: '18800000001',
+        name: '开发者A（发包方）',
+        evm_chain_address: '0xDevA00000000000000000000000000000000001',
+        semi_id: 'DEV_SEMI_ID_A',
+    },
+    {
+        phone: '18800000002',
+        name: '开发者B（接包方）',
+        evm_chain_address: '0xDevB00000000000000000000000000000000002',
+        semi_id: 'DEV_SEMI_ID_B',
+    },
+] as const
+
+export const devLoginController = async (req: Request, res: Response) => {
+    try {
+        if (!DEV_BYPASS_AUTH) {
+            return res.status(403).json({ result: 'error', message: '开发者免验登录未启用' })
+        }
+
+        const { userIndex } = req.body as { userIndex?: number }
+        const idx = typeof userIndex === 'number' ? userIndex : 0
+        if (idx < 0 || idx >= DEV_USERS.length) {
+            return res.status(400).json({ result: 'error', message: `userIndex 须为 0-${DEV_USERS.length - 1}` })
+        }
+
+        const devUser = DEV_USERS[idx]
+
+        let { data: user, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('phone', devUser.phone)
+            .single()
+
+        if (userError && userError.code === 'PGRST116') {
+            const { data: newUser, error: createError } = await supabase
+                .from('users')
+                .insert({
+                    phone: devUser.phone,
+                    name: devUser.name,
+                    phone_verified: true,
+                    evm_chain_address: devUser.evm_chain_address,
+                    semi_id: devUser.semi_id,
+                })
+                .select()
+                .single()
+
+            if (createError) throw createError
+            user = newUser
+        } else if (userError) {
+            throw userError
+        } else {
+            const updateData: Record<string, any> = {}
+            if (user.name !== devUser.name) updateData.name = devUser.name
+            if (!user.evm_chain_address) updateData.evm_chain_address = devUser.evm_chain_address
+            if (!user.semi_id) updateData.semi_id = devUser.semi_id
+            if (!user.phone_verified) updateData.phone_verified = true
+            if (Object.keys(updateData).length > 0) {
+                const { data: updated, error: updateError } = await supabase
+                    .from('users')
+                    .update(updateData)
+                    .eq('id', user.id)
+                    .select()
+                    .single()
+                if (updateError) throw updateError
+                user = updated
+            }
+        }
+
+        const token = generateToken()
+        const { error: tokenError } = await supabase
+            .from('auth_tokens')
+            .insert({ token, user_id: user.id, disabled: false })
+        if (tokenError) throw tokenError
+
+        const userResponse: any = { ...user, avatar: user.avatar || user.image_url }
+        delete userResponse.image_url
+        delete userResponse.password_hash
+
+        const sessionSecret = process.env.SESSION_SECRET
+        if (sessionSecret) {
+            const redirectUri = process.env.REDIRECT_URI || ''
+            const frontendUrl = process.env.FRONTEND_URL || ''
+            const secure = redirectUri.startsWith('https://')
+            const backendOrigin = redirectUri ? new URL(redirectUri).origin : ''
+            const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : ''
+            const crossSite = !!(backendOrigin && frontendOrigin && backendOrigin !== frontendOrigin)
+            const sameSite = (crossSite && secure) ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
+            const domain = process.env.SESSION_DOMAIN
+            const sessionCookie = createSessionCookie({
+                userId: user.id,
+                sessionSecret,
+                secure,
+                sameSite,
+                domain,
+                maxAgeSeconds: Number(process.env.SESSION_MAX_AGE_SECONDS || String(60 * 60 * 24 * 30)),
+            })
+            res.setHeader('Set-Cookie', sessionCookie)
+        }
+
+        console.log(`[DEV_BYPASS] 开发者登录: ${devUser.name} (${devUser.phone})`)
+        res.json({ result: 'ok', auth_token: token, user: userResponse, address_type: 'phone' })
+    } catch (error: any) {
+        console.error('Dev login error:', error)
+        res.status(500).json({ result: 'error', message: error.message || '开发者登录失败' })
+    }
+}
+
+/**
+ * Semi OAuth2 Authorization Code + PKCE (Hola-aligned)
+ * GET /api/auth/semi/login
+ */
+export const semiOauthLoginController = async (req: Request, res: Response) => {
+    const semiClientId = process.env.SEMI_CLIENT_ID
+    const semiFrontendUrl = process.env.SEMI_FRONTEND_URL
+    const envRedirectUri = process.env.REDIRECT_URI
+    const queryRedirectUri = (req.query as any)?.redirect_uri as string | undefined
+    let redirectUri = envRedirectUri
+
+    if (queryRedirectUri && envRedirectUri) {
+        try {
+            const qUrl = new URL(queryRedirectUri)
+            const eUrl = new URL(envRedirectUri)
+            if (qUrl.pathname === eUrl.pathname && qUrl.protocol === eUrl.protocol) {
+                redirectUri = queryRedirectUri
+            }
+        } catch {}
+    }
+
+    if (!semiClientId || !semiFrontendUrl || !redirectUri) {
+        return res.status(500).json({ result: 'error', message: 'Semi OAuth env vars missing (SEMI_CLIENT_ID/SEMI_FRONTEND_URL/REDIRECT_URI)' })
+    }
+
+    const scope = process.env.SEMI_OAUTH_SCOPES || 'openid profile wallet'
+    const state = randomBase64url(16)
+    const codeVerifier = randomBase64url(32)
+    const codeChallenge = sha256Base64url(codeVerifier)
+
+    const authz = new URL('/oauth/authorize', semiFrontendUrl)
+    authz.searchParams.set('response_type', 'code')
+    authz.searchParams.set('client_id', semiClientId)
+    authz.searchParams.set('redirect_uri', redirectUri)
+    authz.searchParams.set('scope', scope)
+    authz.searchParams.set('state', state)
+    authz.searchParams.set('code_challenge', codeChallenge)
+    authz.searchParams.set('code_challenge_method', 'S256')
+
+    const queryReturnOrigin = (req.query as { return_origin?: string }).return_origin
+    const headerOrigin = req.headers.origin
+    const returnOrigin = resolveReturnOrigin(queryReturnOrigin, headerOrigin)
+    const { secure, sameSite, domain } = cookieOptsForFrontend(redirectUri, returnOrigin)
+    res.setHeader(
+        'Set-Cookie',
+        createPkceCookie({ state, verifier: codeVerifier, returnOrigin, secure, sameSite, domain })
+    )
+    return res.redirect(302, authz.toString())
+}
+
+/**
+ * Semi OAuth2 callback
+ * GET /api/auth/semi/callback?code=...&state=...
+ */
+export const semiOauthCallbackController = async (req: Request, res: Response) => {
+    try {
+    const { code, state, error } = req.query as any
+    if (error) {
+        return res.status(400).send(`OAuth授权失败: ${String(error)}`)
+    }
+    if (!code || !state) {
+        return res.status(400).send('无效的 OAuth 回调参数')
+    }
+
+    const semiClientId = process.env.SEMI_CLIENT_ID
+    const semiClientSecret = process.env.SEMI_CLIENT_SECRET
+    const semiBackendUrl = process.env.SEMI_BACKEND_URL || process.env.SEMI_BACKEND_BASE_URL
+    const redirectUri = process.env.REDIRECT_URI
+    const sessionSecret = process.env.SESSION_SECRET
+
+    if (!semiClientId || !semiClientSecret || !semiBackendUrl || !redirectUri || !sessionSecret) {
+        return res.status(500).send('服务端 OAuth 配置缺失（SEMI_CLIENT_ID/SEMI_CLIENT_SECRET/SEMI_BACKEND_URL 或 SEMI_BACKEND_BASE_URL/REDIRECT_URI/SESSION_SECRET）')
+    }
+
+    // PKCE state cookie (mycoseed_pkce) is HttpOnly; validate state below
+    const pk = getPkceCookie(req as any)
+    if (!pk || pk.state !== String(state)) {
+        return res.status(400).send('state 不匹配或已过期，请重新登录')
+    }
+
+    const returnOrigin = resolveReturnOrigin(pk.returnOrigin) || getDefaultFrontendOrigin()
+    const { secure, sameSite, domain, crossSite } = cookieOptsForFrontend(redirectUri, returnOrigin)
+
+    // Exchange code -> token
+    const tokenRes = await fetch(new URL('/oauth/token', semiBackendUrl).toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            grant_type: 'authorization_code',
+            code: String(code),
+            client_id: semiClientId,
+            client_secret: semiClientSecret,
+            redirect_uri: redirectUri,
+            code_verifier: pk.verifier,
+        }),
+    })
+
+    if (!tokenRes.ok) {
+        const raw = await tokenRes.text().catch(() => '')
+        return res.status(400).send(`令牌交换失败: ${raw.slice(0, 300)}`)
+    }
+    let tokenData: any
+    try {
+        tokenData = await tokenRes.json()
+    } catch {
+        return res.status(400).send('令牌交换失败：响应不是合法 JSON')
+    }
+    const accessToken = tokenData.access_token as string | undefined
+    if (!accessToken) {
+        return res.status(400).send('令牌交换失败：未返回 access_token')
+    }
+
+    // Fetch userinfo
+    const userinfoRes = await fetch(new URL('/oauth/userinfo', semiBackendUrl).toString(), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!userinfoRes.ok) {
+        const raw = await userinfoRes.text().catch(() => '')
+        return res.status(400).send(`获取用户信息失败: ${raw.slice(0, 300)}`)
+    }
+    let userinfo: any
+    try {
+        userinfo = await userinfoRes.json()
+    } catch {
+        return res.status(400).send('获取用户信息失败：响应不是合法 JSON')
+    }
+
+    const semiPayload: SyncFromSemiRequest = {
+        id: String(userinfo.sub || ''),
+        phone: typeof userinfo.phone === 'string' ? userinfo.phone : undefined,
+        email: typeof userinfo.email === 'string' ? userinfo.email : undefined,
+        handle: userinfo.handle,
+        image_url:
+            typeof userinfo.picture === 'string'
+                ? userinfo.picture
+                : typeof userinfo.image_url === 'string'
+                  ? userinfo.image_url
+                  : undefined,
+        evm_chain_address: userinfo.wallet_address,
+    }
+    if (!semiPayload.id) {
+        return res.status(400).send('Semi userinfo 缺少 sub')
+    }
+
+    let user: any
+    try {
+        user = await resolveUserFromSemiPayload(semiPayload)
+    } catch (e: unknown) {
+        const msg =
+            e && typeof e === 'object' && 'message' in e
+                ? String((e as { message?: string }).message)
+                : String(e)
+        return res.status(500).send(`同步用户失败: ${msg}`)
+    }
+
+    // Set session cookie
+    const sessionCookie = createSessionCookie({
+        userId: user.id,
+        sessionSecret,
+        secure,
+        sameSite,
+        domain,
+        maxAgeSeconds: Number(process.env.SESSION_MAX_AGE_SECONDS || String(60 * 60 * 24 * 30)),
+    })
+
+    res.setHeader('Set-Cookie', [
+        clearPkceCookie({ secure, sameSite, domain }),
+        sessionCookie,
+    ])
+
+    console.log(`[semi/callback] user=${user.id} crossSite=${crossSite} sameSite=${sameSite} secure=${secure} domain=${domain || '(none)'}`)
+
+    // Decide redirect — same BAI origin the user started login from
+    const needsProfileSetup = !user.name && !user.handle
+    const dest = new URL(needsProfileSetup ? '/profile/setup' : '/', returnOrigin).toString()
+    return res.redirect(302, dest)
+    } catch (err: unknown) {
+        console.error('[semi/callback] fatal', err)
+        const msg =
+            err && typeof err === 'object' && 'message' in err
+                ? String((err as { message?: string }).message)
+                : String(err)
+        if (!res.headersSent) {
+            res.status(500).send(`OAuth回调异常: ${msg}`)
+        }
+    }
+}
+
+export const logoutController = async (_req: Request, res: Response) => {
+    const redirectUri = process.env.REDIRECT_URI || ''
+    const frontendUrl = process.env.FRONTEND_URL || ''
+    const secure = (frontendUrl || redirectUri).startsWith('https://')
+    const backendOrigin = redirectUri ? new URL(redirectUri).origin : ''
+    const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : ''
+    const crossSite = !!(backendOrigin && frontendOrigin && backendOrigin !== frontendOrigin)
+    const sameSite = (crossSite && secure) ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
+    const domain = process.env.SESSION_DOMAIN
+    res.setHeader('Set-Cookie', clearSessionCookie({ secure, sameSite, domain }))
+    return res.json({ result: 'ok' })
 }

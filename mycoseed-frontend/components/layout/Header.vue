@@ -1,8 +1,8 @@
 <template>
-  <header class="h-16 md:h-20 border-b border-border bg-card sticky top-0 z-50 flex-shrink-0">
-    <div class="w-full md:max-w-7xl md:mx-auto px-2 md:px-4 h-full flex items-center justify-between">
+  <header class="h-16 md:h-20 border-b border-border bg-card sticky top-0 z-50 flex-shrink-0 overflow-visible">
+    <div class="w-full md:max-w-7xl md:mx-auto px-2 md:px-4 h-full flex items-center justify-between overflow-visible">
       <!-- Community Switcher（点击展开下拉，选择后不跳转，留在当前页） -->
-      <div class="relative flex items-center gap-3" ref="switcherRef">
+      <div class="relative flex items-center gap-2 md:gap-3 min-w-0" ref="switcherRef">
         <div class="w-12 h-12 rounded-2xl flex items-center justify-center shadow-soft transition-transform overflow-hidden bg-primary flex-shrink-0">
           <img v-if="communityStore.currentCommunity?.avatarUrl" :src="communityStore.currentCommunity.avatarUrl" :alt="communityStore.currentCommunity?.name" class="w-full h-full object-cover" />
           <PixelAvatar v-else-if="communityStore.currentCommunity?.name" :seed="communityStore.currentCommunity.name" size="md" class="!w-12 !h-12 !rounded-2xl" />
@@ -18,8 +18,8 @@
           </h1>
           <span class="text-sm text-primary font-medium hover:underline">切换社区 &gt;</span>
         </button>
-        <NuxtLink to="/communities" class="md:hidden text-sm text-primary font-medium hover:underline shrink-0">
-          切换社区 &gt;
+        <NuxtLink to="/communities" class="md:hidden text-xs text-primary font-medium hover:underline shrink-0">
+          切换 &gt;
         </NuxtLink>
         <Transition name="dropdown">
           <div
@@ -54,23 +54,30 @@
       </div>
 
       <!-- Navigation -->
-      <nav class="flex items-center gap-4">
-        <PixelButton variant="warning" size="sm" @click="navigateTo('tasks')">🛒 商城</PixelButton>
+      <nav class="flex items-center gap-1.5 md:gap-4 flex-shrink-0">
+        <NuxtLink
+          :to="mallPath"
+          class="inline-flex items-center justify-center h-9 md:h-11 px-4 rounded-full bg-amber-500 text-white text-sm md:text-base font-bold shadow-soft hover:opacity-95 transition-opacity"
+          title="社区商城"
+        >
+          <span class="md:hidden">🛒</span>
+          <span class="hidden md:inline">🛒 商城</span>
+        </NuxtLink>
 
         <NuxtLink
           v-if="userStore.isAuthenticated"
           to="/messages"
-          class="relative w-10 h-10 flex items-center justify-center rounded-xl bg-input-bg border border-border text-text-title transition-all hover:scale-105 flex-shrink-0 shadow-soft"
+          class="relative w-9 h-9 md:w-11 md:h-11 flex items-center justify-center rounded-xl bg-primary text-white text-base md:text-lg transition-all hover:scale-105 flex-shrink-0 shadow-soft"
           title="消息"
         >
           🔔
           <span
             v-if="hasUnread"
-            class="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-red-500"
+            class="absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-red-500"
           />
         </NuxtLink>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 md:gap-2">
           <div 
             v-if="userStore.isAuthenticated"
             class="cursor-pointer hover:scale-105 transition-transform"
@@ -80,23 +87,16 @@
             <PixelAvatar 
               v-if="userStore.user?.avatar" 
               :src="userStore.user.avatar" 
-              size="md" 
+              size="md"
+              class="!w-14 !h-14"
             />
             <PixelAvatar 
               v-else 
               :seed="userStore.user?.name || userStore.user?.id || 'user'" 
-              size="md" 
+              size="md"
+              class="!w-14 !h-14"
             />
           </div>
-          
-          <NuxtLink
-            v-if="userStore.isAuthenticated"
-            to="/settings"
-            class="w-10 h-10 flex items-center justify-center rounded-xl bg-primary text-white font-medium text-sm transition-all hover:scale-105 flex-shrink-0 shadow-soft"
-            title="设置"
-          >
-            ⚙️
-          </NuxtLink>
           
           <PixelButton
             v-else
@@ -199,6 +199,13 @@ const currentCommunityName = computed(() => {
 const communitiesPathWithFrom = computed(() => {
   const from = route.fullPath && route.fullPath !== '/communities' ? encodeURIComponent(route.fullPath) : ''
   return from ? `/communities?from=${from}` : '/communities'
+})
+
+/** 商城与当前所选社区绑定；未选社区时进入广场引导选择 */
+const mallPath = computed(() => {
+  const id = communityStore.currentCommunityId
+  if (!id) return '/communities'
+  return `/community/${id}/marketplace`
 })
 
 function toggleCommunityDropdown() {

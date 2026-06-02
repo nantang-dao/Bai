@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { supabase } from '../services/supabase'  
 import { User } from '../types/auth'
+import { getSession } from '../services/session'
 
 export interface MulterFile {
     fieldname: string
@@ -24,6 +25,22 @@ export const authenticate = async (req:AuthRequest,res:Response,next:NextFunctio
 {
     try
     {
+        const sessionSecret = process.env.SESSION_SECRET
+        if (sessionSecret) {
+            const session = getSession(req, sessionSecret)
+            if (session?.uid) {
+                const { data: user, error: userError } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', session.uid)
+                    .single()
+                if (!userError && user) {
+                    req.user = user as User
+                    return next()
+                }
+            }
+        }
+
         const authHeader = req.headers.authorization
 
         if(!authHeader || !authHeader.startsWith('Bearer '))
@@ -74,6 +91,22 @@ export const authenticate = async (req:AuthRequest,res:Response,next:NextFunctio
 /** 可选认证：有 token 则设置 req.user，无 token 不报错 */
 export const optionalAuthenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+        const sessionSecret = process.env.SESSION_SECRET
+        if (sessionSecret) {
+            const session = getSession(req, sessionSecret)
+            if (session?.uid) {
+                const { data: user, error: userError } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', session.uid)
+                    .single()
+                if (!userError && user) {
+                    req.user = user as User
+                    return next()
+                }
+            }
+        }
+
         const authHeader = req.headers.authorization
         if (!authHeader || !authHeader.startsWith('Bearer ')) return next()
         const token = authHeader.split(' ')[1]

@@ -32,6 +32,20 @@ export async function getMemberRole(communityId: string, userId: string): Promis
     return (data?.role as 'member' | 'sub_admin' | 'super_admin') || null
 }
 
+/** 必须是该社区成员（已加入） */
+export const requireCommunityMember = async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+        const communityId = req.params.id || req.params.communityId
+        if (!communityId || !req.user?.id) return res.status(401).json({ result: 'error', message: 'Unauthorized' })
+        const role = await getMemberRole(communityId, req.user.id)
+        if (!role) return res.status(403).json({ result: 'error', message: '请先加入该社区' })
+        next()
+    } catch (e) {
+        console.error(e)
+        res.status(500).json({ result: 'error', message: 'Internal server error' })
+    }
+}
+
 /** 检查当前用户是否为该社区的总管理员或分管理员 */
 export const requireCommunityAdmin = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -48,7 +62,7 @@ export const requireCommunityAdmin = async (req: AuthRequest, res: Response, nex
     }
 }
 
-/** 仅总管理员 */
+/** 仅总管理员（支持路由参数 id 或 communityId） */
 export const requireSuperAdmin = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const communityId = req.params.id || req.params.communityId

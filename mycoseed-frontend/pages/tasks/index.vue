@@ -87,7 +87,27 @@
               </div>
               <!-- 右侧：状态标签 -->
               <div class="flex-shrink-0">
-                <span class="text-xs bg-input-bg text-text-body px-2 py-1 rounded-xl font-medium">{{ getTaskStatusText(item.status, item._task) }}</span>
+                <span
+                  v-if="item.status === 'completed' && taskChainMap[item.id]?.length"
+                  class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-xl font-medium"
+                >
+                  已转账 {{ taskChainMap[item.id][0]?.actual_amount || taskChainMap[item.id][0]?.amount || item.reward || 0 }} 积分
+                </span>
+                <span
+                  v-else-if="item.status === 'completed' && item._task?.transferredAt"
+                  class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-xl font-medium"
+                >
+                  已标记转账 {{ item.reward || 0 }} 积分
+                </span>
+                <span
+                  v-else-if="item.status === 'completed'"
+                  class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-xl font-medium"
+                >
+                  待转账 {{ item.reward || 0 }} 积分
+                </span>
+                <span v-else class="text-xs bg-input-bg text-text-body px-2 py-1 rounded-xl font-medium">
+                  {{ getTaskStatusText(item.status, item._task) }}
+                </span>
               </div>
             </div>
           </template>
@@ -144,7 +164,7 @@ import PixelButton from '~/components/pixel/PixelButton.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { useUserStore } from '~/stores/user'
 import { useCommunityStore } from '~/stores/community'
-import { getAllTasks, getApiBaseUrl, type Task } from '~/utils/api'
+import { getAllTasks, getApiBaseUrl, getTaskTransactions, type Task } from '~/utils/api'
 import { parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'
 
 type TaskStatus = Task['status']
@@ -183,6 +203,9 @@ const loading = ref(false)
 // 任务列表
 const tasks = ref<Task[]>([])
 
+// 链上交易记录：taskId -> transactions[]
+const taskChainMap = ref<Record<string, any[]>>({})
+
 // 从 API 加载数据（按当前社区过滤）
 const loadData = async () => {
   loading.value = true
@@ -191,6 +214,23 @@ const loadData = async () => {
     const communityId = communityStore.currentCommunityId || undefined
     const apiTasks = await getAllTasks(baseUrl, communityId)
     tasks.value = apiTasks
+
+    // 对已完成的任务，查询链上交易记录
+    const completedTasks = apiTasks.filter(t => t.status === 'completed')
+    if (completedTasks.length > 0) {
+      const chainMap: Record<string, any[]> = {}
+      await Promise.all(
+        completedTasks.map(async (t) => {
+          try {
+            const txs = await getTaskTransactions(t.id, baseUrl)
+            if (txs && txs.length > 0) {
+              chainMap[t.id] = txs
+            }
+          } catch { /* ignore */ }
+        })
+      )
+      taskChainMap.value = chainMap
+    }
   } catch (error) {
     console.error('加载数据失败:', error)
   } finally {

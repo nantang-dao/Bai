@@ -24,15 +24,44 @@
         </div>
       </div>
       
-      <!-- 手机端设置按钮 -->
-      <NuxtLink
-        v-if="mobileUserStore.isAuthenticated"
-        to="/settings"
-        class="w-10 h-10 flex items-center justify-center rounded-xl bg-primary text-white font-medium text-sm transition-all active:scale-95 shadow-soft ml-2"
-        title="设置"
-      >
-        ⚙️
-      </NuxtLink>
+      <div class="flex items-center gap-2 shrink-0">
+        <NuxtLink
+          :to="mallPath"
+          class="w-10 h-10 flex items-center justify-center rounded-xl bg-amber-500 text-white font-medium text-sm transition-all active:scale-95 shadow-soft"
+          title="社区商城"
+        >
+          🛒
+        </NuxtLink>
+        <NuxtLink
+          v-if="mobileUserStore.isAuthenticated"
+          to="/messages"
+          class="relative w-10 h-10 flex items-center justify-center rounded-xl bg-primary text-white transition-all hover:scale-105 flex-shrink-0 shadow-soft"
+          title="消息"
+        >
+          🔔
+          <span
+            v-if="mobileHasUnread"
+            class="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-red-500"
+          />
+        </NuxtLink>
+        <div
+          v-if="mobileUserStore.isAuthenticated"
+          class="cursor-pointer hover:scale-105 transition-transform"
+          @click="navigateToProfile"
+          title="个人主页"
+        >
+          <PixelAvatar
+            v-if="mobileUserStore.user?.avatar"
+            :src="mobileUserStore.user.avatar"
+            size="md"
+          />
+          <PixelAvatar
+            v-else
+            :seed="mobileUserStore.user?.name || mobileUserStore.user?.id || 'user'"
+            size="md"
+          />
+        </div>
+      </div>
     </div>
     
     <!-- 主内容区域 -->
@@ -47,7 +76,8 @@
     <footer class="h-14 w-full bg-muted border-t border-border mt-auto hidden md:flex items-center justify-center">
       <span class="text-sm text-text-body">© 2024 MycoSeed</span>
     </footer>
-    
+
+    <UNotifications />
   </div>
 </template>
 
@@ -56,11 +86,15 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCommunityStore } from '~/stores/community'
 import { useUserStore } from '~/stores/user'
+import { useApi } from '~/composables/useApi'
+import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 
 const route = useRoute()
 const mobileCommunityStore = useCommunityStore()
 const mobileUserStore = useUserStore()
+const mobileApi = useApi()
 const currentPage = ref('hub')
+const mobileHasUnread = ref(false)
 
 const mobileCurrentCommunityName = computed(() => {
   return mobileCommunityStore.currentCommunity?.name || null
@@ -72,9 +106,35 @@ const communitiesPathWithFrom = computed(() => {
   return from ? `/communities?from=${from}` : '/communities'
 })
 
+const mallPath = computed(() => {
+  const id = mobileCommunityStore.currentCommunityId
+  if (!id) return '/communities'
+  return `/community/${id}/marketplace`
+})
+
 onMounted(async () => {
   await mobileCommunityStore.initialize()
+  await refreshMobileUnread()
 })
+
+async function refreshMobileUnread() {
+  if (!mobileUserStore.isAuthenticated) {
+    mobileHasUnread.value = false
+    return
+  }
+  try {
+    const communityId = mobileCommunityStore.currentCommunityId
+    const summary = await mobileApi.getNotificationSummary({ communityId })
+    mobileHasUnread.value = !!summary.hasUnread
+  } catch {}
+}
+
+function navigateToProfile() {
+  const user = mobileUserStore.user
+  if (user?.id) {
+    navigateTo(`/member/${user.id}`)
+  }
+}
 
 const handleNavigate = (page: string) => {
   currentPage.value = page

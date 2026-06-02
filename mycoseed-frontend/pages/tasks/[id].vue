@@ -89,6 +89,7 @@
                     <span class="text-xl">📍</span>
                     <h4 class="font-bold text-xs uppercase text-text-title">位置定位</h4>
                   </div>
+                  <div class="text-sm text-text-body">提交时需要提供位置信息</div>
                 </div>
 
                 <!-- 文字描述 -->
@@ -442,6 +443,12 @@
                       <div class="font-bold text-xs uppercase text-text-title mb-2">位置信息</div>
                       <p>纬度: {{ parsedProofContent(task.proof).gps!.latitude || (parsedProofContent(task.proof).gps as any).lat }}</p>
                       <p>经度: {{ parsedProofContent(task.proof).gps!.longitude || (parsedProofContent(task.proof).gps as any).lng }}</p>
+                      <a
+                        :href="`https://uri.amap.com/marker?position=${parsedProofContent(task.proof).gps!.longitude || (parsedProofContent(task.proof).gps as any).lng},${parsedProofContent(task.proof).gps!.latitude || (parsedProofContent(task.proof).gps as any).lat}&name=任务位置`"
+                        target="_blank"
+                        rel="noopener"
+                        class="inline-block mt-2 text-sm text-primary underline"
+                      >在地图中查看</a>
                     </div>
                   </template>
                   <div v-else class="p-3 bg-input-bg border border-border rounded-2xl text-text-placeholder text-sm">
@@ -691,55 +698,39 @@
               审核中
             </PixelButton>
             
-            <!-- 已完成状态 - 审核者可以看到转账按钮 -->
+            <!-- 已完成状态 - 发包方：转账按钮 -->
             <template v-if="task.status === 'completed' && canReview">
-              <!-- 未转账：显示转账按钮和标记按钮 -->
-              <template v-if="!task.transferredAt">
-                <!-- 旧版链下转账入口：暂时隐藏（保留代码，后续可开启） -->
-                <template v-if="false">
-                  <PixelButton
-                    @click="handleTransferToSemi"
-                    variant="primary"
-                    size="lg"
-                    :block="true"
-                    :disabled="isTransferring"
-                    class="mb-3"
-                  >
-                    {{ isTransferring ? '处理中...' : '跳转到Semi转账' }}
-                  </PixelButton>
-                  <PixelButton
-                    @click="handleMarkTransferCompleted"
-                    variant="secondary"
-                    size="lg"
-                    :block="true"
-                    :disabled="isMarkingTransfer"
-                  >
-                    {{ isMarkingTransfer ? '标记中...' : '标记为已转账' }}
-                  </PixelButton>
-                </template>
-              </template>
-              <!-- 已转账：显示状态标记 -->
-              <div v-else class="text-center py-4">
-                <div class="bg-success/20 border border-success shadow-soft-sm p-4 mb-3">
-                  <p class=" text-base text-text-title mb-1">
-                    <span class="font-bold text-xs">✓</span> 已转账
-                  </p>
-                  <p class=" text-sm text-text-body">
-                    转账时间：{{ formatDate(task.transferredAt) }}
-                  </p>
-                </div>
-                <PixelButton
-                  @click="handleUnmarkTransfer"
-                  variant="secondary"
-                  size="lg"
-                  :block="true"
-                  :disabled="isMarkingTransfer"
-                >
-                  {{ isMarkingTransfer ? '处理中...' : '取消转账标记' }}
-                </PixelButton>
-              </div>
+              <PixelButton
+                @click="handleTransferToSemi"
+                variant="primary"
+                size="lg"
+                :block="true"
+                :disabled="isTransferring"
+                class="mb-3"
+              >
+                {{ isTransferring ? '处理中...' : '跳转到Semi转账' }}
+              </PixelButton>
+              <PixelButton
+                v-if="!task.transferredAt && chainTransactions.length === 0"
+                @click="handleMarkTransferCompleted"
+                variant="secondary"
+                size="lg"
+                :block="true"
+                :disabled="isMarkingTransfer"
+              >
+                {{ isMarkingTransfer ? '标记中...' : '标记为已转账' }}
+              </PixelButton>
+              <PixelButton
+                v-if="task.transferredAt && chainTransactions.length === 0"
+                @click="handleUnmarkTransfer"
+                variant="secondary"
+                size="lg"
+                :block="true"
+                :disabled="isMarkingTransfer"
+              >
+                {{ isMarkingTransfer ? '处理中...' : '取消转账标记' }}
+              </PixelButton>
             </template>
-            <!-- 已完成状态 - 非审核者 -->
             <PixelButton
               v-else-if="task.status === 'completed'"
               variant="secondary"
@@ -750,7 +741,6 @@
               已完成
             </PixelButton>
 
-            <!-- 一键分享到社区圈（接包者审核通过后 / 发包者转账后显示） -->
             <PixelButton
               v-if="showShareButton"
               variant="secondary"
@@ -761,6 +751,43 @@
             >
               一键分享任务到社区圈
             </PixelButton>
+
+            <div v-if="task.status === 'completed'" class="mt-3">
+              <div v-if="chainTransactions.length > 0" class="bg-success/20 border border-success shadow-soft-sm p-4">
+                <p class="text-base text-text-title mb-1">
+                  <span class="font-bold">✓</span> 已转账
+                </p>
+                <p class="text-sm text-text-body">
+                  金额：{{ chainTransactions[0]?.actual_amount || chainTransactions[0]?.amount || task.reward }} 积分
+                </p>
+                <p class="text-sm text-text-body">
+                  转账时间：{{ formatDate(chainTransactions[0].created_at) }}
+                </p>
+                <a
+                  :href="`https://optimistic.etherscan.io/tx/${chainTransactions[0].tx_hash}`"
+                  target="_blank"
+                  class="text-sm text-blue-600 underline mt-1 inline-block"
+                >
+                  查看交易详情
+                </a>
+              </div>
+              <div v-else-if="task.transferredAt" class="bg-success/20 border border-success shadow-soft-sm p-4">
+                <p class="text-base text-text-title mb-1">
+                  <span class="font-bold">✓</span> 已标记转账
+                </p>
+                <p class="text-sm text-text-body">
+                  标记时间：{{ formatDate(task.transferredAt) }}
+                </p>
+              </div>
+              <div v-else class="bg-warning/20 border border-warning shadow-soft-sm p-4">
+                <p class="text-base text-text-title">
+                  <span class="font-bold">⏳</span> 待转账
+                </p>
+                <p class="text-sm text-text-body">
+                  预期金额：{{ task.reward }} 积分
+                </p>
+              </div>
+            </div>
             
             <!-- 已驳回状态 -->
             <PixelButton
@@ -828,6 +855,8 @@ import {
   getTaskpoolClaimIntent,
   reconcileTaskpoolClaim,
   generateRandomState,
+  getFinalReward,
+  getTaskTransactions,
 } from '~/utils/api'
 import ShareToCommunityModal from '~/components/tasks/ShareToCommunityModal.vue'
 import { useToast } from '~/composables/useToast'
@@ -861,6 +890,8 @@ const taskRewardSymbol = ref('积分') // 任务奖励的积分符号
 const isTransferring = ref(false)
 const isMarkingTransfer = ref(false)
 const proofPreviewUrl = ref<string | null>(null)
+const chainTransactions = ref<any[]>([])
+const loadingTransactions = ref(false)
 
 const shareModalVisible = ref(false)
 const shareTask = ref<{
@@ -2317,6 +2348,11 @@ const loadTask = async (options?: { useCache?: boolean }) => {
     
     // 生成进度时间线
     updateTimeline()
+
+    // 如果任务已完成，加载链上转账记录
+    if (task.value.status === 'completed') {
+      loadChainTransactions()
+    }
   } catch (error) {
     console.error('加载任务失败:', error)
     toast.add({
@@ -2326,6 +2362,21 @@ const loadTask = async (options?: { useCache?: boolean }) => {
     })
   } finally {
     loading.value = false
+  }
+}
+
+// 加载链上转账记录
+async function loadChainTransactions() {
+  if (!task.value?.id) return
+  loadingTransactions.value = true
+  try {
+    const baseUrl = getApiBaseUrl()
+    chainTransactions.value = await getTaskTransactions(task.value.id, baseUrl)
+  } catch (e) {
+    console.error('加载转账记录失败:', e)
+    chainTransactions.value = []
+  } finally {
+    loadingTransactions.value = false
   }
 }
 
@@ -2675,7 +2726,7 @@ const handleTransferToSemi = async () => {
     const baseUrl = getApiBaseUrl()
     const creatorId = task.value.creatorId
     const claimerId = task.value.claimerId
-    const reward = task.value.reward
+    const reward = getFinalReward(task.value)
     
     // 并行获取创建者/参与者钱包地址（更快，也更不容易被弹窗策略影响）
     const [creatorAddress, claimerAddress] = await Promise.all([
@@ -2716,19 +2767,7 @@ const handleTransferToSemi = async () => {
     const memo = defaultMemo.trim().slice(0, 32)
 
     const targetTaskId = task.value.id
-    let receiverRemark = ((task.value as any)?.receiverRemark ?? '').trim().slice(0, 32)
-    if (!receiverRemark) {
-      const latestTask = await getTaskById(targetTaskId, baseUrl)
-      const rootRemark = (((latestTask as any)?.receiverRemark ?? (latestTask as any)?.receiver_remark ?? '') as string).trim().slice(0, 32)
-      if (rootRemark) {
-        receiverRemark = rootRemark
-      } else {
-        const matchedParticipant = Array.isArray((latestTask as any)?.participantsList)
-          ? (latestTask as any).participantsList.find((p: any) => String(p?.id || p?.taskId || '') === String(targetTaskId))
-          : null
-        receiverRemark = (((matchedParticipant?.receiverRemark ?? matchedParticipant?.receiver_remark ?? '') as string).trim().slice(0, 32))
-      }
-    }
+    const receiverRemark = ((task.value as any)?.receiverRemark ?? '').trim().slice(0, 32)
     const poolUuid = ((task.value as any)?.taskInfoId || (task.value as any)?.taskInfo?.id || '').toString()
 
     // 构造并跳转到semi转账页面

@@ -450,55 +450,46 @@ export const getFinalReward = (task: Task): number => {
   return task.reward
 }
 
+// IMPORTANT: use HttpOnly session cookie for auth.
+// Nuxt dev uses different ports (3003 frontend, 3001 backend) which is cross-origin,
+// so we must always send credentials for backend API calls.
+const rawFetch: typeof fetch = globalThis.fetch.bind(globalThis)
+const fetchWithCreds = (input: RequestInfo | URL, init?: RequestInit) =>
+  rawFetch(input, { ...(init || {}), credentials: 'include' })
+// Shadow global fetch in this module so every call includes credentials.
+// eslint-disable-next-line @typescript-eslint/no-shadow
+const fetch: typeof globalThis.fetch = fetchWithCreds as any
+
 const getAuthHeaders = (): Record<string, string> => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
-  }
-
-  if (typeof window !== 'undefined') {
-    const token = getCookie(AUTH_TOKEN_KEY)
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-  }
-
-  return headers
+  return { 'Content-Type': 'application/json' }
 }
 
 /**
- * 获取 API 基础 URL
- * 优先从环境变量读取，否则使用默认值
+ * 浏览器侧 API 基址：未配置 NUXT_PUBLIC_API_URL 时返回 ''，请求走同源 /api/*（经 Nuxt 反代）。
  */
 export const getApiBaseUrl = (): string => {
-  // 优先使用环境变量（兼容客户端和服务器端）
-  if (typeof window !== 'undefined') {
-    // 客户端环境：使用 import.meta.env
-    const env = (import.meta as any).env
-    if (env?.NUXT_PUBLIC_API_URL) {
-      return env.NUXT_PUBLIC_API_URL
-    }
-  } else {
-    // 服务器端环境：使用 process.env
-    const processEnv = (globalThis as any).process?.env || {}
-    if (processEnv.NUXT_PUBLIC_API_URL) {
-      return processEnv.NUXT_PUBLIC_API_URL
-    }
-  }
-  
-  // 尝试从 Nuxt 运行时配置获取（如果可用）
   if (typeof window !== 'undefined') {
     try {
       const nuxtApp = (window as any).__NUXT__
-      if (nuxtApp?.config?.public?.apiUrl) {
-        return nuxtApp.config.public.apiUrl
+      const fromConfig = nuxtApp?.config?.public?.apiUrl as string | undefined
+      if (fromConfig?.trim()) {
+        return fromConfig.replace(/\/+$/, '')
       }
-    } catch (e) {
-      // 忽略错误
+    } catch {
+      // ignore
     }
+    const env = (import.meta as any).env
+    if (env?.NUXT_PUBLIC_API_URL?.trim()) {
+      return String(env.NUXT_PUBLIC_API_URL).replace(/\/+$/, '')
+    }
+    return ''
   }
-  
-  // 默认值（开发环境）
-  return 'http://localhost:3001'
+
+  const processEnv = (globalThis as any).process?.env || {}
+  if (processEnv.NUXT_PUBLIC_API_URL?.trim()) {
+    return String(processEnv.NUXT_PUBLIC_API_URL).replace(/\/+$/, '')
+  }
+  return ''
 }
 
 // ==================== 活动相关 API ====================
@@ -1475,6 +1466,20 @@ export const getMyTasks = async (baseUrl: string): Promise<Task[]> => {
   }
 }
 
+// 查询任务的链上转账记录
+export const getTaskTransactions = async (taskId: string, baseUrl: string) => {
+  const response = await fetch(`${baseUrl}/api/transactions?task_id=${taskId}`)
+  if (!response.ok) throw new Error('Failed to fetch transactions')
+  return response.json()
+}
+
+// 查询活动的链上付款记录
+export const getEventTransactions = async (eventId: string, baseUrl: string) => {
+  const response = await fetch(`${baseUrl}/api/transactions?event_id=${eventId}`)
+  if (!response.ok) throw new Error('Failed to fetch event transactions')
+  return response.json()
+}
+
 /**
  * 提交任务完成凭证
  * @param taskId 任务 ID (UUID string)
@@ -1769,13 +1774,35 @@ export const sendEmailCode = async (email: string): Promise<{ result: string }> 
 }
 
 /**
+ * [DEV_BYPASS] 开发者免验登录
+ * @param userIndex 0=开发者A（发包方）, 1=开发者B（接包方）
+ * @param baseUrl API 基础 URL
+ */
+export const devLogin = async (userIndex: number, baseUrl: string): Promise<{ result: string; auth_token?: string; user?: any }> => {
+  const response = await fetch(`${baseUrl}/api/auth/dev-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userIndex }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.message || '开发者登录失败')
+  }
+
+  const data = await response.json()
+
+  return data
+}
+
+/**
  * 登录
  * @param identifier 手机号或邮箱
  * @param code 验证码
  * @param baseUrl API 基础 URL
  */
 export const signIn = async (identifier: string, code: string, baseUrl: string): Promise<{ result: string; auth_token?:string }> => {
-  const response = await fetch(`${baseUrl}/api/auth/signin`,
+  const response = await fetchWithCreds(`${baseUrl}/api/auth/signin`,
     {
       method:'POST',
       headers:
@@ -1793,12 +1820,6 @@ export const signIn = async (identifier: string, code: string, baseUrl: string):
   }
 
   const data = await response.json()
-
-  // 保存token到cookie
-  if (data.auth_token)
-  {
-    setCookie(AUTH_TOKEN_KEY,data.auth_token)
-  }
 
   return data
 }
@@ -1819,7 +1840,7 @@ export const signInWithEmail = async (email: string, code: string, baseUrl: stri
  * @param baseUrl API 基础 URL
  */
 export const getMe = async (baseUrl: string): Promise<any> => {
-  const response = await fetch(`${baseUrl}/api/auth/me`,
+  const response = await fetchWithCreds(`${baseUrl}/api/auth/me`,
     {
       method:'GET',
       headers: getAuthHeaders(),
@@ -1830,7 +1851,9 @@ export const getMe = async (baseUrl: string): Promise<any> => {
   {
     if(response.status===401)
     {
-      clearAuthToken()
+      if (typeof window !== 'undefined') {
+        document.cookie = 'mycoseed_sid=; Path=/; Max-Age=0'
+      }
     }
     throw new Error('Failed to get user info')
   }
@@ -1875,79 +1898,9 @@ export const setEncryptedKeys = async (keys: string): Promise<{ result: string }
   return { result: 'ok' }
 }
 
-export const AUTH_TOKEN_KEY = 'auth_token'
-
-// 使用 localStorage 存储 token，避免部署后丢失
-export const getCookie = (key: string): string | null => {
-  if(typeof window === 'undefined') return null
-  try {
-    // 优先从 localStorage 读取
-    let token = localStorage.getItem(key)
-    
-    // 如果 localStorage 中没有，尝试从 cookie 读取（兼容旧数据）
-    if (!token) {
-      const cookies = document.cookie.split(';')
-      for (let cookie of cookies)
-      {
-        const [name,value]= cookie.trim().split('=')
-        if(name===key)
-        {
-          token = decodeURIComponent(value)
-          // 迁移到 localStorage
-          if (token) {
-            localStorage.setItem(key, token)
-            // 删除旧的 cookie
-            document.cookie=`${key}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/`
-          }
-          break
-        }
-      }
-    }
-    
-    return token
-  } catch (e) {
-    // 如果 localStorage 不可用，回退到 cookie
-    const cookies = document.cookie.split(';')
-    for (let cookie of cookies)
-    {
-      const [name,value]= cookie.trim().split('=')
-      if(name===key)
-      {
-        return decodeURIComponent(value)
-      }
-    }
-    return null
-  }
-}
-
-export const setCookie = (key:string,value:string,days:number=365)=>
-{
-  if (typeof window ==='undefined') return
-  try {
-    // 优先使用 localStorage
-    localStorage.setItem(key, value)
-  } catch (e) {
-    // 如果 localStorage 不可用，回退到 cookie
-    const expires=new Date()
-    expires.setTime(expires.getTime()+days*24*60*60*1000)
-    document.cookie=`${key}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Lax`
-  }
-}
-
-export const deleteCookie = (key:string)=>
-{
-  if(typeof window ==='undefined') return
-  try {
-    localStorage.removeItem(key)
-  } catch (e) {
-    // 如果 localStorage 不可用，回退到 cookie
-    document.cookie=`${key}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/`
-  }
-}
-
-export const clearAuthToken =(): void=>
-{
-  deleteCookie(AUTH_TOKEN_KEY)
+export async function logout(baseUrl: string): Promise<void> {
+  const res = await fetchWithCreds(`${baseUrl}/api/auth/logout`, { method: 'POST' })
+  if (!res.ok) throw new Error('logout failed')
 }
 
 // 保存当前登录标识符
@@ -2707,6 +2660,31 @@ export async function uploadPostImage (params: {
   return res.json()
 }
 
+export async function uploadMarketplaceImages(params: {
+  communityId: string
+  listingId: string
+  files: File[]
+  baseUrl?: string
+}): Promise<{ success: boolean; files: { url: string; hash?: string; name?: string; size?: number; type?: string }[] }> {
+  const url = params.baseUrl ?? getApiBaseUrl()
+  const form = new FormData()
+  form.append('communityId', params.communityId)
+  form.append('listingId', params.listingId)
+  params.files.forEach((file) => form.append('files', file))
+  const headers = getAuthHeaders()
+  delete (headers as Record<string, string>)['Content-Type']
+  const res = await fetch(`${url}/api/upload/marketplace-image`, {
+    method: 'POST',
+    headers,
+    body: form
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { message?: string }).message || '上传图片失败')
+  }
+  return res.json()
+}
+
 // Mock 社群数据（两个社区）
 const mockCommunities: Community[] = [
   {
@@ -3440,123 +3418,7 @@ export const getCommunityTransactions = async (communityId: number): Promise<Com
   }
 }
 
-// ==================== Semi OAuth2 相关 API ====================
-
-/**
- * 从 Semi 获取用户信息
- * @param accessToken Semi 的 access_token
- * @param semiApiUrl Semi API 基础 URL
- */
-export const getSemiUserInfo = async (accessToken: string, semiApiUrl: string): Promise<any> => {
-  const response = await fetch(`${semiApiUrl}/get_me`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`
-    }
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || error.message || 'Failed to get user info from Semi')
-  }
-
-  return response.json()
-}
-
-/**
- * 同步 Semi 用户信息到 Mycoseed
- * @param semiUserData Semi 用户数据
- * @param baseUrl Mycoseed API 基础 URL
- */
-export const syncFromSemi = async (semiUserData: any, baseUrl: string): Promise<{ result: string; auth_token?: string; user?: any}> => {
-  const response = await fetch(`${baseUrl}/api/auth/sync-from-semi`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(semiUserData)
-  })
-
-  if (!response.ok) {
-    const raw = await response.text()
-    try {
-      const parsed = JSON.parse(raw)
-      throw new Error(parsed.message || 'Failed to sync user from Semi')
-    } catch {
-      throw new Error(`Failed to sync user from Semi (HTTP ${response.status}): ${raw.slice(0, 120)}`)
-    }
-  }
-
-  return response.json()
-}
-
-/**
- * 生成随机 state（用于 OAuth2 CSRF 防护）
- */
-export const generateRandomState = (): string => {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-}
-
-/**
- * 构建 OAuth2 授权 URL
- * @param clientId 客户端 ID
- * @param redirectUri 回调地址
- * @param state 状态参数（用于 CSRF 防护）
- * @param oauthUrl OAuth 服务器地址
- */
-export const buildOAuthUrl = (clientId: string, redirectUri: string, state: string, oauthUrl: string): string => {
-  const params = new URLSearchParams({
-    client_id: clientId,
-    response_type: 'token',
-    redirect_uri: redirectUri,
-    state: state,
-    scope: 'read:user'
-  })
-  return `${oauthUrl}/api/oauth/authorize?${params.toString()}`
-}
-
-/**
- * 解析 URL fragment（用于提取 OAuth2 返回的 token）
- * @param fragment URL fragment（例如：#access_token=xxx&token_type=Bearer）
- */
-export const parseFragment = (fragment: string): Record<string, string> => {
-  const params: Record<string, string> = {}
-  if (fragment && fragment.startsWith('#')) {
-    fragment.substring(1).split('&').forEach(param => {
-      const [key, value] = param.split('=')
-      if (key && value) {
-        params[key] = decodeURIComponent(value)
-      }
-    })
-  }
-  return params
-}
-
 // ==================== Semi转账跳转相关 ====================
-
-/**
- * 打开 Semi 转账页（打赏用）：固定 1 积分，不传任务参数
- * @param receiverUserId 被打赏用户 ID（帖子作者或评论作者）
- * @param getBaseUrl 获取后端 baseUrl，例如 () => getApiBaseUrl()
- * @param semiAppUrl 可选，Semi 应用基址
- * @returns true 表示已打开新窗口；false 表示未打开（如未绑定钱包）
- */
-export async function openTipToSemi(
-  receiverUserId: string,
-  getBaseUrl: () => string,
-  semiAppUrl?: string
-): Promise<boolean> {
-  const baseUrl = getBaseUrl()
-  const address = await getWalletAddressByUserId(receiverUserId, baseUrl)
-  if (!address) return false
-
-  const url = buildSemiTransferUrl(address, '1', {
-    semiAppUrl: semiAppUrl || 'https://www.semi.im',
-  })
-  window.open(url, '_blank')
-  return true
-}
 
 /**
  * 构造跳转到Semi-app转账页面的链接
@@ -3623,4 +3485,408 @@ export async function getWalletAddressByUserId(
     console.error('Get wallet address error:', error)
     return null
   }
+}
+
+// ==================== 社区商城 API ====================
+
+export interface MarketplaceTag {
+  id: string
+  name: string
+  colorHex: string
+  sortOrder?: number
+  createdAt?: string
+  archived?: boolean
+}
+
+export interface MarketplaceSeller {
+  id: string
+  name: string | null
+  avatar: string | null
+  semiId?: string | null
+  handle?: string | null
+}
+
+export interface MarketplaceListing {
+  id: string
+  communityId: string
+  sellerId: string
+  title: string
+  description: string
+  price: number
+  status: 'active' | 'locked' | 'sold' | 'withdrawn'
+  buyerId: string | null
+  lockedAt: string | null
+  soldAt: string | null
+  createdAt: string
+  imageUrls: string[]
+  tags: MarketplaceTag[]
+  seller: MarketplaceSeller | null
+  buyer?: MarketplaceSeller | null
+}
+
+export interface MarketplaceReviewItem {
+  id: string
+  listingId: string
+  rating: number
+  content: string
+  createdAt: string
+  productTitle: string
+  buyer: { id: string; name: string | null; avatar: string | null } | null
+  seller: { id: string; name: string | null; avatar: string | null } | null
+}
+
+async function marketplaceFetch<T>(
+  baseUrl: string,
+  communityId: string,
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const res = await fetch(`${baseUrl}/api/marketplace/${communityId}${path}`, {
+    ...options,
+    headers: { ...getAuthHeaders(), ...options.headers }
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const d = data as { message?: string; result?: string }
+    throw new Error(d.message || `请求失败 ${res.status}`)
+  }
+  return data as T
+}
+
+export async function getMarketplaceTags(communityId: string, baseUrl: string): Promise<MarketplaceTag[]> {
+  const data = await marketplaceFetch<{ tags: MarketplaceTag[] }>(baseUrl, communityId, '/tags')
+  return data.tags || []
+}
+
+export async function createMarketplaceTag(
+  communityId: string,
+  body: { name: string; colorHex?: string },
+  baseUrl: string
+): Promise<MarketplaceTag> {
+  const data = await marketplaceFetch<{ tag: MarketplaceTag }>(baseUrl, communityId, '/tags', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function updateMarketplaceTag(
+  communityId: string,
+  tagId: string,
+  body: { name?: string; colorHex?: string },
+  baseUrl: string
+): Promise<MarketplaceTag> {
+  const data = await marketplaceFetch<{ tag: MarketplaceTag }>(baseUrl, communityId, `/tags/${tagId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function deleteMarketplaceTag(communityId: string, tagId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/tags/${tagId}`, { method: 'DELETE' })
+}
+
+export async function listMarketplaceListings(
+  communityId: string,
+  params: { q?: string; tagId?: string; limit?: number; offset?: number },
+  baseUrl: string
+): Promise<{ listings: MarketplaceListing[]; total: number }> {
+  const sp = new URLSearchParams()
+  if (params.q) sp.set('q', params.q)
+  if (params.tagId) sp.set('tagId', params.tagId)
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.offset != null) sp.set('offset', String(params.offset))
+  const q = sp.toString()
+  return marketplaceFetch(baseUrl, communityId, `/listings${q ? `?${q}` : ''}`)
+}
+
+export async function getMarketplaceListing(
+  communityId: string,
+  listingId: string,
+  baseUrl: string
+): Promise<{ listing: MarketplaceListing; review: any | null }> {
+  return marketplaceFetch(baseUrl, communityId, `/listings/${listingId}`)
+}
+
+export async function createMarketplaceListing(
+  communityId: string,
+  body: {
+    id?: string
+    title: string
+    description: string
+    price: number
+    imageUrls: string[]
+    tagIds: string[]
+  },
+  baseUrl: string
+): Promise<MarketplaceListing> {
+  const data = await marketplaceFetch<{ listing: MarketplaceListing }>(baseUrl, communityId, '/listings', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+  return data.listing
+}
+
+export async function updateMarketplaceListing(
+  communityId: string,
+  listingId: string,
+  body: Partial<{ title: string; description: string; price: number; imageUrls: string[]; tagIds: string[] }>,
+  baseUrl: string
+): Promise<MarketplaceListing> {
+  const data = await marketplaceFetch<{ listing: MarketplaceListing }>(
+    baseUrl,
+    communityId,
+    `/listings/${listingId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    }
+  )
+  return data.listing
+}
+
+export async function withdrawMarketplaceListing(communityId: string, listingId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/withdraw`, { method: 'POST' })
+}
+
+export async function lockMarketplaceListing(communityId: string, listingId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/lock`, { method: 'POST' })
+}
+
+export async function confirmMarketplaceSold(communityId: string, listingId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/confirm-sold`, { method: 'POST' })
+}
+
+export async function cancelMarketplaceLock(communityId: string, listingId: string, baseUrl: string): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/cancel-lock`, { method: 'POST' })
+}
+
+export async function submitMarketplaceReview(
+  communityId: string,
+  listingId: string,
+  body: { rating: number; content?: string },
+  baseUrl: string
+): Promise<void> {
+  await marketplaceFetch(baseUrl, communityId, `/listings/${listingId}/review`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
+export async function listMarketplaceCommunityReviews(
+  communityId: string,
+  params: { limit?: number; offset?: number },
+  baseUrl: string
+): Promise<{ reviews: MarketplaceReviewItem[]; total: number }> {
+  const sp = new URLSearchParams()
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.offset != null) sp.set('offset', String(params.offset))
+  const q = sp.toString()
+  return marketplaceFetch(baseUrl, communityId, `/reviews${q ? `?${q}` : ''}`)
+}
+
+// ==================== 社区活动 API ====================
+
+export interface CalendarTag {
+  id: string
+  name: string
+  colorHex: string
+  sortOrder?: number
+  archived?: boolean
+}
+
+export interface CommunityEventOccurrence {
+  id: string
+  sequenceNo: number
+  activityStart: string
+  activityEnd: string
+}
+
+export interface CommunityEventOption {
+  id: string
+  title: string
+  price: number
+}
+
+export interface CommunityEventListItem {
+  id: string
+  communityId: string
+  creatorId: string
+  kind: 'single' | 'composite' | 'pack'
+  title: string
+  description: string
+  noteEnabled: boolean
+  isPinned?: boolean
+  registrationStart: string
+  registrationEnd: string
+  /** 付费时 Semi 转账目标地址（非发布人个人钱包时由发布方填写） */
+  paymentAddress: string
+  tag: { id: string; name: string; colorHex: string } | null
+  packFrequency?: string | null
+  packRangeStart?: string | null
+  packRangeEnd?: string | null
+  options: CommunityEventOption[]
+  occurrences: CommunityEventOccurrence[]
+  participantCount: number
+  myOccIds: string[]
+}
+
+async function communityEventsFetch<T>(
+  baseUrl: string,
+  communityId: string,
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const res = await fetch(`${baseUrl}/api/community-events/${communityId}${path}`, {
+    ...options,
+    headers: { ...getAuthHeaders(), ...options.headers }
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const d = data as { message?: string }
+    throw new Error(d.message || `请求失败 ${res.status}`)
+  }
+  return data as T
+}
+
+export async function listCalendarTags(communityId: string, baseUrl: string): Promise<CalendarTag[]> {
+  const data = await communityEventsFetch<{ tags: CalendarTag[] }>(baseUrl, communityId, '/calendar-tags')
+  return data.tags || []
+}
+
+export async function createCalendarTag(
+  communityId: string,
+  body: { name: string; colorHex?: string },
+  baseUrl: string
+): Promise<CalendarTag> {
+  const data = await communityEventsFetch<{ tag: CalendarTag }>(baseUrl, communityId, '/calendar-tags', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function updateCalendarTag(
+  communityId: string,
+  tagId: string,
+  body: { name?: string; colorHex?: string },
+  baseUrl: string
+): Promise<CalendarTag> {
+  const data = await communityEventsFetch<{ tag: CalendarTag }>(baseUrl, communityId, `/calendar-tags/${tagId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function deleteCalendarTag(communityId: string, tagId: string, baseUrl: string): Promise<void> {
+  await communityEventsFetch(baseUrl, communityId, `/calendar-tags/${tagId}`, { method: 'DELETE' })
+}
+
+export async function listCommunityEvents(
+  communityId: string,
+  params: { tagId?: string; mine?: boolean; limit?: number; offset?: number },
+  baseUrl: string
+): Promise<{ events: CommunityEventListItem[]; total: number }> {
+  const sp = new URLSearchParams()
+  if (params.tagId) sp.set('tagId', params.tagId)
+  if (params.mine) sp.set('mine', '1')
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.offset != null) sp.set('offset', String(params.offset))
+  const q = sp.toString()
+  return communityEventsFetch(baseUrl, communityId, `/events${q ? `?${q}` : ''}`)
+}
+
+/** 日历视图：按本地区间加载与该时间段有场次交集的活动（月/周/日切换时调用） */
+export async function listCommunityEventsCalendar(
+  communityId: string,
+  params: { from: string; to: string; tagId?: string; mine?: boolean },
+  baseUrl: string
+): Promise<{ events: CommunityEventListItem[]; total: number }> {
+  const sp = new URLSearchParams()
+  sp.set('from', params.from)
+  sp.set('to', params.to)
+  if (params.tagId) sp.set('tagId', params.tagId)
+  if (params.mine) sp.set('mine', '1')
+  return communityEventsFetch(baseUrl, communityId, `/events/calendar?${sp.toString()}`)
+}
+
+export async function getCommunityEvent(
+  communityId: string,
+  eventId: string,
+  baseUrl: string
+): Promise<{
+  event: CommunityEventListItem
+  participations: Array<{
+    id: string
+    occurrenceId: string
+    userId: string
+    user: { id: string; name: string | null; avatar: string | null } | null
+    optionTitle: string
+    remark: string
+    createdAt: string
+  }>
+  matrixUsers: Array<{ user: any; cells: Record<string, { optionTitle: string; remark: string }> }>
+  currentOccurrenceId: string | null
+  registrationOpen: boolean
+}> {
+  return communityEventsFetch(baseUrl, communityId, `/events/${eventId}`)
+}
+
+export async function createCommunityEvent(
+  communityId: string,
+  body: Record<string, unknown>,
+  baseUrl: string
+): Promise<{ event: CommunityEventListItem }> {
+  return communityEventsFetch(baseUrl, communityId, '/events', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
+export async function deleteCommunityEvent(
+  communityId: string,
+  eventId: string,
+  baseUrl: string
+): Promise<{ ok: boolean; draft?: Record<string, unknown> }> {
+  return communityEventsFetch(baseUrl, communityId, `/events/${eventId}`, { method: 'DELETE' })
+}
+
+export async function pinCommunityEvent(
+  communityId: string,
+  eventId: string,
+  isPinned: boolean,
+  baseUrl: string
+): Promise<void> {
+  await communityEventsFetch(baseUrl, communityId, `/events/${eventId}/pin`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isPinned })
+  })
+}
+
+export async function registerCommunityEvent(
+  communityId: string,
+  eventId: string,
+  body: { occurrenceId: string; optionId?: string; remark?: string },
+  baseUrl: string
+): Promise<{ ok: boolean; price: number; paymentAddress: string; optionTitle: string }> {
+  return communityEventsFetch(baseUrl, communityId, `/events/${eventId}/register`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+}
+
+export async function cancelCommunityEventRegistration(
+  communityId: string,
+  eventId: string,
+  occurrenceId: string,
+  baseUrl: string
+): Promise<void> {
+  await communityEventsFetch(
+    baseUrl,
+    communityId,
+    `/events/${eventId}/occurrences/${occurrenceId}/register`,
+    { method: 'DELETE' }
+  )
 }

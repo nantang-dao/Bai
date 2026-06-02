@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 // 直接导入 semi 的 API - 已注释，使用本地mock API
 // import { AUTH_TOKEN_KEY, getCookie, clearAuthToken, getMe } from '../../../semi/semi-app-main/utils/semi_api'
-import { AUTH_TOKEN_KEY, getCookie, clearAuthToken, getMe } from '~/utils/api'
+import { getMe, logout } from '~/utils/api'
 
 export interface User {
     id: string
@@ -49,27 +49,30 @@ export const useUserStore = defineStore('user', {
             if (this.user && !force) {
                 return this.user
             }
-            
-            if (getCookie(AUTH_TOKEN_KEY)) {
+            try {
               // 在 store 中获取运行时配置
               const config = useRuntimeConfig()
               const apiBaseUrl = config.public.apiUrl 
               const userData = await getMe(apiBaseUrl)
 
-              // 映射后端数据到前端 User 类型
               this.user = {
                 ...userData,
                 userType: 'member' as 'member' | 'community',
-                isProfileSetup: !!userData.name
+                isProfileSetup: !!(userData.name || userData.handle),
               }
               return this.user
+            } catch {
+              return null
             }
-
-            return null
         },
         async signout() {
-            // 清除认证 token
-            clearAuthToken()
+            try {
+              const config = useRuntimeConfig()
+              const apiBaseUrl = config.public.apiUrl
+              await logout(apiBaseUrl)
+            } catch {
+              // ignore
+            }
             // 清除用户状态
             this.user = null
             // 清除当前标识符（localStorage）

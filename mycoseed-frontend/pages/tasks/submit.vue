@@ -163,12 +163,11 @@
               </div>
             </div>
 
-            <!-- 位置定位验证：暂未开放，已隐藏 -->
-            <div v-if="false && requiresGPS" class="pt-4 border-t border-border">
+            <div v-if="requiresGPS" class="pt-4 border-t border-border">
               <h3 class="font-bold text-xs uppercase text-text-title mb-4">位置定位验证</h3>
               <div class="space-y-3">
-                <div v-if="!gpsLocation.latitude" class="p-4 bg-card border border-border rounded-2xl shadow-soft">
-                  <p class=" text-base text-text-title mb-3">请获取您当前的位置信息</p>
+                <div v-if="!gpsLocation.latitude" class="p-4 bg-card border border-border rounded-2xl shadow-soft space-y-3">
+                  <p class="text-base text-text-title">此任务要求提供位置信息</p>
                   <PixelButton
                     @click="getGPSLocation"
                     :disabled="isGettingLocation"
@@ -178,28 +177,27 @@
                   >
                     {{ isGettingLocation ? '获取位置中...' : '📍 获取位置' }}
                   </PixelButton>
-                  <p v-if="locationError" class="mt-2  text-sm text-destructive">
+                  <p v-if="locationError" class="text-sm text-destructive">
                     {{ locationError }}
                   </p>
                 </div>
-                <div v-else class="p-4 bg-green-50 border-2 border-green-600 shadow-soft">
+                <div v-else class="p-4 bg-green-50 border-2 border-green-600 rounded-2xl shadow-soft">
                   <div class="flex items-center gap-2 mb-2">
                     <span class="text-2xl">✅</span>
-                    <span class="font-bold text-xs uppercase text-green-800">位置已验证</span>
+                    <span class="font-bold text-xs uppercase text-green-800">位置已获取</span>
                   </div>
-                  <div class=" text-sm text-text-title space-y-1">
+                  <div class="text-sm text-text-title space-y-1">
                     <div>纬度: {{ gpsLocation.latitude?.toFixed(6) }}</div>
                     <div>经度: {{ gpsLocation.longitude?.toFixed(6) }}</div>
                     <div v-if="gpsLocation.accuracy != null">精度: ±{{ Math.round(Number(gpsLocation.accuracy)) }}米</div>
                   </div>
                   <PixelButton
-                    @click="getGPSLocation"
-                    :disabled="isGettingLocation"
+                    @click="clearLocation"
                     variant="secondary"
                     size="sm"
                     class="mt-3"
                   >
-                    {{ isGettingLocation ? '重新获取中...' : '重新获取位置' }}
+                    重新获取
                   </PixelButton>
                 </div>
               </div>
@@ -262,14 +260,6 @@ import PixelButton from '~/components/pixel/PixelButton.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import type { Task } from '~/utils/api'
 import { formatBeijingTime, parseBeijingTime } from '~/utils/time'
-
-// 高德地图类型声明
-declare global {
-  interface Window {
-    AMap: any
-    initAmap?: () => void
-  }
-}
 
 // 获取路由参数
 const route = useRoute()
@@ -422,80 +412,47 @@ const gpsLocation = ref<{
 const isGettingLocation = ref(false)
 const locationError = ref('')
 
-// 加载高德地图API
-const loadAmapScript = (): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    // 检查是否已经加载
-    if (window.AMap) {
-      resolve()
-      return
-    }
-
-    const config = useRuntimeConfig()
-    const apiKey = config.public.amapApiKey || 'YOUR_AMAP_API_KEY_HERE'
-    const script = document.createElement('script')
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${apiKey}&callback=initAmap`
-    script.async = true
-    script.defer = true
-
-    // 设置全局回调
-    ;(window as any).initAmap = () => {
-      resolve()
-      delete (window as any).initAmap
-    }
-
-    script.onerror = () => {
-      reject(new Error('加载高德地图API失败'))
-    }
-
-    document.head.appendChild(script)
-  })
+const clearLocation = () => {
+  gpsLocation.value = { latitude: null, longitude: null, accuracy: null, timestamp: null }
+  locationError.value = ''
 }
 
-// 获取GPS位置（使用高德地图API）
 const getGPSLocation = async () => {
   isGettingLocation.value = true
   locationError.value = ''
 
+  if (!navigator.geolocation) {
+    locationError.value = '您的浏览器不支持定位功能，请使用现代浏览器'
+    isGettingLocation.value = false
+    return
+  }
+
   try {
-    // 加载高德地图API
-    await loadAmapScript()
-
-    // 使用高德地图定位
-    const geolocation = new (window as any).AMap.Geolocation({
-      enableHighAccuracy: task.value.proofConfig?.gps?.accuracy === 'high',
-      timeout: 10000,
-      maximumAge: 0,
-      convert: true, // 自动偏移坐标，偏移后的坐标为高德坐标
-      showButton: false, // 不显示定位按钮
-      buttonDom: '', // 定位按钮的停靠位置
-      showMarker: false, // 不显示定位标记
-      showCircle: false, // 不显示定位精度圆圈
-      panToLocation: false, // 定位成功后将定位到的位置作为地图中心点
-      zoomToAccuracy: false // 定位成功后调整地图视野范围使定位位置及精度范围视野内可见
-    })
-
-    // 获取当前位置
-    const position = await new Promise<any>((resolve, reject) => {
-      geolocation.getCurrentPosition((status: string, result: any) => {
-        if (status === 'complete') {
-          resolve(result)
-        } else {
-          reject(new Error(result.message || '定位失败'))
-        }
+    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: task.value.proofConfig?.gps?.accuracy === 'high',
+        timeout: 15000,
+        maximumAge: 0
       })
     })
 
-    // 保存位置信息
     gpsLocation.value = {
-      latitude: position.position.lat,
-      longitude: position.position.lng,
-      accuracy: position.accuracy || null,
-      timestamp: Date.now()
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy || null,
+      timestamp: position.timestamp
     }
   } catch (error: any) {
     console.error('获取位置失败:', error)
-    locationError.value = error.message || '无法获取您的位置，请检查位置权限设置'
+    if (error.code === 1) {
+      locationError.value = '位置权限被拒绝，请在浏览器设置中允许位置访问'
+    } else if (error.code === 2) {
+      locationError.value = '无法获取位置信息，请检查设备定位是否开启'
+    } else if (error.code === 3) {
+      locationError.value = '获取位置超时，请重试'
+    } else {
+      locationError.value = error.message || '无法获取您的位置，请检查位置权限设置'
+    }
   } finally {
     isGettingLocation.value = false
   }
@@ -656,111 +613,33 @@ const submitForm = async () => {
   isSubmitting.value = true
   
   try {
-    // 创建FormData
-    const formData = new FormData()
-    formData.append('taskId', taskId)
-    
-    // 添加文字描述（如果需要）
-    if (requiresDescription.value) {
-      formData.append('description', submissionDescription.value)
-    }
-    
-    // 添加文件（如果需要）
-    if (requiresFileUpload.value && selectedFiles.value.main) {
-      formData.append('mainFile', selectedFiles.value.main)
-    }
-    
-    selectedFiles.value.additional.forEach((file, index) => {
-      formData.append(`additionalFile${index}`, file)
-    })
-    
-    // 添加GPS位置（如果需要）
-    if (requiresGPS.value && gpsLocation.value.latitude && gpsLocation.value.longitude) {
-      formData.append('gps', JSON.stringify({
-        latitude: gpsLocation.value.latitude,
-        longitude: gpsLocation.value.longitude,
-        accuracy: gpsLocation.value.accuracy,
-        timestamp: gpsLocation.value.timestamp
-      }))
-    }
-    
-    // 模拟API调用
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    // 构建提交内容
-    // 如果有GPS位置，优先保存GPS位置信息（JSON格式）
-    let proofContent = ''
-    
-    if (requiresGPS.value && gpsLocation.value.latitude && gpsLocation.value.longitude) {
-      // 如果有GPS位置，保存为JSON格式
-      proofContent = JSON.stringify({
-        latitude: gpsLocation.value.latitude,
-        longitude: gpsLocation.value.longitude,
-        accuracy: gpsLocation.value.accuracy,
-        timestamp: gpsLocation.value.timestamp
-      })
-      
-      // 如果有文字描述，追加到JSON中（作为description字段）
-      if (requiresDescription.value && submissionDescription.value.trim()) {
-        const gpsData = JSON.parse(proofContent)
-        gpsData.description = submissionDescription.value.trim()
-        proofContent = JSON.stringify(gpsData)
-      }
-    } else if (requiresDescription.value) {
-      // 如果只有文字描述，直接使用描述内容
-      proofContent = submissionDescription.value.trim()
-    } else {
-      // 如果没有任何要求，使用默认内容
-      proofContent = '任务完成'
-    }
-    
-    console.log('提交任务:', {
-      taskId,
-      description: requiresDescription.value ? submissionDescription.value : undefined,
-      files: requiresFileUpload.value ? {
-        main: selectedFiles.value.main?.name,
-        additional: selectedFiles.value.additional.map(f => f.name)
-      } : undefined,
-      gps: requiresGPS.value ? gpsLocation.value : undefined,
-      proofContent
-    })
-    
-    // 调用API提交凭证
     const baseUrl = getApiBaseUrl()
     
-    // 解析 proofContent 字符串为 ProofData 对象
-    let proofData: ProofData
-    try {
-      // 尝试解析为 JSON（可能包含 GPS 数据）
-      const parsed = JSON.parse(proofContent)
-      proofData = {
-        description: parsed.description || proofContent, // 如果没有 description 字段，使用原始内容
-        files: [], // 文件需要先上传，这里暂时为空
-        gps: parsed.latitude && parsed.longitude ? {
-          latitude: parsed.latitude,
-          longitude: parsed.longitude,
-          accuracy: parsed.accuracy,
-          timestamp: parsed.timestamp ? new Date(parsed.timestamp).toISOString() : new Date().toISOString()
-        } : undefined,
-        submittedAt: new Date().toISOString()
-      }
-    } catch (e) {
-      // 如果不是 JSON，就是纯文本描述
-      proofData = {
-        description: proofContent,
-        files: [],
-        submittedAt: new Date().toISOString()
+    let proofData: ProofData = {
+      description: '',
+      files: [],
+      submittedAt: new Date().toISOString()
+    }
+
+    if (requiresGPS.value && gpsLocation.value.latitude && gpsLocation.value.longitude) {
+      proofData.gps = {
+        latitude: gpsLocation.value.latitude,
+        longitude: gpsLocation.value.longitude,
+        accuracy: gpsLocation.value.accuracy,
+        timestamp: new Date(gpsLocation.value.timestamp!).toISOString()
       }
     }
-    
-    // 如果有文件，先上传文件
+
+    if (requiresDescription.value && submissionDescription.value.trim()) {
+      proofData.description = submissionDescription.value.trim()
+    }
+
     if (requiresFileUpload.value && (selectedFiles.value.main || selectedFiles.value.additional.length > 0)) {
       try {
         const files: File[] = []
         if (selectedFiles.value.main) files.push(selectedFiles.value.main)
         files.push(...selectedFiles.value.additional)
         
-        // 上传文件
         const uploadedFiles = await uploadProofFile(files, String(taskId), baseUrl)
         proofData.files = uploadedFiles.map(f => ({
           url: f.url,
@@ -771,7 +650,12 @@ const submitForm = async () => {
         }))
       } catch (e) {
         console.error('文件上传失败:', e)
-        // 继续执行，但 files 为空
+        toast.add({
+          title: '文件上传失败',
+          description: '请检查网络后重试，或联系管理员',
+          color: 'red'
+        })
+        return
       }
     }
     

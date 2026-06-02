@@ -19,6 +19,7 @@
 
       <div v-else class="space-y-4">
         <button
+          v-if="settings.community_enabled !== false"
           type="button"
           class="w-full text-left bg-card rounded-2xl shadow-soft border border-border p-4 active:bg-input-bg transition-colors"
           @click="go('community')"
@@ -36,6 +37,7 @@
         </button>
 
         <button
+          v-if="settings.task_enabled !== false"
           type="button"
           class="w-full text-left bg-card rounded-2xl shadow-soft border border-border p-4 active:bg-input-bg transition-colors"
           @click="go('task')"
@@ -53,6 +55,7 @@
         </button>
 
         <button
+          v-if="settings.due_enabled !== false"
           type="button"
           class="w-full text-left bg-card rounded-2xl shadow-soft border border-border p-4 active:bg-input-bg transition-colors"
           @click="go('due')"
@@ -60,7 +63,7 @@
           <div class="flex items-center justify-between">
             <div>
               <div class="font-bold text-text-title">到期提醒</div>
-              <div class="text-sm text-text-placeholder mt-1">距截止 3 小时/1 小时提醒</div>
+              <div class="text-sm text-text-placeholder mt-1">任务或活动到期提醒</div>
             </div>
             <div class="text-sm font-bold text-text-title">
               <span v-if="summary?.unreadByCategory.due">{{ summary?.unreadByCategory.due }}</span>
@@ -68,6 +71,10 @@
             </div>
           </div>
         </button>
+
+        <div v-if="allHidden" class="text-center py-12 text-text-placeholder">
+          所有消息分类已关闭，可在设置-消息通知中开启
+        </div>
       </div>
     </section>
   </div>
@@ -89,12 +96,24 @@ const communityStore = useCommunityStore()
 const loading = ref(false)
 const error = ref<string | null>(null)
 const summary = ref<NotificationSummary | null>(null)
+const settings = ref<Record<string, any>>({})
+
+const allHidden = computed(() => {
+  return settings.value.community_enabled === false
+    && settings.value.task_enabled === false
+    && settings.value.due_enabled === false
+})
 
 async function load() {
   loading.value = true
   error.value = null
   try {
-    summary.value = await api.getNotificationSummary({ communityId: communityStore.currentCommunityId })
+    const [summaryResult, settingsResult] = await Promise.all([
+      api.getNotificationSummary({ communityId: communityStore.currentCommunityId }),
+      api.getNotificationSettings()
+    ])
+    summary.value = summaryResult
+    settings.value = settingsResult?.settings || {}
   } catch (e: any) {
     error.value = e?.message || '加载失败'
   } finally {
@@ -108,4 +127,3 @@ function go(category: NotificationCategory) {
 
 onMounted(() => load())
 </script>
-

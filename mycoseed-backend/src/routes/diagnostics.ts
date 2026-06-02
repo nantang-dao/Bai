@@ -104,7 +104,8 @@ router.get('/db-test', async (req: Request, res: Response) => {
       environment: {
         nodeEnv: process.env.NODE_ENV || 'not set',
         port: process.env.PORT || '3001 (default)',
-        frontendUrl: process.env.FRONTEND_URL || 'not set'
+        frontendUrl: process.env.FRONTEND_URL || 'not set',
+        frontendUrls: process.env.FRONTEND_URLS || 'not set'
       },
       supabase: {
         envCheck,

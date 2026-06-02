@@ -2,16 +2,13 @@ import { Response } from 'express'
 import { supabase } from '../services/supabase'
 import { AuthRequest } from '../middleware/auth'
 import { getMemberRole } from '../middleware/communityAdmin'
+import { ensureDefaultMarketplaceTags } from '../services/marketplaceSeed'
+import { ensureDefaultCalendarTags } from '../services/calendarTagsSeed'
 
-/**
- * 防止 PostgREST `.or()` 过滤表达式注入：
- * 将用户输入限制为常见文本字符，避免 `,():"` 等进入表达式语法。
- */
-const sanitizeSearchTerm = (raw: string): string => {
-    const s = String(raw || '').trim()
-    if (!s) return ''
-    const cleaned = s.replace(/[^a-zA-Z0-9\u4e00-\u9fa5\s_-]/g, ' ').replace(/\s+/g, ' ').trim()
-    return cleaned.slice(0, 50)
+const sanitizeSearch = (input: string): string => {
+    // 防止 PostgREST filter 注入：仅保留中文/字母/数字/空格，并限制长度
+    const s = String(input || '').slice(0, 80)
+    return s.replace(/[^\p{Script=Han}a-zA-Z0-9\s]/gu, ' ').replace(/\s+/g, ' ').trim()
 }
 
 function toCommunity(row: any) {
@@ -45,7 +42,7 @@ function toCommunity(row: any) {
 export const list = async (req: AuthRequest, res: Response) => {
     try {
         const mine = req.query.mine === '1' || req.query.mine === 'true'
-        const q = sanitizeSearchTerm(req.query.q as string)
+        const q = sanitizeSearch((req.query.q as string) || '')
 
         if (mine) {
             if (!req.user?.id) return res.status(401).json({ result: 'error', message: 'Unauthorized' })
@@ -140,6 +137,16 @@ export const create = async (req: AuthRequest, res: Response) => {
             }
         }
         const { count } = await supabase.from('community_members').select('*', { count: 'exact', head: true }).eq('community_id', comm.id)
+        try {
+            await ensureDefaultMarketplaceTags(comm.id)
+        } catch (e) {
+            console.error('ensureDefaultMarketplaceTags', e)
+        }
+        try {
+            await ensureDefaultCalendarTags(comm.id)
+        } catch (e) {
+            console.error('ensureDefaultCalendarTags', e)
+        }
         res.status(201).json({ ...toCommunity(comm), memberCount: count ?? 0 })
     } catch (e: any) {
         console.error(e)

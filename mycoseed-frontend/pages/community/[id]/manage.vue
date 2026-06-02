@@ -12,20 +12,6 @@
       <template v-else>
         <p v-if="!isAdmin" class="text-red-600">无权限</p>
         <template v-else>
-          <!-- 总管理员：公开/私有、邀请码 -->
-          <section v-if="community.myRole === 'super_admin'" class="bg-card rounded-2xl border border-border p-4 space-y-3">
-            <h2 class="font-bold text-text-title">社区可见性</h2>
-            <div class="flex items-center gap-2">
-              <input id="isPublic" v-model="isPublic" type="checkbox" class="rounded" @change="updatePublic" />
-              <label for="isPublic" class="text-sm text-text-body">公开（未勾选则需邀请码加入并审批）</label>
-            </div>
-            <div v-if="community.slug" class="flex items-center gap-2">
-              <span class="text-sm text-text-body">邀请码：</span>
-              <code class="flex-1 px-2 py-1 rounded bg-input-bg text-text-title">{{ community.slug }}</code>
-              <button type="button" class="px-3 py-1 rounded-lg border border-border text-sm" @click="copySlug">复制</button>
-            </div>
-          </section>
-
           <!-- 总管理员：转让总管理员 -->
           <section v-if="community.myRole === 'super_admin'" class="bg-card rounded-2xl border border-border p-4 space-y-3">
             <h2 class="font-bold text-text-title">转让总管理员</h2>
@@ -137,7 +123,6 @@ import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import {
   getCommunityById,
   getCommunityMembers,
-  updateCommunity,
   transferSuperAdmin as apiTransfer,
   patchCommunityMember,
   addCommunityMember,
@@ -161,7 +146,6 @@ const id = route.params.id as string
 const community = ref<Community | null>(null)
 const members = ref<(CommunityMemberItem & { id: string; avatarSeed?: string })[]>([])
 const joinRequests = ref<JoinRequestItem[]>([])
-const isPublic = ref(true)
 const transferTarget = ref('')
 const demoteTo = ref<'member' | 'sub_admin'>('member')
 const transferring = ref(false)
@@ -256,7 +240,6 @@ async function load() {
     
     community.value = communityData
     if (!community.value) return
-    isPublic.value = community.value.isPublic !== false
     members.value = membersList.map(m => ({ ...m, id: m.userId, avatarSeed: m.avatar || m.name || m.userId }))
     
     // 管理员相关数据延迟加载（提升初始加载速度）
@@ -270,22 +253,6 @@ async function load() {
       })
     }
   } catch (_) {}
-}
-
-async function updatePublic() {
-  if (!community.value) return
-  try {
-    await updateCommunity(id, { isPublic: isPublic.value }, getApiBaseUrl())
-    community.value = { ...community.value, isPublic: isPublic.value }
-  } catch (e: any) {
-    alert(e.message || '更新失败')
-  }
-}
-
-function copySlug() {
-  if (!community.value?.slug) return
-  navigator.clipboard.writeText(community.value.slug)
-  alert('已复制邀请码')
 }
 
 async function doTransfer() {

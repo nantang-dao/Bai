@@ -81,6 +81,20 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
           </svg>
         </NuxtLink>
+        <NuxtLink
+          v-if="isSuperAdmin"
+          :to="`/community/${communityStore.currentCommunityId}/settings`"
+          class="flex items-center gap-3 px-4 py-4 active:bg-input-bg transition-colors"
+        >
+          <span class="w-10 h-10 rounded-xl bg-input-bg flex items-center justify-center text-xl">⚙️</span>
+          <div class="flex-1 text-left">
+            <div class="font-medium text-text-title">社区功能设置</div>
+            <div class="text-sm text-text-placeholder">社区公开可见性，社区标签管理，社区功能包管理</div>
+          </div>
+          <svg class="w-5 h-5 text-text-placeholder" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+        </NuxtLink>
       </div>
     </section>
 
@@ -276,6 +290,7 @@ const isCommunityAdmin = computed(() => {
   const r = communityStore.currentCommunity?.myRole
   return r === 'super_admin' || r === 'sub_admin'
 })
+const isSuperAdmin = computed(() => communityStore.currentCommunity?.myRole === 'super_admin')
 const toast = useToast()
 const { updateUserProfile, getMe } = useApi()
 const {

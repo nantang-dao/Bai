@@ -1,7 +1,15 @@
 <template>
   <div class="min-h-screen pb-24">
     <!-- 顶部个人信息区域 -->
-    <div class="mx-4 mt-4">
+    <div class="mx-4 mt-4 relative">
+      <NuxtLink
+        v-if="isMyProfile"
+        to="/settings"
+        class="absolute top-2 right-2 z-10 w-10 h-10 flex items-center justify-center rounded-xl bg-input-bg border border-border text-text-title transition-all hover:scale-105 shadow-soft"
+        title="设置"
+      >
+        ⚙️
+      </NuxtLink>
       <!-- 翻转卡片容器 -->
       <div 
         class="flip-card-container"
@@ -10,7 +18,7 @@
       >
         <div class="flip-card-inner">
           <!-- 卡片正面 -->
-          <div class="flip-card-face flip-card-front bg-white border border-border rounded-2xl shadow-soft p-6 pb-8 relative">
+          <div class="flip-card-face flip-card-front bg-white border border-border rounded-2xl shadow-soft p-6 pb-8 relative min-h-[340px] flex items-center justify-center">
             <div class="flex flex-col items-center gap-4">
         <!-- 头像 -->
         <div class="relative">
@@ -40,7 +48,7 @@
           </div>
 
           <!-- 卡片背面：整面阻止点击冒泡，避免误触翻转；需点击「返回」才翻回正面 -->
-          <div class="flip-card-face flip-card-back bg-white border border-border rounded-2xl shadow-soft p-6 pb-8 relative" @click.stop>
+          <div class="flip-card-face flip-card-back bg-white border border-border rounded-2xl shadow-soft p-6 pt-14 pb-8 relative" @click.stop>
             <div class="flex flex-col gap-4">
               <!-- 钱包地址（含链标识） -->
               <div class="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border border-border rounded-2xl shadow-soft-sm w-full min-w-0">
@@ -92,15 +100,37 @@
       </div>
     </div>
 
+    <!-- 商城付款提示（从预订跳转而来，默认在买家本人主页展示付款金额与备注） -->
+    <div v-if="marketPayHint" class="mx-4 mt-4 p-4 rounded-2xl border-2 border-amber-500 bg-amber-50">
+      <div class="text-sm font-bold text-amber-900 mb-2">商城付款信息</div>
+      <p v-if="marketPayToId" class="text-sm text-amber-900 mb-2">
+        请将款项转至
+        <NuxtLink :to="`/member/${marketPayToId}`" class="underline font-bold text-primary">卖家主页</NuxtLink>
+        展示的钱包地址。
+      </p>
+      <p v-else class="text-sm text-amber-900">请在钱包转账时填写以下金额与备注。</p>
+      <ul class="mt-2 text-sm text-amber-900 space-y-1">
+        <li>金额：<span class="font-mono font-bold">{{ marketPayHint.amount }}</span></li>
+        <li>备注：<span class="font-mono break-all">{{ marketPayHint.remark }}</span></li>
+      </ul>
+      <button
+        type="button"
+        class="mt-3 text-xs text-amber-800 underline"
+        @click="copyMarketPaySummary"
+      >
+        复制金额与备注
+      </button>
+    </div>
+
     <!-- 下方 Tab 区域 -->
     <div class="mt-4 px-4">
-      <!-- Tab 导航 -->
+      <!-- 顶级 Tab 导航：发布任务 / 我的任务 -->
       <div class="flex items-center justify-between border-b-2 border-black mb-4 gap-4">
         <div class="flex overflow-x-auto scrollbar-hide flex-1">
-          <button 
-            v-for="tab in tabs" 
+          <button
+            v-for="tab in tabs"
             :key="tab.id"
-            @click="activeTab = tab.id"
+            @click="activeTab = tab.id; activeFilter = 'all'"
             :class="[
               'px-4 py-2 font-bold text-sm whitespace-nowrap transition-colors',
               activeTab === tab.id ? 'bg-black text-white' : 'text-gray-500 hover:bg-gray-100'
@@ -111,53 +141,76 @@
         </div>
       </div>
 
+      <!-- 筛选标签 -->
+      <div class="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
+        <button
+          v-for="filter in filterTabs"
+          :key="filter.id"
+          @click="activeFilter = filter.id"
+          :class="[
+            'px-3 py-1 text-xs font-bold whitespace-nowrap rounded-full transition-colors',
+            activeFilter === filter.id ? 'bg-black text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          ]"
+        >
+          {{ filter.label }}
+        </button>
+      </div>
+
       <!-- Tab 内容 -->
       <div class="min-h-[300px]">
-        <!-- HISTORY TAB -->
-        <div v-if="activeTab === 'HISTORY'" class="space-y-4">
-          <!-- 加载状态 -->
-          <div v-if="loadingTasks" class="text-center py-8 text-gray-500 ">
-            加载中...
-          </div>
-          
-          <!-- 任务列表 -->
-          <div v-else-if="claimedTasks.length > 0">
-            <div v-for="task in claimedTasks" :key="task.id" class="bg-white border border-border rounded-2xl p-4 shadow-soft-sm hover:shadow-soft transition-shadow cursor-pointer" @click="navigateTo(`/tasks/${task.id}`)">
-              <div class="flex items-start gap-3">
-                <div class="text-2xl">{{ getTaskIcon(task.status) }}</div>
-                <div class="flex-1">
-                  <div class="flex justify-between items-start mb-1">
-                    <div class="font-bold  text-lg leading-tight">{{ task.title }}</div>
-                    <div v-if="task.status === 'completed'" class="font-bold text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
-                      +{{ task.reward }} {{ taskRewardSymbols[task.id] || '积分' }}
-                    </div>
+        <!-- 加载状态 -->
+        <div v-if="loadingTasks" class="text-center py-8 text-gray-500">
+          加载中...
+        </div>
+
+        <!-- 任务列表 -->
+        <div v-else-if="currentTasks.length > 0" class="space-y-4">
+          <div v-for="task in currentTasks" :key="task.id" class="bg-white border border-border rounded-2xl p-4 shadow-soft-sm hover:shadow-soft transition-shadow cursor-pointer" @click="navigateTo(`/tasks/${task.id}`)">
+            <div class="flex items-start gap-3">
+              <div class="text-2xl">{{ getTaskIcon(task.status) }}</div>
+              <div class="flex-1">
+                <div class="flex justify-between items-start mb-1">
+                  <div class="font-bold text-lg leading-tight">{{ task.title }}</div>
+                  <div v-if="task.status === 'completed'" class="font-bold text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
+                    +{{ task.reward }} {{ taskRewardSymbols[task.id] || '积分' }}
                   </div>
-                  <div class="flex items-center gap-2 mb-2">
-                    <span :class="getStatusBadgeClass(task.status)">
-                      {{ getStatusText(task.status) }}
-                    </span>
-                    <span v-if="task.status === 'claimed' || task.status === 'unsubmit'" class="font-bold text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                      进行中
-                    </span>
-                  </div>
-                  <div class="text-xs text-gray-500">
-                    {{ formatTaskDate(task) }}
-                  </div>
-                  <div v-if="task.description" class="text-xs text-gray-600 mt-1 line-clamp-2">
-                    {{ task.description }}
-                  </div>
+                </div>
+                <div class="flex items-center gap-2 mb-2">
+                  <span :class="getStatusBadgeClass(task.status)">
+                    {{ getStatusText(task.status) }}
+                  </span>
+                  <span v-if="task.status === 'claimed' || task.status === 'unsubmit'" class="font-bold text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                    进行中
+                  </span>
+                  <!-- 转账状态（仅已完成任务） -->
+                  <span v-if="task.status === 'completed' && taskChainMap[task.id]?.length" class="font-bold text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded">
+                    已转账 {{ taskChainMap[task.id][0]?.actual_amount || taskChainMap[task.id][0]?.amount || task.reward }} 积分
+                  </span>
+                  <span v-else-if="task.status === 'completed' && task.transferredAt" class="font-bold text-[10px] text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
+                    已标记转账 {{ task.reward }} 积分
+                  </span>
+                  <span v-else-if="task.status === 'completed'" class="font-bold text-[10px] text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
+                    待转账 {{ task.reward }} 积分
+                  </span>
+                </div>
+                <div class="text-xs text-gray-500">
+                  {{ formatTaskDate(task) }}
+                </div>
+                <div v-if="task.description" class="text-xs text-gray-600 mt-1 line-clamp-2">
+                  {{ task.description }}
                 </div>
               </div>
             </div>
           </div>
-          
-          <!-- 空状态 -->
-          <div v-else class="text-center py-12">
-            <div class="text-4xl mb-4">📋</div>
-            <div class=" text-gray-500">还没有领取任何任务</div>
-          </div>
         </div>
 
+        <!-- 空状态 -->
+        <div v-else class="text-center py-12">
+          <div class="text-4xl mb-4">📋</div>
+          <div class="text-gray-500">
+            {{ activeTab === 'PUBLISHED' ? '还没有发布任何任务' : '还没有领取任何任务' }}
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -168,9 +221,8 @@ import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '~/stores/user'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
-import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, type Task, type Community } from '~/utils/api'
+import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, getTaskTransactions, type Task, type Community } from '~/utils/api'
 import { getTaskRewardSymbol } from '~/utils/display'
-import { useToast } from '~/composables/useToast'
 import { useApi } from '~/composables/useApi'
 
 definePageMeta({
@@ -180,7 +232,28 @@ definePageMeta({
 const route = useRoute()
 const router = useRouter()
 const memberId = route.params.id as string  // UUID是字符串，不需要parseInt
-const activeTab = ref('HISTORY')
+
+const marketPayHint = computed(() => {
+  const amount = route.query.marketAmount as string | undefined
+  const remark = route.query.marketRemark as string | undefined
+  if (!amount && !remark) return null
+  return { amount: amount || '—', remark: remark || '—' }
+})
+
+const marketPayToId = computed(() => (route.query.marketPayTo as string) || '')
+
+async function copyMarketPaySummary() {
+  const amount = route.query.marketAmount as string | undefined
+  const remark = route.query.marketRemark as string | undefined
+  const text = `金额：${amount || ''}\n备注：${remark || ''}`
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.add({ title: '已复制', color: 'green' })
+  } catch {
+    toast.add({ title: '请手动复制：' + text, color: 'red' })
+  }
+}
+const activeTab = ref('PUBLISHED')
 const isFlipped = ref(false)
 const userStore = useUserStore()
 const toast = useToast()
@@ -218,16 +291,27 @@ const isMyProfile = computed(() => {
 })
 
 const tabs = [
-  { id: 'HISTORY', label: '任务' }
+  { id: 'PUBLISHED', label: '发布任务' },
+  { id: 'ACCEPTED', label: '我的任务' }
+]
+
+const filterTabs = [
+  { id: 'all', label: '全部' },
+  { id: 'pending', label: '可领取' },
+  { id: 'unsubmit', label: '待审核' },
+  { id: 'completed', label: '已完成' },
+  { id: 'expired', label: '已失效' }
 ]
 
 // Mock Data
 const member = ref<any>(null)
 const history = ref<any[]>([])
 const communities = ref<any[]>([])
-const claimedTasks = ref<Task[]>([])
+const allTasks = ref<Task[]>([])
 const loadingTasks = ref(false)
-const taskRewardSymbols = ref<Record<string, string>>({}) // 存储每个任务对应的积分符号
+const taskRewardSymbols = ref<Record<string, string>>({})
+const taskChainMap = ref<Record<string, any[]>>({})
+const activeFilter = ref('all')
 
 const navigateTo = (path: string) => {
   router.push(path)
@@ -324,22 +408,53 @@ const loadUserCommunity = async () => {
   }
 }
 
-// 加载领取的任务列表
+// 任务状态映射到筛选分类（复用 tasks/index.vue 逻辑）
+const mapTaskStatusToFilter = (task: Task): string => {
+  // 已失效：rejected
+  if (task.status === 'rejected') return 'expired'
+  // 可领取：unclaimed
+  if (task.status === 'unclaimed') return 'pending'
+  // 待审核：claimed/unsubmit/submitted/under_review
+  if (task.status === 'claimed' || task.status === 'unsubmit' || task.status === 'submitted' || task.status === 'under_review') return 'unsubmit'
+  // 已完成
+  if (task.status === 'completed') return 'completed'
+  return 'pending'
+}
+
+// 发布的任务（我是创建者）
+const publishedTasks = computed(() => {
+  const userId = userStore.user?.id
+  if (!userId) return []
+  return allTasks.value
+    .filter(t => t.creatorId === userId)
+    .filter(t => activeFilter.value === 'all' || mapTaskStatusToFilter(t) === activeFilter.value)
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
+})
+
+// 我领取的任务（我是领取者）
+const acceptedTasks = computed(() => {
+  const userId = userStore.user?.id
+  if (!userId) return []
+  return allTasks.value
+    .filter(t => t.claimerId === userId)
+    .filter(t => activeFilter.value === 'all' || mapTaskStatusToFilter(t) === activeFilter.value)
+    .sort((a, b) => new Date(b.updatedAt || a.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
+})
+
+// 当前显示的任务列表
+const currentTasks = computed(() => {
+  return activeTab.value === 'PUBLISHED' ? publishedTasks.value : acceptedTasks.value
+})
+
+// 加载任务列表
 const loadClaimedTasks = async () => {
   loadingTasks.value = true
   try {
     const baseUrl = getApiBaseUrl()
     const tasks = await getMyTasks(baseUrl)
-    // 排序：优先显示已完成的任务，然后按更新时间倒序
-    claimedTasks.value = tasks.sort((a, b) => {
-      // 优先显示已完成的任务
-      if (a.status === 'completed' && b.status !== 'completed') {
-        return -1
-      }
-      if (a.status !== 'completed' && b.status === 'completed') {
-        return 1
-      }
-      // 对于相同优先级（都是已完成或都不是已完成），按更新时间倒序
+    allTasks.value = tasks.sort((a, b) => {
+      if (a.status === 'completed' && b.status !== 'completed') return -1
+      if (a.status !== 'completed' && b.status === 'completed') return 1
       const timeA = new Date(
         b.updatedAt || b.completedAt || b.submittedAt || b.claimedAt || b.createdAt || 0
       ).getTime()
@@ -348,15 +463,29 @@ const loadClaimedTasks = async () => {
       ).getTime()
       return timeA - timeB
     })
-    
     // 为每个任务获取对应的积分符号
     const allCommunities = await getCommunities()
-    for (const task of claimedTasks.value) {
+    for (const task of allTasks.value) {
       const symbol = await getTaskRewardSymbol(task, allCommunities)
       taskRewardSymbols.value[task.id] = symbol
     }
+
+    // 查询已完成任务的链上交易记录
+    const completedTasks = tasks.filter(t => t.status === 'completed')
+    if (completedTasks.length > 0) {
+      const chainMap: Record<string, any[]> = {}
+      await Promise.all(
+        completedTasks.map(async (t) => {
+          try {
+            const txs = await getTaskTransactions(t.id, baseUrl)
+            if (txs && txs.length > 0) chainMap[t.id] = txs
+          } catch { /* ignore */ }
+        })
+      )
+      taskChainMap.value = chainMap
+    }
   } catch (error) {
-    console.error('Failed to load claimed tasks:', error)
+    console.error('Failed to load tasks:', error)
   } finally {
     loadingTasks.value = false
   }
@@ -443,12 +572,6 @@ const formatTaskDate = (task: Task): string => {
   return `${action} ${timeStr}`
 }
 
-// 监听 activeTab，当切换到任务tab时刷新任务列表
-watch(() => activeTab.value, (newTab) => {
-  if (newTab === 'HISTORY') {
-    loadClaimedTasks()
-  }
-})
 
 onMounted(async () => {
   // 确保用户信息已加载
@@ -500,10 +623,8 @@ onMounted(async () => {
         },
       ]
       
-      // 如果当前是任务tab，加载任务列表
-      if (activeTab.value === 'HISTORY') {
-        loadClaimedTasks()
-      }
+      // 加载任务列表
+      loadClaimedTasks()
     }
   } catch (error) {
     console.error('Failed to load member data:', error)

@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   community_id UUID, -- 可为空：例如未归属社区的通知
 
   category VARCHAR(20) NOT NULL CHECK (category IN ('community', 'task', 'due')),
-  type VARCHAR(50) NOT NULL, -- 例如 post_like / post_comment / task_claim / task_submit / task_approved / task_rejected / task_due_1h / task_due_3h
+  type VARCHAR(50) NOT NULL, -- 例如 post_like / post_comment / task_claim / task_submit / task_approved / task_rejected / task_due_1h / event_due_1h
 
   title TEXT NOT NULL,
   body TEXT,
@@ -29,8 +29,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_community_id ON notifications(commu
 
 -- 去重：同 user_id + dedupe_key 只保留 1 条
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_notifications_user_dedupe_key
-  ON notifications(user_id, dedupe_key)
-  WHERE dedupe_key IS NOT NULL;
+  ON notifications(user_id, dedupe_key);
 
 COMMENT ON TABLE notifications IS '站内消息通知（按用户、分类存储，支持已读与去重）';
 

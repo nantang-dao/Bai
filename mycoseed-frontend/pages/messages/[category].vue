@@ -55,6 +55,14 @@
               查看任务 →
             </NuxtLink>
           </div>
+          <div v-if="n.data?.eventId" class="mt-3">
+            <NuxtLink
+              :to="`/community/${communityStore.currentCommunityId}/events/${n.data.eventId}`"
+              class="inline-flex items-center text-sm text-primary hover:underline"
+            >
+              查看活动 →
+            </NuxtLink>
+          </div>
         </div>
       </div>
     </section>
