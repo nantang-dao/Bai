@@ -224,22 +224,35 @@
                     <div
                       v-for="c in (postCommentsMap.get(post.id) ?? [])"
                       :key="c.id"
-                      class="text-gray-700 flex items-baseline gap-1 flex-wrap cursor-pointer rounded px-1 -mx-1 hover:bg-gray-200/60"
-                      @pointerdown="startLongPress('comment', c.authorId)"
-                      @pointerup="cancelLongPress"
-                      @pointerleave="cancelLongPress"
-                      @pointercancel="cancelLongPress"
-                      @click.stop="onCommentClick(post.id, c, $event)"
+                      class="text-gray-700 flex items-baseline gap-1 flex-wrap rounded px-1 -mx-1 hover:bg-gray-200/60 group/comment"
                     >
-                      <span v-if="c.replyTo" class="text-gray-700">
-                        <span class="font-medium">{{ c.author?.name || '用户' }}</span>
-                        回复
-                        <span class="font-medium">{{ c.replyTo.name || '用户' }}</span>：
-                        {{ c.content }}
-                      </span>
-                      <span v-else class="text-gray-700">
-                        <span class="font-medium">{{ c.author?.name || '用户' }}</span>：{{ c.content }}
-                      </span>
+                      <div
+                        class="flex-1 min-w-0 flex items-baseline gap-1 flex-wrap cursor-pointer"
+                        @pointerdown="startLongPress('comment', c.authorId)"
+                        @pointerup="cancelLongPress"
+                        @pointerleave="cancelLongPress"
+                        @pointercancel="cancelLongPress"
+                        @click.stop="onCommentClick(post.id, c, $event)"
+                      >
+                        <span v-if="c.replyTo" class="text-gray-700">
+                          <span class="font-medium">{{ c.author?.name || '用户' }}</span>
+                          回复
+                          <span class="font-medium">{{ c.replyTo.name || '用户' }}</span>：
+                          {{ c.content }}
+                        </span>
+                        <span v-else class="text-gray-700">
+                          <span class="font-medium">{{ c.author?.name || '用户' }}</span>：{{ c.content }}
+                        </span>
+                      </div>
+                      <button
+                        v-if="canDeleteComment(c)"
+                        type="button"
+                        class="shrink-0 text-xs text-destructive opacity-70 hover:opacity-100 px-1"
+                        aria-label="删除评论"
+                        @click.stop="handleDeleteComment(post.id, c)"
+                      >
+                        删除
+                      </button>
                     </div>
                   </div>
 
@@ -701,6 +714,30 @@ async function submitComment(postId: string) {
 
 function canDeletePost(post: any) {
   return !!userStore.user?.id && post?.authorId === userStore.user.id
+}
+
+function canDeleteComment(comment: Comment) {
+  return !!userStore.user?.id && comment.authorId === userStore.user.id
+}
+
+async function handleDeleteComment(postId: string, comment: Comment) {
+  if (!canDeleteComment(comment)) return
+  const ok = window.confirm('确认删除这条评论？删除后将无法恢复。')
+  if (!ok) return
+  try {
+    await api.deleteComment(comment.id)
+    const list = (postCommentsMap.value.get(postId) ?? []).filter((c) => c.id !== comment.id)
+    postCommentsMap.value = new Map(postCommentsMap.value).set(postId, list)
+    const post = posts.value.find((p) => p.id === postId)
+    if (post) post.commentsCount = Math.max(0, (post.commentsCount ?? 0) - 1)
+  } catch (e: any) {
+    console.error('删除评论失败:', e?.message)
+    toast.add({
+      title: '删除失败',
+      description: e?.message || '请稍后重试',
+      color: 'red',
+    })
+  }
 }
 
 function canWithdrawPost(post: any) {
