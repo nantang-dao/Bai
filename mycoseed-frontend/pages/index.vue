@@ -136,6 +136,7 @@
                 <h3 class="font-bold text-sm uppercase">社区动态（帖子）</h3>
                 <PixelButton v-if="userStore.user" @click="navigateTo('/post/create')">发动态</PixelButton>
               </div>
+              <p class="text-sm text-text-placeholder">长按帖子或评论可打赏</p>
 
               <div v-if="postsLoading && posts.length === 0" class="text-center py-8 text-gray-500">
                 加载中...
@@ -181,6 +182,13 @@
                       </div>
                     </div>
                   </template>
+                  <div
+                    class="cursor-default"
+                    @pointerdown="startLongPress('post', post.authorId)"
+                    @pointerup="cancelLongPress"
+                    @pointerleave="cancelLongPress"
+                    @pointercancel="cancelLongPress"
+                  >
                   <div class="text-gray-800 whitespace-pre-wrap">
                     <p
                       :class="needsTextExpand(post.content) && !isTextExpanded(post.id) ? 'line-clamp-10' : ''"
@@ -216,18 +224,35 @@
                     <div
                       v-for="c in (postCommentsMap.get(post.id) ?? [])"
                       :key="c.id"
-                      class="text-gray-700 flex items-baseline gap-1 flex-wrap cursor-pointer rounded px-1 -mx-1 hover:bg-gray-200/60"
-                      @click.stop="onReplyComment(post.id, c)"
+                      class="text-gray-700 flex items-baseline gap-1 flex-wrap rounded px-1 -mx-1 hover:bg-gray-200/60 group/comment"
                     >
-                      <span v-if="c.replyTo" class="text-gray-700">
-                        <span class="font-medium">{{ c.author?.name || '用户' }}</span>
-                        回复
-                        <span class="font-medium">{{ c.replyTo.name || '用户' }}</span>：
-                        {{ c.content }}
-                      </span>
-                      <span v-else class="text-gray-700">
-                        <span class="font-medium">{{ c.author?.name || '用户' }}</span>：{{ c.content }}
-                      </span>
+                      <div
+                        class="flex-1 min-w-0 flex items-baseline gap-1 flex-wrap cursor-pointer"
+                        @pointerdown="startLongPress('comment', c.authorId)"
+                        @pointerup="cancelLongPress"
+                        @pointerleave="cancelLongPress"
+                        @pointercancel="cancelLongPress"
+                        @click.stop="onCommentClick(post.id, c, $event)"
+                      >
+                        <span v-if="c.replyTo" class="text-gray-700">
+                          <span class="font-medium">{{ c.author?.name || '用户' }}</span>
+                          回复
+                          <span class="font-medium">{{ c.replyTo.name || '用户' }}</span>：
+                          {{ c.content }}
+                        </span>
+                        <span v-else class="text-gray-700">
+                          <span class="font-medium">{{ c.author?.name || '用户' }}</span>：{{ c.content }}
+                        </span>
+                      </div>
+                      <button
+                        v-if="canDeleteComment(c)"
+                        type="button"
+                        class="shrink-0 text-xs text-destructive opacity-70 hover:opacity-100 px-1"
+                        aria-label="删除评论"
+                        @click.stop="handleDeleteComment(post.id, c)"
+                      >
+                        删除
+                      </button>
                     </div>
                   </div>
 
@@ -252,6 +277,7 @@
                         发送
                       </button>
                     </div>
+                  </div>
                   </div>
 
                   <template #footer>
@@ -352,6 +378,28 @@
                   </div>
                 </Transition>
               </Teleport>
+
+              <Teleport to="body">
+                <div
+                  v-if="tipModalOpen"
+                  class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                  @click.self="closeTipModal"
+                >
+                  <div
+                    class="bg-card rounded-2xl shadow-soft border border-border p-6 w-full max-w-sm text-center"
+                    @click.stop
+                  >
+                    <p class="text-sm text-text-body mb-4">向作者打赏 1 NT（可在 Semi 中修改金额）</p>
+                    <button
+                      type="button"
+                      class="w-full px-6 py-3 rounded-xl bg-primary text-white font-medium"
+                      @click="confirmTip"
+                    >
+                      打赏
+                    </button>
+                  </div>
+                </div>
+              </Teleport>
             </div>
           </div>
 
@@ -371,7 +419,8 @@ import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import { useApi } from '~/composables/useApi'
-import { getCommunityById, getCommunityMembers, getCommunityAnnouncements, getCommunities, DEFAULT_COMMUNITY_UUID, type Community, type Announcement } from '~/utils/api'
+import { useToast } from '~/composables/useToast'
+import { getCommunityById, getCommunityMembers, getCommunityAnnouncements, getCommunities, DEFAULT_COMMUNITY_UUID, getApiBaseUrl, openTipToSemi, type Community, type Announcement } from '~/utils/api'
 import type { Post, Comment, Like } from '~/utils/api'
 
 // Use definePageMeta to ensure layout is applied
@@ -385,7 +434,76 @@ const route = useRoute()
 const userStore = useUserStore()
 const communityStore = useCommunityStore()
 const api = useApi()
+const toast = useToast()
+const runtimeConfig = useRuntimeConfig()
 const activeTab = ref('COMMUNITY')
+
+const LONG_PRESS_MS = 400
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+const tipModalOpen = ref(false)
+const tipTarget = ref<{ type: 'post' | 'comment'; authorId: string } | null>(null)
+const longPressHandled = ref(false)
+
+function startLongPress(type: 'post' | 'comment', authorId: string) {
+  if (!authorId || longPressTimer) return
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    longPressHandled.value = true
+    tipTarget.value = { type, authorId }
+    tipModalOpen.value = true
+  }, LONG_PRESS_MS)
+}
+
+function cancelLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
+function closeTipModal() {
+  tipModalOpen.value = false
+  tipTarget.value = null
+}
+
+async function confirmTip() {
+  if (!tipTarget.value) {
+    closeTipModal()
+    return
+  }
+  if (!userStore.user) {
+    toast.add({ title: '请先登录', description: '登录后可打赏', color: 'orange' })
+    closeTipModal()
+    return
+  }
+  const baseUrl = getApiBaseUrl()
+  const semiAppUrl = (runtimeConfig.public as { semiAppUrl?: string }).semiAppUrl
+  const opened = await openTipToSemi(tipTarget.value.authorId, () => baseUrl, semiAppUrl)
+  closeTipModal()
+  if (!opened) {
+    toast.add({
+      title: '无法打赏',
+      description: '该用户未绑定钱包，无法打赏',
+      color: 'orange',
+    })
+    return
+  }
+  toast.add({
+    title: '已打开转账页面',
+    description: '可在 Semi 内修改金额后完成转账',
+    color: 'green',
+  })
+}
+
+function onCommentClick(postId: string, comment: Comment, e: MouseEvent) {
+  if (longPressHandled.value) {
+    e.preventDefault()
+    e.stopPropagation()
+    longPressHandled.value = false
+    return
+  }
+  onReplyComment(postId, comment)
+}
 
 // 背景图轮播：取社区背景图（最多 3 张）
 const bannerImages = computed(() => {
@@ -596,6 +714,30 @@ async function submitComment(postId: string) {
 
 function canDeletePost(post: any) {
   return !!userStore.user?.id && post?.authorId === userStore.user.id
+}
+
+function canDeleteComment(comment: Comment) {
+  return !!userStore.user?.id && comment.authorId === userStore.user.id
+}
+
+async function handleDeleteComment(postId: string, comment: Comment) {
+  if (!canDeleteComment(comment)) return
+  const ok = window.confirm('确认删除这条评论？删除后将无法恢复。')
+  if (!ok) return
+  try {
+    await api.deleteComment(comment.id)
+    const list = (postCommentsMap.value.get(postId) ?? []).filter((c) => c.id !== comment.id)
+    postCommentsMap.value = new Map(postCommentsMap.value).set(postId, list)
+    const post = posts.value.find((p) => p.id === postId)
+    if (post) post.commentsCount = Math.max(0, (post.commentsCount ?? 0) - 1)
+  } catch (e: any) {
+    console.error('删除评论失败:', e?.message)
+    toast.add({
+      title: '删除失败',
+      description: e?.message || '请稍后重试',
+      color: 'red',
+    })
+  }
 }
 
 function canWithdrawPost(post: any) {
