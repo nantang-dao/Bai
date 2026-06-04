@@ -82,7 +82,7 @@
                   v-if="item.status === 'completed' && taskChainMap[item.id]?.length"
                   class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-xl font-medium"
                 >
-                  已转账 {{ taskChainMap[item.id][0]?.actual_amount || taskChainMap[item.id][0]?.amount || item.reward || 0 }} 积分
+                  已转账 {{ weiToToken(taskChainMap[item.id][0]?.actual_amount || taskChainMap[item.id][0]?.amount) || item.reward || 0 }} 积分
                 </span>
                 <span
                   v-else-if="item.status === 'completed' && item._task?.transferredAt"
@@ -157,6 +157,7 @@ import { useUserStore } from '~/stores/user'
 import { useCommunityStore } from '~/stores/community'
 import { getAllTasks, getApiBaseUrl, getTaskTransactions, type Task } from '~/utils/api'
 import { parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'
+import { weiToToken } from '~/utils/display'
 
 definePageMeta({
   layout: 'default'
