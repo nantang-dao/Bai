@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 // 直接导入 semi 的 API - 已注释，使用本地mock API
 // import { AUTH_TOKEN_KEY, getCookie, clearAuthToken, getMe } from '../../../semi/semi-app-main/utils/semi_api'
 import { getMe, logout } from '~/utils/api'
+import { resolvePublicApiBase } from '~/utils/publicApiBase'
 
 export interface User {
     id: string
@@ -52,7 +53,7 @@ export const useUserStore = defineStore('user', {
             try {
               // 在 store 中获取运行时配置
               const config = useRuntimeConfig()
-              const apiBaseUrl = config.public.apiUrl 
+              const apiBaseUrl = resolvePublicApiBase(config.public.apiUrl as string)
               const userData = await getMe(apiBaseUrl)
 
               this.user = {
@@ -68,7 +69,7 @@ export const useUserStore = defineStore('user', {
         async signout() {
             try {
               const config = useRuntimeConfig()
-              const apiBaseUrl = config.public.apiUrl
+              const apiBaseUrl = resolvePublicApiBase(config.public.apiUrl as string)
               await logout(apiBaseUrl)
             } catch {
               // ignore

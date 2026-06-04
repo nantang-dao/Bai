@@ -1028,13 +1028,13 @@ export const devLoginController = async (req: Request, res: Response) => {
         const sessionSecret = process.env.SESSION_SECRET
         if (sessionSecret) {
             const redirectUri = process.env.REDIRECT_URI || ''
-            const frontendUrl = process.env.FRONTEND_URL || ''
-            const secure = redirectUri.startsWith('https://')
-            const backendOrigin = redirectUri ? new URL(redirectUri).origin : ''
-            const frontendOrigin = frontendUrl ? new URL(frontendUrl).origin : ''
-            const crossSite = !!(backendOrigin && frontendOrigin && backendOrigin !== frontendOrigin)
-            const sameSite = (crossSite && secure) ? 'None' as const : ((process.env.SESSION_SAMESITE as any) || 'Lax' as const)
-            const domain = process.env.SESSION_DOMAIN
+            const returnOrigin = resolveReturnOrigin(
+                req.headers.origin as string | undefined,
+                (req.body as { return_origin?: string })?.return_origin
+            )
+            let { secure, sameSite, domain } = cookieOptsForFrontend(redirectUri, returnOrigin)
+            // 本地 http 前端（经 Nuxt 反代）无法保存 Secure Cookie
+            if (returnOrigin.startsWith('http://')) secure = false
             const sessionCookie = createSessionCookie({
                 userId: user.id,
                 sessionSecret,
@@ -1044,6 +1044,7 @@ export const devLoginController = async (req: Request, res: Response) => {
                 maxAgeSeconds: Number(process.env.SESSION_MAX_AGE_SECONDS || String(60 * 60 * 24 * 30)),
             })
             res.setHeader('Set-Cookie', sessionCookie)
+            console.log(`[DEV_BYPASS] session cookie secure=${secure} sameSite=${sameSite} origin=${returnOrigin}`)
         }
 
         console.log(`[DEV_BYPASS] 开发者登录: ${devUser.name} (${devUser.phone})`)

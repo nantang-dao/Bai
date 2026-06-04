@@ -1,3 +1,5 @@
+import { apiUrl, resolvePublicApiBase } from './publicApiBase'
+
 // ==================== 常量定义 ====================
 
 // 默认社区 UUID（南塘，与后端迁移一致）
@@ -1107,10 +1109,12 @@ export const sendEmailCode = async (email: string): Promise<{ result: string }> 
  * @param baseUrl API 基础 URL
  */
 export const devLogin = async (userIndex: number, baseUrl: string): Promise<{ result: string; auth_token?: string; user?: any }> => {
-  const response = await fetch(`${baseUrl}/api/auth/dev-login`, {
+  const url = apiUrl('/api/auth/dev-login', resolvePublicApiBase(baseUrl))
+  const returnOrigin = typeof window !== 'undefined' ? window.location.origin : undefined
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userIndex }),
+    body: JSON.stringify({ userIndex, return_origin: returnOrigin }),
   })
 
   if (!response.ok) {
@@ -3209,4 +3213,42 @@ export async function cancelCommunityEventRegistration(
     `/events/${eventId}/occurrences/${occurrenceId}/register`,
     { method: 'DELETE' }
   )
+}
+
+// ==================== 日历任务卡片 API ====================
+
+/** 日历任务卡片标签类型 */
+export type CalendarTaskLabelType = 'start' | 'deadline' | 'submit_deadline'
+
+/** 日历任务卡片（后端返回的结构） */
+export interface CalendarTaskCard {
+  taskInfoId: string
+  taskId: string
+  title: string
+  dateKey: string          // YYYY-MM-DD
+  dateLabel: string        // 如 "开始日 06.05"
+  labelType: CalendarTaskLabelType
+  borderColor: string      // 预留可配置边框颜色，默认 #E53935
+  sortTime: string         // ISO 时间戳，用于排序
+}
+
+/** 获取日历任务卡片（仅多人任务） */
+export async function getTaskCalendarCards(
+  communityId: string,
+  params: { from: string; to: string },
+  baseUrl: string
+): Promise<{ cards: CalendarTaskCard[] }> {
+  const sp = new URLSearchParams()
+  sp.set('communityId', communityId)
+  sp.set('from', params.from)
+  sp.set('to', params.to)
+  const res = await fetch(`${baseUrl}/api/tasks/calendar-cards?${sp.toString()}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
 }

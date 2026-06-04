@@ -2418,6 +2418,188 @@ export const unmarkTransferCompleted = async (req: AuthRequest, res: Response) =
     }
 }
 
+// ==================== 日历任务卡片 ====================
+
+/**
+ * 日历任务卡片项（返回给前端的结构）
+ */
+interface CalendarTaskCard {
+  taskInfoId: string       // task_info UUID，用于跳转详情
+  taskId: string           // 第一个任务行 ID，用于路由 task/detail/:taskId
+  title: string            // 任务标题
+  dateKey: string          // 该卡片对应的日期 YYYY-MM-DD
+  dateLabel: string        // 日期标签，如 "开始日 06.05"
+  labelType: 'start' | 'deadline' | 'submit_deadline'  // 标签类型
+  /** 预留：标签体系引入后可配置边框颜色，默认红框 */
+  borderColor: string
+  /** 该卡片对应日期的时刻（用于排序），ISO 字符串 */
+  sortTime: string
+}
+
+/**
+ * 获取日历任务卡片
+ * GET /api/tasks/calendar-cards?communityId=xxx&from=ISO&to=ISO
+ *
+ * 仅返回 is_multi = true（participant_limit > 1）的多人任务
+ * 每个任务最多在 3 个日期展示卡片：
+ *   - 开始日（所有用户可见）
+ *   - 领取截止日（所有用户可见）
+ *   - 提交截止日（仅已报名用户可见）
+ */
+export const getCalendarCards = async (req: Request, res: Response) => {
+  try {
+    const communityId = (req.query.communityId as string)?.trim() || null
+    const from = req.query.from as string
+    const to = req.query.to as string
+
+    if (!communityId || !from || !to) {
+      return res.status(400).json({ error: '缺少 communityId / from / to 参数' })
+    }
+
+    // 获取当前登录用户（可选，用于判断提交截止日可见性）
+    const userId = (req as any).user?.id as string | undefined
+
+    // 查询该社区下所有多人任务的 task_info
+    const { data: taskInfos, error: infoError } = await supabase
+      .from('task_info')
+      .select('id, title, start_date, deadline, submit_deadline, participant_limit, community_id')
+      .eq('community_id', communityId)
+      .gt('participant_limit', 1) // 仅多人任务
+
+    if (infoError) throw infoError
+    if (!taskInfos || taskInfos.length === 0) {
+      return res.json({ cards: [] })
+    }
+
+    // 获取每个 task_info 的第一个任务行 ID（用于路由跳转）
+    const taskInfoIds = taskInfos.map((ti: any) => ti.id)
+    const { data: firstTasks } = await supabase
+      .from('tasks')
+      .select('id, task_info_id')
+      .in('task_info_id', taskInfoIds)
+      .order('participant_index', { ascending: true })
+
+    // 构建 taskInfoId -> firstTaskId 映射
+    const firstTaskMap: Record<string, string> = {}
+    if (firstTasks) {
+      for (const t of firstTasks) {
+        if (!firstTaskMap[t.task_info_id]) {
+          firstTaskMap[t.task_info_id] = t.id
+        }
+      }
+    }
+
+    // 如果用户已登录，查询该用户在哪些 task_info 下有报名（claimer_id = userId）
+    let userClaimedInfoIds = new Set<string>()
+    if (userId) {
+      const { data: claimedTasks } = await supabase
+        .from('tasks')
+        .select('task_info_id')
+        .eq('claimer_id', userId)
+        .in('task_info_id', taskInfoIds)
+      if (claimedTasks) {
+        for (const t of claimedTasks) {
+          userClaimedInfoIds.add(t.task_info_id)
+        }
+      }
+    }
+
+    // 解析日期范围
+    const fromDate = new Date(from)
+    const toDate = new Date(to)
+
+    // 辅助：将 ISO/日期字符串转为本地日期 key YYYY-MM-DD
+    const toDayKey = (iso: string | null | undefined): string | null => {
+      if (!iso) return null
+      const d = new Date(iso)
+      if (isNaN(d.getTime())) return null
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
+
+    // 辅助：格式化日期标签中的月日部分 MM.DD
+    const fmtMD = (iso: string | null | undefined): string => {
+      if (!iso) return ''
+      const d = new Date(iso)
+      if (isNaN(d.getTime())) return ''
+      return `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    // 默认边框颜色（预留可配置）
+    const DEFAULT_TASK_BORDER_COLOR = '#E53935'
+
+    const cards: CalendarTaskCard[] = []
+
+    for (const ti of taskInfos) {
+      const taskInfoId = ti.id
+      const firstTaskId = firstTaskMap[taskInfoId]
+      if (!firstTaskId) continue
+
+      const startDateKey = toDayKey(ti.start_date)
+      const deadlineKey = toDayKey(ti.deadline)
+      const submitDeadlineKey = toDayKey(ti.submit_deadline)
+
+      // 开始日卡片 - 所有用户可见
+      if (startDateKey) {
+        const cardDate = new Date(startDateKey)
+        if (cardDate >= fromDate && cardDate <= toDate) {
+          cards.push({
+            taskInfoId,
+            taskId: firstTaskId,
+            title: ti.title || '',
+            dateKey: startDateKey,
+            dateLabel: `开始日 ${fmtMD(ti.start_date)}`,
+            labelType: 'start',
+            borderColor: DEFAULT_TASK_BORDER_COLOR,
+            sortTime: ti.start_date,
+          })
+        }
+      }
+
+      // 领取截止日卡片 - 所有用户可见
+      if (deadlineKey) {
+        const cardDate = new Date(deadlineKey)
+        if (cardDate >= fromDate && cardDate <= toDate) {
+          cards.push({
+            taskInfoId,
+            taskId: firstTaskId,
+            title: ti.title || '',
+            dateKey: deadlineKey,
+            dateLabel: `截止领取 ${fmtMD(ti.deadline)}`,
+            labelType: 'deadline',
+            borderColor: DEFAULT_TASK_BORDER_COLOR,
+            sortTime: ti.deadline,
+          })
+        }
+      }
+
+      // 提交截止日卡片 - 仅已报名用户可见
+      if (submitDeadlineKey && userClaimedInfoIds.has(taskInfoId)) {
+        const cardDate = new Date(submitDeadlineKey)
+        if (cardDate >= fromDate && cardDate <= toDate) {
+          cards.push({
+            taskInfoId,
+            taskId: firstTaskId,
+            title: ti.title || '',
+            dateKey: submitDeadlineKey,
+            dateLabel: `截止提交 ${fmtMD(ti.submit_deadline)}`,
+            labelType: 'submit_deadline',
+            borderColor: DEFAULT_TASK_BORDER_COLOR,
+            sortTime: ti.submit_deadline,
+          })
+        }
+      }
+    }
+
+    res.json({ cards })
+  } catch (error: any) {
+    console.error('[GET CALENDAR CARDS] Error:', error)
+    handleError(res, error, '获取日历任务卡片失败')
+  }
+}
+
 // ==================== 发布者撤回/删除（未被领取前） ====================
 
 /**

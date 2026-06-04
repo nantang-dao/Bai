@@ -136,6 +136,7 @@
               <template v-if="cell.dayKey">
                 <div class="text-xs font-medium text-text-title mb-1">{{ cell.dayNum }}</div>
                 <div class="space-y-0.5">
+                  <!-- 活动缩略 -->
                   <div
                     v-for="item in eventsForDay(cell.dayKey).slice(0, 3)"
                     :key="item.ev.id + item.occ.id"
@@ -145,7 +146,17 @@
                     <span class="truncate flex-1">{{ item.ev.title }}</span>
                     <span v-if="isOccRegistered(item.ev, item.occ.id)" class="shrink-0">✓</span>
                   </div>
-                  <span v-if="eventsForDay(cell.dayKey).length > 3" class="text-[10px] text-text-placeholder">+{{ eventsForDay(cell.dayKey).length - 3 }}更多</span>
+                  <!-- 任务缩略 -->
+                  <div
+                    v-for="tc in taskCardsForDay(cell.dayKey).slice(0, Math.max(0, 3 - eventsForDay(cell.dayKey).slice(0, 3).length))"
+                    :key="'t-' + tc.taskInfoId + tc.labelType"
+                    class="text-[10px] truncate rounded px-0.5 leading-tight border"
+                    :style="{ borderColor: tc.borderColor, color: tc.borderColor, backgroundColor: '#fff' }"
+                  >
+                    <span class="truncate flex-1">({{ taskLabelShort(tc) }}){{ truncateTitle(tc.title) }}</span>
+                  </div>
+                  <!-- 合计折叠 -->
+                  <span v-if="totalCardsForDay(cell.dayKey) > 3" class="text-[10px] text-text-placeholder">+{{ totalCardsForDay(cell.dayKey) - 3 }}更多</span>
                 </div>
               </template>
             </button>
@@ -163,6 +174,7 @@
           >
             <div class="text-xs font-bold text-text-title">{{ wd.label }}</div>
             <div class="mt-2 space-y-1">
+              <!-- 活动缩略 -->
               <div
                 v-for="item in eventsForDay(wd.dayKey).slice(0, 4)"
                 :key="item.ev.id + item.occ.id"
@@ -172,14 +184,25 @@
                 <span class="truncate flex-1">{{ item.ev.title }}</span>
                 <span v-if="isOccRegistered(item.ev, item.occ.id)" class="shrink-0">✓</span>
               </div>
-              <span v-if="eventsForDay(wd.dayKey).length > 4" class="text-[10px] text-text-placeholder">+{{ eventsForDay(wd.dayKey).length - 4 }}更多</span>
+              <!-- 任务缩略 -->
+              <div
+                v-for="tc in taskCardsForDay(wd.dayKey).slice(0, Math.max(0, 4 - eventsForDay(wd.dayKey).slice(0, 4).length))"
+                :key="'t-' + tc.taskInfoId + tc.labelType"
+                class="text-[10px] truncate rounded px-1 border"
+                :style="{ borderColor: tc.borderColor, color: tc.borderColor, backgroundColor: '#fff' }"
+              >
+                <span class="truncate flex-1">({{ taskLabelShort(tc) }}){{ truncateTitle(tc.title) }}</span>
+              </div>
+              <!-- 合计折叠 -->
+              <span v-if="totalCardsForDay(wd.dayKey) > 4" class="text-[10px] text-text-placeholder">+{{ totalCardsForDay(wd.dayKey) - 4 }}更多</span>
             </div>
           </button>
         </div>
 
         <!-- 日 -->
         <div v-else class="space-y-2">
-          <p v-if="!dayList.length" class="text-center text-text-placeholder py-8">当日无活动场次</p>
+          <p v-if="!dayList.length && !dayTaskCards.length" class="text-center text-text-placeholder py-8">当日无活动场次</p>
+          <!-- 活动卡片 -->
           <NuxtLink
             v-for="item in dayList"
             :key="item.ev.id + item.occ.id"
@@ -206,6 +229,22 @@
                 <span>✓</span>
                 <span class="text-xs">已报名</span>
               </div>
+            </div>
+          </NuxtLink>
+          <!-- 任务卡片 -->
+          <NuxtLink
+            v-for="tc in dayTaskCards"
+            :key="'t-' + tc.taskInfoId + tc.labelType"
+            :to="`/tasks/${tc.taskId}`"
+            class="block rounded-2xl border bg-card p-4 hover:bg-input-bg/50 task-calendar-card"
+            :style="{ borderColor: tc.borderColor }"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-bold text-text-title mt-0">{{ truncateTitle(tc.title, 10) }}</h3>
+                <p class="text-xs text-text-placeholder mt-1">{{ tc.dateLabel }}</p>
+              </div>
+              <span class="shrink-0 text-xs text-text-placeholder self-end">任务详情→</span>
             </div>
           </NuxtLink>
         </div>
@@ -248,6 +287,7 @@
             <button type="button" class="text-text-placeholder" @click="modalDayKey = null">关闭</button>
           </div>
           <ul class="space-y-3">
+            <!-- 活动卡片 -->
             <li v-for="item in modalDayItems" :key="item.ev.id + item.occ.id">
               <NuxtLink
                 :to="`/community/${communityId}/events/${item.ev.id}`"
@@ -270,8 +310,25 @@
                 <p class="text-xs text-text-placeholder mt-1">{{ fmtOcc(item.occ) }}</p>
               </NuxtLink>
             </li>
+            <!-- 任务卡片 -->
+            <li v-for="tc in modalDayTaskCards" :key="'t-' + tc.taskInfoId + tc.labelType">
+              <NuxtLink
+                :to="`/tasks/${tc.taskId}`"
+                class="block rounded-xl border p-3 hover:bg-input-bg task-calendar-card"
+                :style="{ borderColor: tc.borderColor }"
+                @click="modalDayKey = null"
+              >
+                <div class="flex gap-2 items-center justify-between">
+                  <span class="font-medium text-text-title truncate">{{ truncateTitle(tc.title, 10) }}</span>
+                </div>
+                <div class="flex items-center justify-between mt-1">
+                  <p class="text-xs text-text-placeholder">{{ tc.dateLabel }}</p>
+                  <span class="text-xs text-text-placeholder">任务详情→</span>
+                </div>
+              </NuxtLink>
+            </li>
           </ul>
-          <p v-if="!modalDayItems.length" class="text-text-placeholder text-sm py-6 text-center">当日无活动场次</p>
+          <p v-if="!modalDayItems.length && !modalDayTaskCards.length" class="text-text-placeholder text-sm py-6 text-center">当日无活动场次</p>
         </div>
       </div>
     </Teleport>
@@ -281,7 +338,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { CalendarTag, CommunityEventListItem, CommunityEventOccurrence } from '~/utils/api'
+import type { CalendarTag, CalendarTaskCard, CommunityEventListItem, CommunityEventOccurrence } from '~/utils/api'
 import { useCommunityStore } from '~/stores/community'
 
 definePageMeta({ layout: 'default', middleware: 'auth' })
@@ -308,6 +365,7 @@ const calScaleOptions = [
 
 const cursor = ref(new Date())
 const calendarEvents = ref<CommunityEventListItem[]>([])
+const taskCards = ref<CalendarTaskCard[]>([])
 const calLoading = ref(false)
 
 const tags = ref<CalendarTag[]>([])
@@ -323,6 +381,36 @@ const mineOnly = ref(false)
 const modalDayKey = ref<string | null>(null)
 
 const weekDayLabels = ['日', '一', '二', '三', '四', '五', '六']
+
+// ==================== 任务卡片辅助函数 ====================
+
+/** 任务标签缩写（月/周缩略用） */
+function taskLabelShort(tc: CalendarTaskCard): string {
+  if (tc.labelType === 'start') return '开领'
+  if (tc.labelType === 'deadline') return '领截'
+  return '截止'
+}
+
+/** 截断标题，maxChars 个汉字，超出加… */
+function truncateTitle(title: string, maxChars: number = 10): string {
+  if (!title) return ''
+  if (title.length <= maxChars) return title
+  return title.slice(0, maxChars) + '…'
+}
+
+/** 获取某天的任务卡片（按 sortTime 排序） */
+function taskCardsForDay(dayKey: string): CalendarTaskCard[] {
+  return taskCards.value
+    .filter(tc => tc.dateKey === dayKey)
+    .sort((a, b) => new Date(a.sortTime).getTime() - new Date(b.sortTime).getTime())
+}
+
+/** 某天活动 + 任务卡片总数 */
+function totalCardsForDay(dayKey: string): number {
+  return eventsForDay(dayKey).length + taskCardsForDay(dayKey).length
+}
+
+// ==================== 日期辅助函数 ====================
 
 function localDayKey(iso: string): string {
   const d = new Date(iso)
@@ -439,6 +527,12 @@ const dayList = computed(() => {
   return items
 })
 
+/** 日视图的任务卡片 */
+const dayTaskCards = computed(() => {
+  const dayKey = localDayKey(cursor.value.toISOString())
+  return taskCardsForDay(dayKey)
+})
+
 const modalDayLabel = computed(() => {
   if (!modalDayKey.value) return ''
   const [y, m, d] = modalDayKey.value.split('-').map(Number)
@@ -456,6 +550,12 @@ const modalDayItems = computed(() => {
   }
   items.sort((a, b) => new Date(a.occ.activityStart).getTime() - new Date(b.occ.activityStart).getTime())
   return items
+})
+
+/** 弹窗中的任务卡片 */
+const modalDayTaskCards = computed(() => {
+  if (!modalDayKey.value) return []
+  return taskCardsForDay(modalDayKey.value)
 })
 
 function fmtOcc(occ: CommunityEventOccurrence) {
@@ -492,16 +592,35 @@ async function loadCalendar() {
   calLoading.value = true
   try {
     const { from, to } = rangeFromCursor(calScale.value, cursor.value)
-    const { events: rows } = await api.listCommunityEventsCalendar(communityId.value, {
-      from,
-      to,
-      tagId: filterTagId.value || undefined,
-      mine: mineOnly.value
-    })
-    calendarEvents.value = rows
+    // 并行请求活动和任务卡片
+    const [eventsResult, taskCardsResult] = await Promise.allSettled([
+      api.listCommunityEventsCalendar(communityId.value, {
+        from,
+        to,
+        tagId: filterTagId.value || undefined,
+        mine: mineOnly.value
+      }),
+      api.getTaskCalendarCards(communityId.value, { from, to })
+    ])
+
+    if (eventsResult.status === 'fulfilled') {
+      calendarEvents.value = eventsResult.value.events
+    } else {
+      toast.add({ title: eventsResult.reason?.message || '日历加载失败', color: 'red' })
+      calendarEvents.value = []
+    }
+
+    if (taskCardsResult.status === 'fulfilled') {
+      taskCards.value = taskCardsResult.value.cards
+    } else {
+      // 任务卡片加载失败不影响活动显示
+      console.warn('任务卡片加载失败:', taskCardsResult.reason)
+      taskCards.value = []
+    }
   } catch (e: any) {
     toast.add({ title: e?.message || '日历加载失败', color: 'red' })
     calendarEvents.value = []
+    taskCards.value = []
   } finally {
     calLoading.value = false
   }
@@ -657,3 +776,13 @@ watch(communityId, async () => {
   if (viewMode.value === 'calendar') await loadCalendar()
 })
 </script>
+
+<style scoped>
+/* 任务日历卡片：白底 + 可配置边框色，圆角/阴影与活动卡片一致 */
+.task-calendar-card {
+  background-color: #fff;
+  border-width: 1px;
+  border-style: solid;
+  /* borderColor 通过 :style 动态绑定，预留标签体系扩展 */
+}
+</style>

@@ -87,15 +87,36 @@ const isDev = computed(() => {
 
 const devLoggingIn = ref(false)
 
+const mapDevUser = (raw: Record<string, unknown>) => ({
+  id: String(raw.id),
+  phone: raw.phone as string | undefined,
+  email: raw.email as string | undefined,
+  handle: raw.handle as string | undefined,
+  name: raw.name as string | undefined,
+  bio: raw.bio as string | undefined,
+  avatar: (raw.avatar || raw.image_url) as string | undefined,
+  phone_verified: Boolean(raw.phone_verified ?? true),
+  isSystemAdmin: Boolean(raw.isSystemAdmin),
+  userType: 'member' as const,
+  isProfileSetup: !!(raw.name || raw.handle),
+})
+
 const handleDevLogin = async (userIndex: number) => {
   devLoggingIn.value = true
   try {
     const data = await devLogin(userIndex)
-    if (data.auth_token) {
-      await userStore.getUser(true)
-      toast.add({ title: '开发者登录成功', description: `已登录为 ${data.user?.name || '开发者'}`, color: 'green' })
-      router.push('/')
+    if (!data.auth_token) {
+      throw new Error('未返回登录凭证')
     }
+    if (data.user) {
+      userStore.setUser(mapDevUser(data.user))
+    }
+    await userStore.getUser(true)
+    if (!userStore.user) {
+      throw new Error('登录成功但会话未生效，请确认后端已设置 DEV_BYPASS_AUTH=true 与 SESSION_SECRET')
+    }
+    toast.add({ title: '开发者登录成功', description: `已登录为 ${userStore.user.name || '开发者'}`, color: 'green' })
+    router.push('/')
   } catch (error: any) {
     toast.add({ title: '开发者登录失败', description: error.message, color: 'red' })
   } finally {

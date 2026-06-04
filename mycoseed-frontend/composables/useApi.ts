@@ -1,6 +1,7 @@
 // composables/useApi.ts
 import * as api from '~/utils/api'
 import type { UserProfile } from '~/utils/api'
+import { resolvePublicApiBase } from '~/utils/publicApiBase'
 
 /**
  * API Composable - 使用运行时配置获取 API URL
@@ -10,7 +11,7 @@ import type { UserProfile } from '~/utils/api'
 export const useApi = () => {
   // 使用 Nuxt 的运行时配置获取 API URL
   const config = useRuntimeConfig()
-  const apiBaseUrl = config.public.apiUrl 
+  const apiBaseUrl = resolvePublicApiBase(config.public.apiUrl as string)
   
   return {
     apiBaseUrl,
@@ -139,6 +140,10 @@ export const useApi = () => {
       api.registerCommunityEvent(communityId, eventId, body, apiBaseUrl),
     cancelCommunityEventRegistration: (communityId: string, eventId: string, occurrenceId: string) =>
       api.cancelCommunityEventRegistration(communityId, eventId, occurrenceId, apiBaseUrl),
+
+    // 日历任务卡片
+    getTaskCalendarCards: (communityId: string, params: { from: string; to: string }) =>
+      api.getTaskCalendarCards(communityId, params, apiBaseUrl),
     
     // 其他工具函数（不需要 API URL）
     setCurrentIdentifier: api.setCurrentIdentifier,

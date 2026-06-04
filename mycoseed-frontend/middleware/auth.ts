@@ -7,8 +7,8 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
 
     if (typeof window === 'undefined') return
     const config = useRuntimeConfig()
-    const baseUrl = config.public.apiUrl as string
-    const meUrl = baseUrl ? `${baseUrl}/api/auth/me` : '/api/auth/me'
+    const { resolvePublicApiBase, apiUrl } = await import('~/utils/publicApiBase')
+    const meUrl = apiUrl('/api/auth/me', resolvePublicApiBase(config.public.apiUrl as string))
     try {
         const res = await fetch(meUrl, { credentials: 'include' })
         if (!res.ok) return navigateTo('/auth/login')
