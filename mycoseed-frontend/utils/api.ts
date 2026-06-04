@@ -3487,6 +3487,23 @@ export async function getWalletAddressByUserId(
   }
 }
 
+/** 社区圈长按打赏：打开 Semi 向指定用户转 1 NT */
+export async function openTipToSemi(
+  receiverUserId: string,
+  getBaseUrl: () => string,
+  semiAppUrl?: string
+): Promise<boolean> {
+  const baseUrl = getBaseUrl()
+  const address = await getWalletAddressByUserId(receiverUserId, baseUrl)
+  if (!address) return false
+
+  const url = buildSemiTransferUrl(address, '1', {
+    semiAppUrl: semiAppUrl || 'https://www.semi.im',
+  })
+  window.open(url, '_blank')
+  return true
+}
+
 // ==================== 社区商城 API ====================
 
 export interface MarketplaceTag {
