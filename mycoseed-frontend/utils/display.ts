@@ -1,3 +1,30 @@
+/**
+ * 将 wei 值（字符串或数字）转换为人类可读的 token 数量
+ * 链上 ERC20 的 amount 是 18 位精度的 wei 值，如 "120000000000000000000" 表示 120
+ * @param wei  wei 值（字符串或数字）
+ * @param decimals token 精度，默认 18
+ * @returns 人类可读的 token 数量字符串，如 "120" 或 "120.5"
+ */
+export const weiToToken = (wei: string | number | undefined | null, decimals = 18): string => {
+  if (wei === undefined || wei === null || wei === '') return '0'
+  const str = String(wei)
+  if (!str || str === '0') return '0'
+
+  // 处理负数
+  const isNeg = str.startsWith('-')
+  const abs = isNeg ? str.slice(1) : str
+
+  // 补零到至少 decimals+1 位
+  const padded = abs.padStart(decimals + 1, '0')
+  const intPart = padded.slice(0, padded.length - decimals)
+  const fracPart = padded.slice(padded.length - decimals)
+
+  // 去掉尾部多余的零
+  const trimmedFrac = fracPart.replace(/0+$/, '')
+  const result = trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart
+  return isNeg ? `-${result}` : result
+}
+
 // Mock 显示工具函数
 export const formatAddress = (address: string) => {
   if (!address) return ''

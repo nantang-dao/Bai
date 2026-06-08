@@ -16,13 +16,15 @@ import {
     markTransferCompleted,
     unmarkTransferCompleted,
     withdrawTask,
-    deleteTask
+    deleteTask,
+    getCalendarCards
 } from '../controllers/tasksController'
-import { authenticate } from '../middleware/auth'
+import { authenticate, optionalAuthenticate } from '../middleware/auth'
 
 const router = Router()
 
 router.get('/', getAllTasks)
+router.get('/calendar-cards', optionalAuthenticate, getCalendarCards)
 router.get('/:id', getTaskById)
 router.post('/', authenticate, createTask)
 router.post('/:id/taskpool-claim-intent', authenticate, getTaskpoolClaimIntent)

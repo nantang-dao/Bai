@@ -1,4 +1,8 @@
 {
   "extends": "./.nuxt/tsconfig.json",
-  "exclude": ["node_modules", "dist", "e2e", "scripts"]
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".nuxt"
+  },
+  "exclude": ["node_modules", ".nuxt", "dist", "e2e", "scripts"]
 }

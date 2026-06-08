@@ -184,7 +184,7 @@
                   </span>
                   <!-- 转账状态（仅已完成任务） -->
                   <span v-if="task.status === 'completed' && taskChainMap[task.id]?.length" class="font-bold text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded">
-                    已转账 {{ taskChainMap[task.id][0]?.actual_amount || taskChainMap[task.id][0]?.amount || task.reward }} 积分
+                    已转账 {{ weiToToken(taskChainMap[task.id][0]?.actual_amount || taskChainMap[task.id][0]?.amount) || task.reward }} 积分
                   </span>
                   <span v-else-if="task.status === 'completed' && task.transferredAt" class="font-bold text-[10px] text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
                     已标记转账 {{ task.reward }} 积分
@@ -222,7 +222,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '~/stores/user'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, getTaskTransactions, type Task, type Community } from '~/utils/api'
-import { getTaskRewardSymbol } from '~/utils/display'
+import { getTaskRewardSymbol, weiToToken } from '~/utils/display'
 import { useApi } from '~/composables/useApi'
 
 definePageMeta({

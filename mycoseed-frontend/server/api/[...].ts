@@ -1,4 +1,5 @@
 import {
+    createError,
     defineEventHandler,
     getRequestHeaders,
     readRawBody,
@@ -26,6 +27,14 @@ function forwardSetCookies(event: H3Event, cookies: string[]) {
 }
 
 export default defineEventHandler(async (event) => {
+    // Production: /api/* is handled by Cloudflare Worker → Fly.io; disable Nitro proxy.
+    if (!import.meta.dev) {
+        throw createError({
+            statusCode: 404,
+            statusMessage: 'Not Found in Production',
+        })
+    }
+
     const config = useRuntimeConfig()
     const backendUrl = String(config.backendUrl || 'http://localhost:3001').replace(/\/+$/, '')
     const frontendUrl = String(config.public.appUrl || '').replace(/\/+$/, '')

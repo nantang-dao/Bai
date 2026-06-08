@@ -120,7 +120,7 @@
                             v-else-if="paymentMap[row.user.id]?.status === 'partial'"
                             class="text-[10px] text-orange-500"
                           >
-                            💰{{ paymentMap[row.user.id]?.amount }}/{{ row.cells[o.id].price }}
+                            💰{{ weiToToken(paymentMap[row.user.id]?.amount) }}/{{ row.cells[o.id].price }}
                           </span>
                           <span v-else class="text-[10px] text-orange-500">
                             💰待付 {{ row.cells[o.id].price }}
@@ -161,13 +161,13 @@
                     v-if="paymentMap[p.userId]?.status === 'paid'"
                     class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700"
                   >
-                    已付 {{ paymentMap[p.userId]?.amount }} 积分
+                    已付 {{ weiToToken(paymentMap[p.userId]?.amount) }} 积分
                   </span>
                   <span
                     v-else-if="paymentMap[p.userId]?.status === 'partial'"
                     class="text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-700"
                   >
-                    已付 {{ paymentMap[p.userId]?.amount }} / 预期 {{ getMyExpectedPrice(p) }} 积分
+                    已付 {{ weiToToken(paymentMap[p.userId]?.amount) }} / 预期 {{ getMyExpectedPrice(p) }} 积分
                   </span>
                   <span
                     v-else
@@ -264,6 +264,7 @@ import { useRoute, useRouter } from 'vue-router'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { buildSemiTransferUrl } from '~/utils/api'
+import { weiToToken } from '~/utils/display'
 import { useCommunityStore } from '~/stores/community'
 
 definePageMeta({ layout: 'default', middleware: 'auth' })
@@ -355,7 +356,7 @@ const paymentMap = computed(() => {
     if (wallet) walletToUser[wallet.toLowerCase()] = uid
   }
 
-  // 匹配交易到用户
+  // 匹配交易到用户（累加同一用户的多笔交易）
   for (const tx of eventTransactions.value) {
     const sender = tx.sender_address?.toLowerCase()
     if (!sender) continue
@@ -363,17 +364,22 @@ const paymentMap = computed(() => {
     const userId = walletToUser[sender]
     if (!userId) continue
 
-    const actualAmount = Number(tx.actual_amount || tx.amount || 0)
-    const expectedAmount = Number(tx.expected_amount || 0)
+    // 使用 BigInt 进行精确比较，避免 Number 精度丢失
+    const actualAmount = BigInt(tx.actual_amount || tx.amount || '0')
+    const expectedAmount = BigInt(tx.expected_amount || '0')
+
+    // 累加同一用户的实际付款金额
+    const prevAmount = map[userId] ? BigInt(map[userId].amount) : 0n
+    const totalActual = prevAmount + actualAmount
 
     let status: 'paid' | 'partial' | 'pending' = 'paid'
-    if (expectedAmount > 0 && actualAmount < expectedAmount) {
+    if (expectedAmount > 0n && totalActual < expectedAmount) {
       status = 'partial'
     }
 
     map[userId] = {
       status,
-      amount: String(actualAmount),
+      amount: totalActual.toString(),
       txHash: tx.tx_hash,
     }
   }

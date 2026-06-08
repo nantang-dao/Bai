@@ -758,7 +758,7 @@
                   <span class="font-bold">✓</span> 已转账
                 </p>
                 <p class="text-sm text-text-body">
-                  金额：{{ chainTransactions[0]?.actual_amount || chainTransactions[0]?.amount || task.reward }} 积分
+                  金额：{{ weiToToken(chainTransactions[0]?.actual_amount || chainTransactions[0]?.amount) || task.reward }} 积分
                 </p>
                 <p class="text-sm text-text-body">
                   转账时间：{{ formatDate(chainTransactions[0].created_at) }}
@@ -863,7 +863,7 @@ import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
-import { getTaskRewardSymbol } from '~/utils/display'
+import { getTaskRewardSymbol, weiToToken } from '~/utils/display'
 import { parseBeijingTime, getCurrentBeijingDate, formatBeijingTime } from '~/utils/time'
 import { withdrawTask, deleteTask, withdrawTaskPool } from '~/utils/api'
 import {
