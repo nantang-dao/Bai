@@ -2434,23 +2434,28 @@ interface CalendarTaskCard {
   borderColor: string
   /** 该卡片对应日期的时刻（用于排序），ISO 字符串 */
   sortTime: string
+  /** 用户对该任务的状态（已领取/已提交/已完成等），仅 mine 模式下有值 */
+  userStatus?: 'claimed' | 'submitted' | 'completed' | null
 }
 
 /**
  * 获取日历任务卡片
- * GET /api/tasks/calendar-cards?communityId=xxx&from=ISO&to=ISO
+ * GET /api/tasks/calendar-cards?communityId=xxx&from=ISO&to=ISO&mine=0|1
  *
  * 仅返回 is_multi = true（participant_limit > 1）的多人任务
  * 每个任务最多在 3 个日期展示卡片：
  *   - 开始日（所有用户可见）
  *   - 领取截止日（所有用户可见）
  *   - 提交截止日（仅已报名用户可见）
+ *
+ * mine=1 时：只显示用户已领取的多人任务，且只展示截止时间卡片（领取截止+提交截止）
  */
 export const getCalendarCards = async (req: Request, res: Response) => {
   try {
     const communityId = (req.query.communityId as string)?.trim() || null
     const from = req.query.from as string
     const to = req.query.to as string
+    const mine = req.query.mine === '1'
 
     if (!communityId || !from || !to) {
       return res.status(400).json({ error: '缺少 communityId / from / to 参数' })
@@ -2458,6 +2463,11 @@ export const getCalendarCards = async (req: Request, res: Response) => {
 
     // 获取当前登录用户（可选，用于判断提交截止日可见性）
     const userId = (req as any).user?.id as string | undefined
+
+    // mine 模式必须登录
+    if (mine && !userId) {
+      return res.json({ cards: [] })
+    }
 
     // 查询该社区下所有多人任务的 task_info
     const { data: taskInfos, error: infoError } = await supabase
@@ -2491,17 +2501,33 @@ export const getCalendarCards = async (req: Request, res: Response) => {
 
     // 如果用户已登录，查询该用户在哪些 task_info 下有报名（claimer_id = userId）
     let userClaimedInfoIds = new Set<string>()
+    // 用户对每个 task_info 的状态（claimed / submitted / completed）
+    const userTaskStatus: Record<string, 'claimed' | 'submitted' | 'completed' | null> = {}
     if (userId) {
       const { data: claimedTasks } = await supabase
         .from('tasks')
-        .select('task_info_id')
+        .select('task_info_id, status')
         .eq('claimer_id', userId)
         .in('task_info_id', taskInfoIds)
       if (claimedTasks) {
         for (const t of claimedTasks) {
           userClaimedInfoIds.add(t.task_info_id)
+          // 记录用户对该任务的状态
+          if (t.status === 'completed') {
+            userTaskStatus[t.task_info_id] = 'completed'
+          } else if (t.status === 'submitted' || t.status === 'under_review') {
+            userTaskStatus[t.task_info_id] = 'submitted'
+          } else {
+            userTaskStatus[t.task_info_id] = 'claimed'
+          }
         }
       }
+    }
+
+    // mine 模式：只保留用户已领取的任务
+    let filteredTaskInfos = taskInfos
+    if (mine) {
+      filteredTaskInfos = taskInfos.filter((ti: any) => userClaimedInfoIds.has(ti.id))
     }
 
     // 解析日期范围
@@ -2532,7 +2558,7 @@ export const getCalendarCards = async (req: Request, res: Response) => {
 
     const cards: CalendarTaskCard[] = []
 
-    for (const ti of taskInfos) {
+    for (const ti of filteredTaskInfos) {
       const taskInfoId = ti.id
       const firstTaskId = firstTaskMap[taskInfoId]
       if (!firstTaskId) continue
@@ -2540,55 +2566,81 @@ export const getCalendarCards = async (req: Request, res: Response) => {
       const startDateKey = toDayKey(ti.start_date)
       const deadlineKey = toDayKey(ti.deadline)
       const submitDeadlineKey = toDayKey(ti.submit_deadline)
+      const isClaimed = userClaimedInfoIds.has(taskInfoId)
+      const taskStatus = userTaskStatus[taskInfoId] || null
 
-      // 开始日卡片 - 所有用户可见
-      if (startDateKey) {
-        const cardDate = new Date(startDateKey)
-        if (cardDate >= fromDate && cardDate <= toDate) {
-          cards.push({
-            taskInfoId,
-            taskId: firstTaskId,
-            title: ti.title || '',
-            dateKey: startDateKey,
-            dateLabel: `开始日 ${fmtMD(ti.start_date)}`,
-            labelType: 'start',
-            borderColor: DEFAULT_TASK_BORDER_COLOR,
-            sortTime: ti.start_date,
-          })
+      if (mine) {
+        // mine 模式：只显示提交截止日卡片
+        if (submitDeadlineKey && isClaimed) {
+          const cardDate = new Date(submitDeadlineKey)
+          if (cardDate >= fromDate && cardDate <= toDate) {
+            cards.push({
+              taskInfoId,
+              taskId: firstTaskId,
+              title: ti.title || '',
+              dateKey: submitDeadlineKey,
+              dateLabel: `截止提交 ${fmtMD(ti.submit_deadline)}`,
+              labelType: 'submit_deadline',
+              borderColor: DEFAULT_TASK_BORDER_COLOR,
+              sortTime: ti.submit_deadline,
+              userStatus: taskStatus,
+            })
+          }
         }
-      }
-
-      // 领取截止日卡片 - 所有用户可见
-      if (deadlineKey) {
-        const cardDate = new Date(deadlineKey)
-        if (cardDate >= fromDate && cardDate <= toDate) {
-          cards.push({
-            taskInfoId,
-            taskId: firstTaskId,
-            title: ti.title || '',
-            dateKey: deadlineKey,
-            dateLabel: `截止领取 ${fmtMD(ti.deadline)}`,
-            labelType: 'deadline',
-            borderColor: DEFAULT_TASK_BORDER_COLOR,
-            sortTime: ti.deadline,
-          })
+      } else {
+        // 非mine模式：显示所有卡片
+        // 开始日卡片 - 所有用户可见
+        if (startDateKey) {
+          const cardDate = new Date(startDateKey)
+          if (cardDate >= fromDate && cardDate <= toDate) {
+            cards.push({
+              taskInfoId,
+              taskId: firstTaskId,
+              title: ti.title || '',
+              dateKey: startDateKey,
+              dateLabel: `开始日 ${fmtMD(ti.start_date)}`,
+              labelType: 'start',
+              borderColor: DEFAULT_TASK_BORDER_COLOR,
+              sortTime: ti.start_date,
+              userStatus: isClaimed ? taskStatus : null,
+            })
+          }
         }
-      }
 
-      // 提交截止日卡片 - 仅已报名用户可见
-      if (submitDeadlineKey && userClaimedInfoIds.has(taskInfoId)) {
-        const cardDate = new Date(submitDeadlineKey)
-        if (cardDate >= fromDate && cardDate <= toDate) {
-          cards.push({
-            taskInfoId,
-            taskId: firstTaskId,
-            title: ti.title || '',
-            dateKey: submitDeadlineKey,
-            dateLabel: `截止提交 ${fmtMD(ti.submit_deadline)}`,
-            labelType: 'submit_deadline',
-            borderColor: DEFAULT_TASK_BORDER_COLOR,
-            sortTime: ti.submit_deadline,
-          })
+        // 领取截止日卡片 - 所有用户可见
+        if (deadlineKey) {
+          const cardDate = new Date(deadlineKey)
+          if (cardDate >= fromDate && cardDate <= toDate) {
+            cards.push({
+              taskInfoId,
+              taskId: firstTaskId,
+              title: ti.title || '',
+              dateKey: deadlineKey,
+              dateLabel: `截止领取 ${fmtMD(ti.deadline)}`,
+              labelType: 'deadline',
+              borderColor: DEFAULT_TASK_BORDER_COLOR,
+              sortTime: ti.deadline,
+              userStatus: isClaimed ? taskStatus : null,
+            })
+          }
+        }
+
+        // 提交截止日卡片 - 仅已报名用户可见
+        if (submitDeadlineKey && isClaimed) {
+          const cardDate = new Date(submitDeadlineKey)
+          if (cardDate >= fromDate && cardDate <= toDate) {
+            cards.push({
+              taskInfoId,
+              taskId: firstTaskId,
+              title: ti.title || '',
+              dateKey: submitDeadlineKey,
+              dateLabel: `截止提交 ${fmtMD(ti.submit_deadline)}`,
+              labelType: 'submit_deadline',
+              borderColor: DEFAULT_TASK_BORDER_COLOR,
+              sortTime: ti.submit_deadline,
+              userStatus: taskStatus,
+            })
+          }
         }
       }
     }

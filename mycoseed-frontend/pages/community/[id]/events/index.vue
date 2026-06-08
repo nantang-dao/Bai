@@ -150,9 +150,12 @@
                   <div
                     v-for="tc in taskCardsForDay(cell.dayKey).slice(0, Math.max(0, 3 - eventsForDay(cell.dayKey).slice(0, 3).length))"
                     :key="'t-' + tc.taskInfoId + tc.labelType"
-                    class="text-[10px] truncate rounded px-0.5 leading-tight border"
+                    class="text-[10px] truncate rounded px-0.5 leading-tight border flex items-center gap-0.5"
                     :style="{ borderColor: tc.borderColor, color: tc.borderColor, backgroundColor: '#fff' }"
                   >
+                    <span v-if="tc.userStatus === 'completed'" class="shrink-0">✓</span>
+                    <span v-else-if="tc.userStatus === 'submitted'" class="shrink-0">📤</span>
+                    <span v-else-if="tc.userStatus === 'claimed'" class="shrink-0">📋</span>
                     <span class="truncate flex-1">({{ taskLabelShort(tc) }}){{ truncateTitle(tc.title) }}</span>
                   </div>
                   <!-- 合计折叠 -->
@@ -188,9 +191,12 @@
               <div
                 v-for="tc in taskCardsForDay(wd.dayKey).slice(0, Math.max(0, 4 - eventsForDay(wd.dayKey).slice(0, 4).length))"
                 :key="'t-' + tc.taskInfoId + tc.labelType"
-                class="text-[10px] truncate rounded px-1 border"
+                class="text-[10px] truncate rounded px-1 border flex items-center gap-0.5"
                 :style="{ borderColor: tc.borderColor, color: tc.borderColor, backgroundColor: '#fff' }"
               >
+                <span v-if="tc.userStatus === 'completed'" class="shrink-0">✓</span>
+                <span v-else-if="tc.userStatus === 'submitted'" class="shrink-0">📤</span>
+                <span v-else-if="tc.userStatus === 'claimed'" class="shrink-0">📋</span>
                 <span class="truncate flex-1">({{ taskLabelShort(tc) }}){{ truncateTitle(tc.title) }}</span>
               </div>
               <!-- 合计折叠 -->
@@ -241,7 +247,12 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div class="flex-1 min-w-0">
-                <h3 class="font-bold text-text-title mt-0">{{ truncateTitle(tc.title, 10) }}</h3>
+                <div class="flex items-center gap-1.5">
+                  <span v-if="tc.userStatus === 'completed'" class="text-green-600 font-bold">✓</span>
+                  <span v-else-if="tc.userStatus === 'submitted'" class="text-blue-600">📤</span>
+                  <span v-else-if="tc.userStatus === 'claimed'" class="text-orange-500">📋</span>
+                  <h3 class="font-bold text-text-title">{{ truncateTitle(tc.title, 10) }}</h3>
+                </div>
                 <p class="text-xs text-text-placeholder mt-1">{{ tc.dateLabel }}</p>
               </div>
               <span class="shrink-0 text-xs text-text-placeholder self-end">任务详情→</span>
@@ -319,7 +330,12 @@
                 @click="modalDayKey = null"
               >
                 <div class="flex gap-2 items-center justify-between">
-                  <span class="font-medium text-text-title truncate">{{ truncateTitle(tc.title, 10) }}</span>
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span v-if="tc.userStatus === 'completed'" class="text-green-600 font-bold shrink-0">✓</span>
+                    <span v-else-if="tc.userStatus === 'submitted'" class="text-blue-600 shrink-0">📤</span>
+                    <span v-else-if="tc.userStatus === 'claimed'" class="text-orange-500 shrink-0">📋</span>
+                    <span class="font-medium text-text-title truncate">{{ truncateTitle(tc.title, 10) }}</span>
+                  </div>
                 </div>
                 <div class="flex items-center justify-between mt-1">
                   <p class="text-xs text-text-placeholder">{{ tc.dateLabel }}</p>
@@ -600,7 +616,7 @@ async function loadCalendar() {
         tagId: filterTagId.value || undefined,
         mine: mineOnly.value
       }),
-      api.getTaskCalendarCards(communityId.value, { from, to })
+      api.getTaskCalendarCards(communityId.value, { from, to, mine: mineOnly.value })
     ])
 
     if (eventsResult.status === 'fulfilled') {

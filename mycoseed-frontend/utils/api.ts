@@ -3247,18 +3247,20 @@ export interface CalendarTaskCard {
   labelType: CalendarTaskLabelType
   borderColor: string      // 预留可配置边框颜色，默认 #E53935
   sortTime: string         // ISO 时间戳，用于排序
+  userStatus?: 'claimed' | 'submitted' | 'completed' | null  // 用户任务状态
 }
 
 /** 获取日历任务卡片（仅多人任务） */
 export async function getTaskCalendarCards(
   communityId: string,
-  params: { from: string; to: string },
+  params: { from: string; to: string; mine?: boolean },
   baseUrl: string
 ): Promise<{ cards: CalendarTaskCard[] }> {
   const sp = new URLSearchParams()
   sp.set('communityId', communityId)
   sp.set('from', params.from)
   sp.set('to', params.to)
+  if (params.mine) sp.set('mine', '1')
   const res = await fetch(`${baseUrl}/api/tasks/calendar-cards?${sp.toString()}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },

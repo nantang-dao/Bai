@@ -142,7 +142,7 @@ export const useApi = () => {
       api.cancelCommunityEventRegistration(communityId, eventId, occurrenceId, apiBaseUrl),
 
     // 日历任务卡片
-    getTaskCalendarCards: (communityId: string, params: { from: string; to: string }) =>
+    getTaskCalendarCards: (communityId: string, params: { from: string; to: string; mine?: boolean }) =>
       api.getTaskCalendarCards(communityId, params, apiBaseUrl),
     
     // 其他工具函数（不需要 API URL）
