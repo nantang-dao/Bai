@@ -114,7 +114,7 @@
                             v-if="paymentMap[row.user.id]?.status === 'paid'"
                             class="text-[10px] text-green-600"
                           >
-                            💰已付 {{ paymentMap[row.user.id]?.amount }}
+                            💰已付 {{ weiToToken(paymentMap[row.user.id]?.amount) }}
                           </span>
                           <span
                             v-else-if="paymentMap[row.user.id]?.status === 'partial'"
@@ -430,7 +430,12 @@ function retryPayment(p: any) {
   }
   const title = detail.value.event.title
   const memo = `活动：《${title}》`.slice(0, 32)
-  const url = buildSemiTransferUrl(payTo, String(price), { semiAppUrl, memo, pool_uuid: detail.value.event.id })
+  const url = buildSemiTransferUrl(payTo, String(price), {
+    semiAppUrl,
+    memo,
+    pool_uuid: detail.value.event.id,
+    task_uuid: detail.value.event.id,
+  })
   window.open(url, '_blank')
 }
 
@@ -537,7 +542,12 @@ async function doRegister() {
       const hh = String(now.getHours()).padStart(2, '0')
       const mi = String(now.getMinutes()).padStart(2, '0')
       const memo = `活动：《${title}》${mo}${da}-${hh}:${mi}`.slice(0, 32)
-      const url = buildSemiTransferUrl(payTo, String(price), { semiAppUrl, memo, pool_uuid: detail.value.event.id })
+      const url = buildSemiTransferUrl(payTo, String(price), {
+        semiAppUrl,
+        memo,
+        pool_uuid: detail.value.event.id,
+        task_uuid: detail.value.event.id,
+      })
       newWindow.location.href = url
     }
     await load()
