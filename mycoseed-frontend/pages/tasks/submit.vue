@@ -225,28 +225,38 @@
               </p>
             </div>
 
-            <!-- 提交按钮 -->
-            <div class="flex gap-4 pt-6 border-t border-border">
-              <PixelButton
-                @click="navigateTo(`/tasks/${taskId}`)"
-                variant="secondary"
-                size="lg"
-                :block="false"
-              >
-                取消
-              </PixelButton>
-              <PixelButton
-                type="submit"
-                variant="primary"
-                size="lg"
-                :block="false"
-                :disabled="!canSubmit || isSubmitting"
-              >
-                {{ isSubmitting ? '提交中...' : '提交任务' }}
-              </PixelButton>
-            </div>
           </form>
         </PixelCard>
+
+        <!-- 提交按钮 - 固定底栏 -->
+        <div class="sticky bottom-0 z-30 bg-background/95 backdrop-blur border-t border-border px-4 py-3 -mx-4 md:-mx-6">
+          <div class="container mx-auto max-w-4xl flex gap-4 items-center">
+            <div class="flex-1 text-sm text-text-placeholder" v-if="!canSubmit">
+              <span v-if="requiresFileUpload && !selectedFiles.main">请上传文件</span>
+              <span v-else-if="requiresDescription && !isValidDescription">请填写说明（最少{{ task.proofConfig?.description?.minWords || 10 }}字）</span>
+              <span v-else-if="requiresGPS && !gpsLocation.latitude">请获取位置</span>
+            </div>
+            <div class="flex-1" v-else />
+            <PixelButton
+              @click="navigateTo(`/tasks/${taskId}`)"
+              variant="secondary"
+              size="lg"
+              :block="false"
+            >
+              取消
+            </PixelButton>
+            <PixelButton
+              type="submit"
+              variant="primary"
+              size="lg"
+              :block="false"
+              :disabled="!canSubmit || isSubmitting"
+              @click="submitForm"
+            >
+              {{ isSubmitting ? '提交中...' : '提交任务' }}
+            </PixelButton>
+          </div>
+        </div>
       </div>
     </div>
   </div>

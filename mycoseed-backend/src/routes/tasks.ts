@@ -11,11 +11,22 @@ import {
     unmarkTransferCompleted,
     withdrawTask,
     deleteTask,
-    getCalendarCards
+    getCalendarCards,
+    listTaskTags,
+    createTaskTag,
+    updateTaskTag,
+    deleteTaskTag
 } from '../controllers/tasksController'
 import { authenticate, optionalAuthenticate } from '../middleware/auth'
+import { requireCommunityMember, requireSuperAdmin } from '../middleware/communityAdmin'
 
 const router = Router()
+
+// 任务标签管理
+router.get('/tags/:communityId', authenticate, requireCommunityMember, listTaskTags)
+router.post('/tags/:communityId', authenticate, requireCommunityMember, requireSuperAdmin, createTaskTag)
+router.patch('/tags/:communityId/:tagId', authenticate, requireCommunityMember, requireSuperAdmin, updateTaskTag)
+router.delete('/tags/:communityId/:tagId', authenticate, requireCommunityMember, requireSuperAdmin, deleteTaskTag)
 
 router.get('/', getAllTasks)
 router.get('/calendar-cards', optionalAuthenticate, getCalendarCards)

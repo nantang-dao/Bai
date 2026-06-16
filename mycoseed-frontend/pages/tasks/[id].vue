@@ -63,6 +63,15 @@
             <div class="pt-4 border-t-2 border-black/20">
               <h3 class="font-bold text-xs uppercase text-text-title mb-2">任务描述</h3>
               <p class=" text-lg text-text-title leading-relaxed">{{ task.description }}</p>
+              <!-- 标签 -->
+              <div v-if="task.tags && task.tags.length > 0" class="mt-3 flex gap-1.5 flex-wrap">
+                <span
+                  v-for="tag in task.tags"
+                  :key="tag.id"
+                  class="text-xs px-2.5 py-1 rounded-lg text-white font-medium"
+                  :style="{ backgroundColor: tag.colorHex }"
+                >{{ tag.name }}</span>
+              </div>
             </div>
             
             <div v-if="task.proofConfig" class="pt-4 border-t-2 border-black/20">

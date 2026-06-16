@@ -33,6 +33,61 @@
         </div>
       </div>
 
+      <!-- 搜索、排序、标签筛选 -->
+      <div class="mb-6 space-y-3">
+        <div class="flex gap-3 items-center">
+          <!-- 搜索框 -->
+          <div class="flex-1 relative">
+            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-placeholder" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+            </svg>
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="搜索任务..."
+              class="w-full h-10 pl-9 pr-4 bg-card border border-border rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          <!-- 排序下拉 -->
+          <select
+            v-model="sortBy"
+            class="h-10 px-3 bg-card border border-border rounded-2xl text-sm text-text-body focus:outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="createdAt">最新发布</option>
+            <option value="deadline">即将截止</option>
+            <option value="reward">积分最高</option>
+          </select>
+        </div>
+        <!-- 标签筛选 -->
+        <div v-if="availableTags.length > 0" class="flex gap-2 flex-wrap">
+          <button
+            @click="activeTagId = ''"
+            :class="[
+              'px-3 py-1.5 rounded-xl text-xs font-medium transition-all border',
+              !activeTagId
+                ? 'bg-primary text-white border-primary'
+                : 'bg-card text-text-body border-border hover:bg-input-bg'
+            ]"
+          >
+            全部标签
+          </button>
+          <button
+            v-for="tag in availableTags"
+            :key="tag.id"
+            @click="activeTagId = activeTagId === tag.id ? '' : tag.id"
+            :class="[
+              'px-3 py-1.5 rounded-xl text-xs font-medium transition-all border',
+              activeTagId === tag.id
+                ? 'text-white border-transparent'
+                : 'bg-card text-text-body border-border hover:bg-input-bg'
+            ]"
+            :style="activeTagId === tag.id ? { backgroundColor: tag.colorHex, borderColor: tag.colorHex } : {}"
+          >
+            {{ tag.name }}
+          </button>
+        </div>
+      </div>
+
       <!-- 加载状态 -->
       <div v-if="loading" class="text-center py-12">
         <div class="text-xl text-text-body animate-pulse">加载中...</div>
@@ -106,6 +161,15 @@
           <div class="task-card-content">
             <h3 class="font-bold text-lg text-text-title line-clamp-1">{{ item.title }}</h3>
             <p class="text-text-body text-sm line-clamp-2 mt-1">{{ item.description }}</p>
+            <!-- 标签 -->
+            <div v-if="item.tags && item.tags.length > 0" class="mt-2 flex gap-1.5 flex-wrap">
+              <span
+                v-for="tag in item.tags"
+                :key="tag.id"
+                class="text-[10px] px-2 py-0.5 rounded-lg text-white font-medium"
+                :style="{ backgroundColor: tag.colorHex }"
+              >{{ tag.name }}</span>
+            </div>
             <!-- 多人任务标签 -->
             <div v-if="Number(item._task?.participantLimit) > 1" class="mt-2 flex gap-2">
               <span class="text-xs bg-gray-100 text-text-body px-2 py-1 rounded-lg border border-border">多人任务</span>
@@ -155,7 +219,7 @@ import PixelButton from '~/components/pixel/PixelButton.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { useUserStore } from '~/stores/user'
 import { useCommunityStore } from '~/stores/community'
-import { getAllTasks, getApiBaseUrl, getTaskTransactions, type Task } from '~/utils/api'
+import { getAllTasks, getApiBaseUrl, getTaskTransactions, type Task, type TaskTag } from '~/utils/api'
 import { parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'
 import { weiToToken } from '~/utils/display'
 
@@ -187,6 +251,12 @@ const statusTabs = [
   { id: 'expired', label: '已失效' }
 ]
 
+// 搜索、排序、标签筛选
+const searchQuery = ref('')
+const sortBy = ref<'createdAt' | 'deadline' | 'reward'>('createdAt')
+const activeTagId = ref('')
+const availableTags = ref<TaskTag[]>([])
+
 // 加载状态
 const loading = ref(false)
 
@@ -204,6 +274,14 @@ const loadData = async () => {
     const communityId = communityStore.currentCommunityId || undefined
     const apiTasks = await getAllTasks(baseUrl, communityId)
     tasks.value = apiTasks
+
+    // 加载标签
+    if (communityId) {
+      try {
+        const api = useApi()
+        availableTags.value = await api.listTaskTags(communityId)
+      } catch { /* ignore */ }
+    }
 
     // 对已完成的任务，查询链上交易记录
     const completedTasks = apiTasks.filter(t => t.status === 'completed')
@@ -241,6 +319,7 @@ interface TaskItem {
   creator?: string
   creatorId?: string
   creatorAvatar?: string
+  tags?: { id: string; name: string; colorHex: string }[]
   _task?: Task // 原始任务对象，用于判断是否失效
 }
 
@@ -360,6 +439,7 @@ const taskItems = computed<TaskItem[]>(() => {
     creator: task.creatorName || '系统',
     creatorId: task.creatorId,
     creatorAvatar: task.creatorAvatar,
+    tags: task.tags || [],
     // 添加原始任务对象，用于判断是否失效
     _task: task
   }))
@@ -441,6 +521,23 @@ const mapTaskStatusToFilter = (item: TaskItem): string => {
 const filteredItems = computed(() => {
   let items = taskItems.value
   
+  // 搜索筛选
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.trim().toLowerCase()
+    items = items.filter(item =>
+      item.title.toLowerCase().includes(q) ||
+      item.description.toLowerCase().includes(q) ||
+      (item.creator || '').toLowerCase().includes(q)
+    )
+  }
+
+  // 标签筛选
+  if (activeTagId.value) {
+    items = items.filter(item =>
+      item.tags?.some(tag => tag.id === activeTagId.value)
+    )
+  }
+  
   // 状态筛选
   if (activeStatusTab.value !== 'all') {
     items = items.filter(item => {
@@ -448,6 +545,22 @@ const filteredItems = computed(() => {
       return filterStatus === activeStatusTab.value
     })
   }
+
+  // 排序
+  items = [...items].sort((a, b) => {
+    if (sortBy.value === 'deadline') {
+      const da = a.submitDeadline || a.deadline || ''
+      const db = b.submitDeadline || b.deadline || ''
+      if (!da) return 1
+      if (!db) return -1
+      return da.localeCompare(db)
+    }
+    if (sortBy.value === 'reward') {
+      return (b.reward || 0) - (a.reward || 0)
+    }
+    // 默认按创建时间降序
+    return (b.createdAt || '').localeCompare(a.createdAt || '')
+  })
   
   return items
 })

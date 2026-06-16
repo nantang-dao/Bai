@@ -120,6 +120,7 @@ export interface Task {
   submittedAt?: string           // 提交时间（单人任务）
   completedAt?: string           // 完成时间
   transferredAt?: string        // 转账完成时间
+  tags?: { id: string; name: string; colorHex: string }[]  // 任务标签
 }
 
 // ==================== Mock 数据 ====================
@@ -610,6 +611,7 @@ export interface CreateTaskParams {
   assignedUserId?: string  // 指定参与人员ID（可选，向后兼容）
   assignedUserIds?: string[]  // 指定参与人员ID列表（多人任务）
   communityId?: string  // 所属社区 ID，不传则任务不归属任何社区
+  tagIds?: string[]  // 标签ID列表
 }
 
 /**
@@ -636,6 +638,7 @@ export const createTask = async (params: CreateTaskParams, baseUrl: string): Pro
       assignedUserId: params.assignedUserId || undefined,
       assignedUserIds: params.assignedUserIds || undefined,
       communityId: params.communityId || undefined,
+      tagIds: params.tagIds || undefined,
     }
     
     console.log('[API] createTask - 请求体:', requestBody)
@@ -3123,6 +3126,70 @@ export async function updateCalendarTag(
 
 export async function deleteCalendarTag(communityId: string, tagId: string, baseUrl: string): Promise<void> {
   await communityEventsFetch(baseUrl, communityId, `/calendar-tags/${tagId}`, { method: 'DELETE' })
+}
+
+// ==================== 任务标签 API ====================
+
+export interface TaskTag {
+  id: string
+  name: string
+  colorHex: string
+  sortOrder?: number
+  archived?: boolean
+}
+
+async function taskTagsFetch<T>(
+  baseUrl: string,
+  communityId: string,
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const res = await fetch(`${baseUrl}/api/tasks/tags/${communityId}${path}`, {
+    ...options,
+    headers: { ...getAuthHeaders(), ...options.headers }
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const d = data as { message?: string }
+    throw new Error(d.message || `请求失败 ${res.status}`)
+  }
+  return data as T
+}
+
+export async function listTaskTags(communityId: string, baseUrl: string): Promise<TaskTag[]> {
+  const data = await taskTagsFetch<{ tags: TaskTag[] }>(baseUrl, communityId, '')
+  return data.tags || []
+}
+
+export async function createTaskTag(
+  communityId: string,
+  body: { name: string; colorHex?: string },
+  baseUrl: string
+): Promise<TaskTag> {
+  const data = await taskTagsFetch<{ tag: TaskTag }>(baseUrl, communityId, '', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function updateTaskTag(
+  communityId: string,
+  tagId: string,
+  body: { name?: string; colorHex?: string },
+  baseUrl: string
+): Promise<TaskTag> {
+  const data = await taskTagsFetch<{ tag: TaskTag }>(baseUrl, communityId, `/${tagId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  return data.tag
+}
+
+export async function deleteTaskTag(communityId: string, tagId: string, baseUrl: string): Promise<void> {
+  await taskTagsFetch(baseUrl, communityId, `/${tagId}`, { method: 'DELETE' })
 }
 
 export async function listCommunityEvents(

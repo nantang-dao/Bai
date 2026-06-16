@@ -121,6 +121,9 @@ export interface Task{
         proof?: string
         transferredAt?: string
     }>
+
+    // 标签
+    tags?: { id: string; name: string; colorHex: string }[]
 }
 
 /**
@@ -148,6 +151,9 @@ export interface CreateTaskParams{
     
     // 权重分配（如果 rewardDistributionMode 是 'custom'）
     weights?: Array<{ participantIndex: number; weight: number }>
+
+    // 标签
+    tagIds?: string[]
 }
 
 export interface TaskResponse

@@ -43,10 +43,13 @@
               <span class="text-text-body">活动标签管理</span>
               <span class="text-text-placeholder">›</span>
             </NuxtLink>
-            <div class="flex items-center justify-between py-3 opacity-50 cursor-not-allowed">
+            <NuxtLink
+              :to="`/community/${id}/tasks/tag-settings`"
+              class="flex items-center justify-between py-3"
+            >
               <span class="text-text-body">任务标签管理</span>
-              <span class="text-xs text-text-placeholder">待完善</span>
-            </div>
+              <span class="text-text-placeholder">›</span>
+            </NuxtLink>
           </section>
 
           <section class="bg-card rounded-2xl border border-border p-4 space-y-3">

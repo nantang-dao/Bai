@@ -145,6 +145,14 @@ export const useApi = () => {
     getTaskCalendarCards: (communityId: string, params: { from: string; to: string; mine?: boolean }) =>
       api.getTaskCalendarCards(communityId, params, apiBaseUrl),
     
+    // 任务标签
+    listTaskTags: (communityId: string) => api.listTaskTags(communityId, apiBaseUrl),
+    createTaskTag: (communityId: string, body: { name: string; colorHex?: string }) =>
+      api.createTaskTag(communityId, body, apiBaseUrl),
+    updateTaskTag: (communityId: string, tagId: string, body: { name?: string; colorHex?: string }) =>
+      api.updateTaskTag(communityId, tagId, body, apiBaseUrl),
+    deleteTaskTag: (communityId: string, tagId: string) => api.deleteTaskTag(communityId, tagId, apiBaseUrl),
+
     // 其他工具函数（不需要 API URL）
     setCurrentIdentifier: api.setCurrentIdentifier,
     getFinalReward: api.getFinalReward,

@@ -232,6 +232,28 @@
             </div>
           </div>
 
+          <!-- 任务标签 -->
+          <div v-if="taskTags.length > 0" class="border-t-2 border-black pt-4 md:pt-6">
+            <label class="block font-bold text-xs uppercase mb-2 text-text-title">任务标签（可选）</label>
+            <div class="flex gap-2 flex-wrap">
+              <button
+                v-for="tag in taskTags"
+                :key="tag.id"
+                type="button"
+                @click="toggleTag(tag.id)"
+                :class="[
+                  'px-3 py-1.5 rounded-xl text-xs font-medium transition-all border',
+                  selectedTagIds.includes(tag.id)
+                    ? 'text-white border-transparent'
+                    : 'bg-card text-text-body border-border hover:bg-input-bg'
+                ]"
+                :style="selectedTagIds.includes(tag.id) ? { backgroundColor: tag.colorHex, borderColor: tag.colorHex } : {}"
+              >
+                {{ tag.name }}
+              </button>
+            </div>
+          </div>
+
           <!-- 提交格式 -->
           <div class="border-t-2 border-black pt-4 md:pt-6">
             <h3 class="font-bold text-sm uppercase mb-4 text-text-title">提交格式</h3>
@@ -462,6 +484,16 @@ const proofConfig = ref({
 // 加载状态
 const isPublishing = ref(false)
 
+// 任务标签
+const taskTags = ref<{ id: string; name: string; colorHex: string }[]>([])
+const selectedTagIds = ref<string[]>([])
+
+const toggleTag = (tagId: string) => {
+  const idx = selectedTagIds.value.indexOf(tagId)
+  if (idx >= 0) selectedTagIds.value.splice(idx, 1)
+  else selectedTagIds.value.push(tagId)
+}
+
 // 参与人数错误信息
 const participantError = ref('')
 
@@ -691,7 +723,8 @@ const publishTask = async () => {
       submissionInstructions: taskForm.value.submissionInstructions || '请按照任务要求完成并提交相关凭证。',
       proofConfig: proofConfig.value,
       assignedUserIds: assignedUserIds,
-      communityId: communityStore.currentCommunityId || undefined  // 所属社区
+      communityId: communityStore.currentCommunityId || undefined,  // 所属社区
+      tagIds: selectedTagIds.value.length > 0 ? selectedTagIds.value : undefined  // 标签
     }
     
     console.log('[CREATE TASK] 发送请求参数:', taskParams)
@@ -770,6 +803,18 @@ const loadUsers = async () => {
   }
 }
 
+// 加载任务标签
+const loadTaskTags = async () => {
+  try {
+    const communityId = communityStore.currentCommunityId
+    if (!communityId) return
+    const api = useApi()
+    taskTags.value = await api.listTaskTags(communityId)
+  } catch (error) {
+    console.error('加载任务标签失败:', error)
+  }
+}
+
 // 过滤用户
 const filterUsers = () => {
   if (!userSearchQuery.value.trim()) {
@@ -834,6 +879,8 @@ watch(() => communityStore.currentCommunityId, () => {
     // 清空已选择的用户（因为可能不属于新社区）
     selectedUsers.value = []
   }
+  loadTaskTags()
+  selectedTagIds.value = []
 })
 
 // 初始化最小开始时间
@@ -845,6 +892,9 @@ onMounted(() => {
   
   // 加载用户列表
   loadUsers()
+
+  // 加载任务标签
+  loadTaskTags()
 
   // 如果是从“撤回”进入，自动恢复草稿
   try {

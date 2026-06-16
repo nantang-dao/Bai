@@ -2,6 +2,8 @@ import { Request, Response } from 'express'
 import { supabase } from '../services/supabase'
 import { Task, CreateTaskParams, TaskStatus, TimelineStatus } from '../types/task'
 import { AuthRequest } from '../middleware/auth'
+import { ensureDefaultTaskTags } from '../services/taskTagsSeed'
+import { getMemberRole } from '../middleware/communityAdmin'
 
 // ==================== 类型定义 ====================
 
@@ -315,7 +317,8 @@ const mapDbTaskToTask = (
   dbTask: any, 
   taskInfo?: any,
   taskTimeline?: any,
-  taskProof?: any
+  taskProof?: any,
+  tags?: { id: string; name: string; colorHex: string }[]
 ): Task & { creatorName?: string; creatorAvatar?: string; claimerId?: string; claimerName?: string } => {
   // 从 task_info 或 dbTask 中获取基本信息
   const info = taskInfo || dbTask.task_info || {}
@@ -401,7 +404,8 @@ const mapDbTaskToTask = (
     // 用户信息
     creatorName: dbTask.creator?.name || null,
     creatorAvatar: dbTask.creator?.avatar || null,
-  claimerName: dbTask.claimer?.name || null
+  claimerName: dbTask.claimer?.name || null,
+  tags: tags || []
   }
 }
 
@@ -664,7 +668,24 @@ export const getAllTasks = async (req: Request, res: Response) => {
           }, {} as Record<string, any>)
         }
       }
-  
+
+      // 批量获取任务标签
+      let taskTagsMap: Record<string, { id: string; name: string; colorHex: string }[]> = {}
+      if (taskInfoIds.length > 0) {
+        const { data: tagLinks } = await supabase
+          .from('task_info_tags')
+          .select('task_info_id, tag_id, community_task_tags ( id, name, color_hex )')
+          .in('task_info_id', taskInfoIds)
+        if (tagLinks && tagLinks.length > 0) {
+          for (const link of tagLinks as any[]) {
+            const t = link.community_task_tags
+            if (!t) continue
+            if (!taskTagsMap[link.task_info_id]) taskTagsMap[link.task_info_id] = []
+            taskTagsMap[link.task_info_id].push({ id: t.id, name: t.name, colorHex: t.color_hex })
+          }
+        }
+      }
+
       // 批量获取所有任务的 timeline
       const taskIds = tasksData.map(t => t.id)
       let timelinesMap: Record<string, any> = {}
@@ -758,6 +779,7 @@ export const getAllTasks = async (req: Request, res: Response) => {
         const firstTask = taskGroup[0]
         const firstTaskWithRelations = firstTask as TaskDataWithRelations
         const taskInfo = firstTaskWithRelations.task_info
+        const taskTags = taskInfo ? (taskTagsMap[taskInfo.id] || []) : []
         
         // 如果是多人任务（participant_limit > 1），返回一个代表任务组
         if (taskInfo.participant_limit && taskInfo.participant_limit > 1) {
@@ -770,7 +792,8 @@ export const getAllTasks = async (req: Request, res: Response) => {
               t,
               taskInfo,
               t.task_timeline,
-              t.task_proof
+              t.task_proof,
+              taskTags
             )
             return {
               id: participantTask.id,
@@ -791,7 +814,8 @@ export const getAllTasks = async (req: Request, res: Response) => {
             firstTask,
             taskInfo,
             firstTaskWithRelations.task_timeline,
-            firstTaskWithRelations.task_proof
+            firstTaskWithRelations.task_proof,
+            taskTags
           )
           
           // 添加参与者列表
@@ -834,7 +858,8 @@ export const getAllTasks = async (req: Request, res: Response) => {
             firstTask,
             taskInfo,
             firstTask.task_timeline,
-            firstTask.task_proof
+            firstTask.task_proof,
+            taskTags
           )
         }
       })
@@ -1249,7 +1274,26 @@ export const createTask = async (req: AuthRequest, res: Response) => {
         console.error('[CREATE TASK] Create timelines error:', timelineError)
         // 不抛出错误，继续执行
       }
-      
+
+      // 保存任务标签关联
+      const tagIds: string[] = params.tagIds || []
+      let taskTags: { id: string; name: string; colorHex: string }[] = []
+      if (tagIds.length > 0) {
+        const tagInserts = tagIds.map(tagId => ({
+          task_info_id: taskInfo.id,
+          tag_id: tagId
+        }))
+        await supabase.from('task_info_tags').insert(tagInserts)
+        // 获取标签详情用于返回
+        const { data: tagData } = await supabase
+          .from('community_task_tags')
+          .select('id, name, color_hex')
+          .in('id', tagIds)
+        if (tagData) {
+          taskTags = tagData.map(t => ({ id: t.id, name: t.name, colorHex: t.color_hex }))
+        }
+      }
+
       // 获取第一个任务的 timeline 和 proof
       const { data: firstTimeline } = await supabase
         .from('task_timelines')
@@ -1261,7 +1305,8 @@ export const createTask = async (req: AuthRequest, res: Response) => {
         firstTask, 
         taskInfo, 
         firstTimeline || { timeline: initialTimeline }, 
-        null
+        null,
+        taskTags
       )
       
       console.log('[CREATE TASK] Mapped task:', JSON.stringify(task, null, 2))
@@ -1295,7 +1340,8 @@ export const createTask = async (req: AuthRequest, res: Response) => {
         submitDeadline: task.submitDeadline,
         claimedAt: task.claimedAt,
         submittedAt: task.submittedAt,
-        completedAt: task.completedAt
+        completedAt: task.completedAt,
+        tags: task.tags || []
       }
       
       console.log('[CREATE TASK] Response task:', JSON.stringify(responseTask, null, 2))
@@ -1700,6 +1746,13 @@ export const submitProof = async (req: AuthRequest, res: Response) =>
             }
         } catch (_) {}
 
+        // 清理该任务的到期提醒通知（已提交，不再需要截止提醒）
+        try {
+          await supabase.from('notifications').delete()
+            .eq('category', 'due')
+            .eq('data->>taskId', String(id))
+        } catch (_) {}
+
         res.json({ 
             success: true, 
             message: '凭证提交成功！等待审核' 
@@ -1901,6 +1954,13 @@ export const approveTask = async (req: AuthRequest, res: Response) =>
                     }], { onConflict: 'user_id,dedupe_key' })
                 }
             }
+        } catch (_) {}
+
+        // 清理该任务的到期提醒通知（已审核通过，不再需要截止提醒）
+        try {
+          await supabase.from('notifications').delete()
+            .eq('category', 'due')
+            .eq('data->>taskId', String(id))
         } catch (_) {}
 
         // 获取被审核通过的参与者信息和创建者信息
@@ -2810,5 +2870,122 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('[deleteTask] error:', error)
     res.status(500).json({ error: error?.message || '删除失败' })
+  }
+}
+
+// ==================== 任务标签管理 ====================
+
+/** GET /api/tasks/tags/:communityId */
+export const listTaskTags = async (req: AuthRequest, res: Response) => {
+  try {
+    const communityId = req.params.communityId
+    if (!communityId) return res.status(400).json({ result: 'error', message: '缺少 communityId' })
+    const role = await getMemberRole(communityId, req.user!.id)
+    if (!role) return res.status(403).json({ result: 'error', message: '请先加入该社区' })
+    await ensureDefaultTaskTags(communityId)
+    const { data, error } = await supabase
+      .from('community_task_tags')
+      .select('id, name, color_hex, sort_order, created_at, archived')
+      .eq('community_id', communityId)
+      .or('archived.is.null,archived.eq.false')
+      .order('sort_order', { ascending: true })
+    if (error) throw error
+    res.json({
+      tags: (data || []).map((t) => ({
+        id: t.id,
+        name: t.name,
+        colorHex: t.color_hex,
+        sortOrder: t.sort_order,
+        createdAt: t.created_at,
+        archived: t.archived || false,
+      })),
+    })
+  } catch (e: any) {
+    console.error(e)
+    res.status(500).json({ result: 'error', message: e.message || 'Internal error' })
+  }
+}
+
+/** POST /api/tasks/tags/:communityId */
+export const createTaskTag = async (req: AuthRequest, res: Response) => {
+  try {
+    const communityId = req.params.communityId
+    const { name, colorHex } = req.body || {}
+    if (!name || !String(name).trim()) return res.status(400).json({ result: 'error', message: 'name 必填' })
+    const color = colorHex && String(colorHex).trim() ? String(colorHex).trim() : '#64748b'
+    const { data, error } = await supabase
+      .from('community_task_tags')
+      .insert({
+        community_id: communityId,
+        name: String(name).trim().slice(0, 100),
+        color_hex: color.slice(0, 20),
+      })
+      .select('id, name, color_hex, sort_order, created_at')
+      .single()
+    if (error) throw error
+    res.status(201).json({
+      tag: {
+        id: data.id,
+        name: data.name,
+        colorHex: data.color_hex,
+        sortOrder: data.sort_order,
+        createdAt: data.created_at,
+      },
+    })
+  } catch (e: any) {
+    console.error(e)
+    res.status(500).json({ result: 'error', message: e.message || 'Internal error' })
+  }
+}
+
+/** PATCH /api/tasks/tags/:communityId/:tagId */
+export const updateTaskTag = async (req: AuthRequest, res: Response) => {
+  try {
+    const communityId = req.params.communityId
+    const tagId = req.params.tagId
+    const { name, colorHex } = req.body || {}
+    const patch: Record<string, string> = {}
+    if (name != null) patch.name = String(name).trim().slice(0, 100)
+    if (colorHex != null) patch.color_hex = String(colorHex).trim().slice(0, 20)
+    if (!Object.keys(patch).length) return res.status(400).json({ result: 'error', message: '无可更新字段' })
+    const { data, error } = await supabase
+      .from('community_task_tags')
+      .update(patch)
+      .eq('id', tagId)
+      .eq('community_id', communityId)
+      .select('id, name, color_hex, sort_order, created_at')
+      .maybeSingle()
+    if (error) throw error
+    if (!data) return res.status(404).json({ result: 'error', message: '标签不存在' })
+    res.json({
+      tag: {
+        id: data.id,
+        name: data.name,
+        colorHex: data.color_hex,
+        sortOrder: data.sort_order,
+        createdAt: data.created_at,
+      },
+    })
+  } catch (e: any) {
+    console.error(e)
+    res.status(500).json({ result: 'error', message: e.message || 'Internal error' })
+  }
+}
+
+/** DELETE /api/tasks/tags/:communityId/:tagId — archive instead of hard delete */
+export const deleteTaskTag = async (req: AuthRequest, res: Response) => {
+  try {
+    const communityId = req.params.communityId
+    const tagId = req.params.tagId
+    const { error } = await supabase
+      .from('community_task_tags')
+      .update({ archived: true })
+      .eq('id', tagId)
+      .eq('community_id', communityId)
+    if (error) throw error
+    res.json({ ok: true })
+  } catch (e: any) {
+    console.error(e)
+    res.status(500).json({ result: 'error', message: e.message || 'Internal error' })
   }
 }
