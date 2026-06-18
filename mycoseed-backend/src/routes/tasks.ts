@@ -10,6 +10,7 @@ import {
     markTransferCompleted,
     unmarkTransferCompleted,
     withdrawTask,
+    withdrawSubmission,
     deleteTask,
     getCalendarCards,
     listTaskTags,
@@ -38,6 +39,7 @@ router.patch('/:id/approve', authenticate, approveTask)
 router.patch('/:id/reject', authenticate, rejectTask)
 router.patch('/:id/mark-transfer-completed', authenticate, markTransferCompleted)
 router.patch('/:id/unmark-transfer-completed', authenticate, unmarkTransferCompleted)
+router.patch('/:id/withdraw-submission', authenticate, withdrawSubmission)
 router.post('/:id/withdraw', authenticate, withdrawTask)
 router.delete('/:id', authenticate, deleteTask)
 

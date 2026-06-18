@@ -702,6 +702,24 @@ export const withdrawTask = async (
 }
 
 /**
+ * 撤回提交（仅领取者；submitted → unsubmit，保留凭证）
+ */
+export const withdrawSubmission = async (
+  taskId: string,
+  baseUrl: string
+): Promise<{ success: boolean; message: string }> => {
+  const res = await fetch(`${baseUrl}/api/tasks/${encodeURIComponent(taskId)}/withdraw-submission`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body as { message?: string }).message || res.statusText)
+  }
+  return body as { success: boolean; message: string }
+}
+
+/**
  * 删除任务（仅发布者；未被任何人领取）
  */
 export const deleteTask = async (

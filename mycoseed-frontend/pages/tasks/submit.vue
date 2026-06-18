@@ -70,6 +70,38 @@
             <div v-if="requiresFileUpload" class="pt-4 border-t border-border">
               <h3 class="font-bold text-xs uppercase text-text-title mb-4">上传文件</h3>
               <div class="space-y-4">
+                <!-- 已保存的文件（撤回后从服务器恢复） -->
+                <div v-if="savedProofFiles.length > 0" class="space-y-2">
+                  <label class="block font-bold text-[10px] uppercase text-text-title mb-2">
+                    已保存的文件
+                  </label>
+                  <div
+                    v-for="(file, index) in savedProofFiles"
+                    :key="`saved-${index}`"
+                    class="p-3 bg-card border border-border rounded-2xl shadow-soft"
+                  >
+                    <div class="flex items-center gap-3">
+                      <span class="text-2xl">📎</span>
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm text-text-title font-medium truncate">{{ file.name || '已上传文件' }}</div>
+                        <a
+                          :href="file.url"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-xs text-primary underline"
+                        >查看</a>
+                      </div>
+                      <PixelButton
+                        @click="removeSavedProofFile(index)"
+                        variant="danger"
+                        size="sm"
+                      >
+                        移除
+                      </PixelButton>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- 主要证明文件 -->
                 <div>
                   <label class="block font-bold text-[10px] uppercase text-text-title mb-2">
@@ -232,7 +264,8 @@
         <div class="sticky bottom-0 z-30 bg-background/95 backdrop-blur border-t border-border px-4 py-3 -mx-4 md:-mx-6">
           <div class="container mx-auto max-w-4xl flex gap-4 items-center">
             <div class="flex-1 text-sm text-text-placeholder" v-if="!canSubmit">
-              <span v-if="requiresFileUpload && !selectedFiles.main">请上传文件</span>
+              <span v-if="isSubmissionOverdue">已超过提交截止时间</span>
+              <span v-else-if="requiresFileUpload && !selectedFiles.main && savedProofFiles.length === 0">请上传文件</span>
               <span v-else-if="requiresDescription && !isValidDescription">请填写说明（最少{{ task.proofConfig?.description?.minWords || 10 }}字）</span>
               <span v-else-if="requiresGPS && !gpsLocation.latitude">请获取位置</span>
             </div>
@@ -269,7 +302,8 @@ import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import type { Task } from '~/utils/api'
-import { formatBeijingTime, parseBeijingTime } from '~/utils/time'
+import { formatBeijingTime, parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'
+import { buildSubmitFormRestore, type ProofFileRef } from '~/utils/taskProof'
 
 // 获取路由参数
 const route = useRoute()
@@ -288,6 +322,7 @@ const selectedFiles = ref<{
 })
 const submissionDescription = ref('')
 const receiverRemark = ref('')
+const savedProofFiles = ref<ProofFileRef[]>([])
 const isSubmitting = ref(false)
 const dragOver = ref(false)
 const taskRewardSymbol = ref('积分') // 任务奖励的积分符号
@@ -323,28 +358,54 @@ function clearSubmitDraft() {
   localStorage.removeItem(getSubmitDraftKey(taskId))
 }
 
-function restoreSubmitDraft(): boolean {
-  if (typeof window === 'undefined') return false
+function getLocalDraftDescription(): string | undefined {
+  if (typeof window === 'undefined') return undefined
   const raw = localStorage.getItem(getSubmitDraftKey(taskId))
-  if (!raw) return false
+  if (!raw) return undefined
   try {
     const draft = JSON.parse(raw) as SubmitDraft
-    if (!draft?.description?.trim()) {
-      clearSubmitDraft()
-      return false
-    }
-    if (draft.savedAt && Date.now() - draft.savedAt > SUBMIT_DRAFT_TTL_MS) {
-      clearSubmitDraft()
-      return false
-    }
-    restoringDraft = true
-    submissionDescription.value = draft.description
-    restoringDraft = false
-    return true
+    if (!draft?.description?.trim()) return undefined
+    if (draft.savedAt && Date.now() - draft.savedAt > SUBMIT_DRAFT_TTL_MS) return undefined
+    return draft.description.trim()
   } catch {
-    clearSubmitDraft()
-    return false
+    return undefined
   }
+}
+
+function applyProofRestore(taskData: Task) {
+  const restore = buildSubmitFormRestore({
+    localDescription: getLocalDraftDescription(),
+    proof: taskData.proof,
+    receiverRemark: taskData.receiverRemark,
+  })
+
+  if (restore.source === 'local') {
+    submissionDescription.value = restore.description
+    return 'local'
+  }
+
+  if (restore.source === 'server') {
+    submissionDescription.value = restore.description
+    savedProofFiles.value = [...restore.files]
+    if (restore.gps) {
+      gpsLocation.value = {
+        latitude: restore.gps.latitude,
+        longitude: restore.gps.longitude,
+        accuracy: restore.gps.accuracy ?? null,
+        timestamp: restore.gps.timestamp ? new Date(restore.gps.timestamp).getTime() : Date.now(),
+      }
+    }
+    if (restore.receiverRemark) {
+      receiverRemark.value = restore.receiverRemark
+    }
+    return 'server'
+  }
+
+  return 'none'
+}
+
+function removeSavedProofFile(index: number) {
+  savedProofFiles.value.splice(index, 1)
 }
 
 watch(submissionDescription, (val) => {
@@ -363,7 +424,7 @@ const additionalFileInput = ref<HTMLInputElement | null>(null)
 
 // 任务数据
 const task = ref<{
-  id: number
+  id: string | number
   title: string
   description: string
   reward: number
@@ -397,6 +458,16 @@ const loadTask = async () => {
       router.push('/tasks')
       return
     }
+
+    if (!['claimed', 'unsubmit'].includes(taskData.status)) {
+      toast.add({
+        title: '无法提交',
+        description: taskData.status === 'submitted' ? '任务已提交，如需修改请先撤回' : '当前任务状态不允许提交',
+        color: 'red'
+      })
+      router.push(`/tasks/${taskData.id || taskId}`)
+      return
+    }
     
     // 转换API数据为页面需要的格式
     task.value = {
@@ -404,10 +475,25 @@ const loadTask = async () => {
       title: taskData.title,
       description: taskData.description,
       reward: taskData.reward,
-      deadline: taskData.deadline || taskData.createdAt, // 领取截止日期
-      submitDeadline: taskData.submitDeadline || taskData.deadline || taskData.createdAt, // 提交截止日期
+      deadline: taskData.deadline || taskData.createdAt,
+      submitDeadline: taskData.submitDeadline || taskData.deadline || taskData.createdAt,
       submissionInstructions: taskData.submissionInstructions || '请按照任务要求完成并提交相关凭证。',
-      proofConfig: taskData.proofConfig || null // 保存证明配置用于动态设置文件类型
+      proofConfig: taskData.proofConfig || null
+    }
+
+    const restoreSource = applyProofRestore(taskData)
+    if (restoreSource === 'local') {
+      toast.add({
+        title: '已恢复上次编辑内容',
+        description: '提交说明草稿已从本地恢复',
+        color: 'green'
+      })
+    } else if (restoreSource === 'server') {
+      toast.add({
+        title: '已恢复已提交内容',
+        description: '可在此基础上继续编辑后重新提交',
+        color: 'green'
+      })
     }
     
     // 获取任务奖励的积分符号
@@ -543,11 +629,20 @@ const isValidDescription = computed(() => {
   return currentLength >= minWords
 })
 
+const isSubmissionOverdue = computed(() => {
+  if (!task.value.submitDeadline) return false
+  const submitDeadline = parseBeijingTime(task.value.submitDeadline)
+  if (!submitDeadline) return false
+  return getCurrentBeijingDate().getTime() > submitDeadline.getTime()
+})
+
 // 计算属性
 const canSubmit = computed(() => {
-  // 如果需要文件上传，则必须上传文件
+  if (isSubmissionOverdue.value) return false
+
+  // 如果需要文件上传，则必须上传文件或保留已保存文件
   if (requiresFileUpload.value) {
-    const hasFile = selectedFiles.value.main !== null
+    const hasFile = selectedFiles.value.main !== null || savedProofFiles.value.length > 0
     const hasGPS = requiresGPS.value ? (gpsLocation.value.latitude !== null && gpsLocation.value.longitude !== null) : true
     const hasDescription = requiresDescription.value ? isValidDescription.value : true
     return hasFile && hasGPS && hasDescription
@@ -709,29 +804,41 @@ const submitForm = async () => {
       proofData.description = submissionDescription.value.trim()
     }
 
-    if (requiresFileUpload.value && (selectedFiles.value.main || selectedFiles.value.additional.length > 0)) {
-      try {
-        const files: File[] = []
-        if (selectedFiles.value.main) files.push(selectedFiles.value.main)
-        files.push(...selectedFiles.value.additional)
-        
-        const uploadedFiles = await uploadProofFile(files, String(taskId), baseUrl)
-        proofData.files = uploadedFiles.map(f => ({
-          url: f.url,
-          hash: f.hash,
-          name: f.name,
-          size: f.size,
-          type: f.type
-        }))
-      } catch (e) {
-        console.error('文件上传失败:', e)
-        toast.add({
-          title: '文件上传失败',
-          description: '请检查网络后重试，或联系管理员',
-          color: 'red'
-        })
-        return
+    if (requiresFileUpload.value && (selectedFiles.value.main || selectedFiles.value.additional.length > 0 || savedProofFiles.value.length > 0)) {
+      const fileEntries = savedProofFiles.value.map(f => ({
+        url: f.url,
+        hash: f.hash,
+        name: f.name || '文件',
+        size: f.size,
+        type: f.type,
+      }))
+
+      const filesToUpload: File[] = []
+      if (selectedFiles.value.main) filesToUpload.push(selectedFiles.value.main)
+      filesToUpload.push(...selectedFiles.value.additional)
+
+      if (filesToUpload.length > 0) {
+        try {
+          const uploadedFiles = await uploadProofFile(filesToUpload, String(taskId), baseUrl)
+          fileEntries.push(...uploadedFiles.map(f => ({
+            url: f.url,
+            hash: f.hash,
+            name: f.name,
+            size: f.size,
+            type: f.type
+          })))
+        } catch (e) {
+          console.error('文件上传失败:', e)
+          toast.add({
+            title: '文件上传失败',
+            description: '请检查网络后重试，或联系管理员',
+            color: 'red'
+          })
+          return
+        }
       }
+
+      proofData.files = fileEntries
     }
     
     const result = await submitProof(taskId, proofData, baseUrl, receiverRemark.value)
@@ -774,14 +881,6 @@ const navigateTo = (path: string) => {
 
 // 组件挂载时加载任务
 onMounted(() => {
-  const restored = restoreSubmitDraft()
-  if (restored) {
-    toast.add({
-      title: '已恢复上次编辑内容',
-      description: '提交说明草稿已从本地恢复',
-      color: 'green'
-    })
-  }
   loadTask()
 })
 </script>

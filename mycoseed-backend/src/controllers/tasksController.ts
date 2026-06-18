@@ -4,6 +4,7 @@ import { Task, CreateTaskParams, TaskStatus, TimelineStatus } from '../types/tas
 import { AuthRequest } from '../middleware/auth'
 import { ensureDefaultTaskTags } from '../services/taskTagsSeed'
 import { getMemberRole } from '../middleware/communityAdmin'
+import { validateWithdrawSubmission } from '../services/withdrawSubmission'
 
 // ==================== 类型定义 ====================
 
@@ -1826,6 +1827,13 @@ export const approveTask = async (req: AuthRequest, res: Response) =>
             })
         }
 
+        if (task.status !== 'submitted' && task.status !== 'under_review') {
+            return res.status(400).json({
+                success: false,
+                message: `任务状态不正确，当前状态为：${task.status}，无法审核通过`
+            })
+        }
+
         // 验证该任务是否有提交的凭证（通过 task_proofs 表）
         // 对于多人任务，每个参与者独立审核，只审核传入的 task_id
         const { data: proofData } = await supabase
@@ -1888,17 +1896,26 @@ export const approveTask = async (req: AuthRequest, res: Response) =>
         // 每个任务行独立审核，不等待其他参与者
         // 更新当前任务行状态和时间线
         for (const taskRow of tasksToApprove) {
-            // 更新 tasks 表：设置状态和完成时间
-            const { error: statusError } = await supabase
-            .from('tasks')
+            // 乐观锁：仅 submitted / under_review 可审核通过
+            const { data: lockedRow, error: lockError } = await supabase
+                .from('tasks')
                 .update({
                     status: 'completed',
                     completed_at: now,
                     updated_at: now
                 })
                 .eq('id', taskRow.id)
+                .in('status', ['submitted', 'under_review'])
+                .select('id')
+                .maybeSingle()
 
-            if (statusError) throw statusError
+            if (lockError) throw lockError
+            if (!lockedRow) {
+                return res.status(409).json({
+                    success: false,
+                    message: '任务状态已变更，无法审核通过（可能已被撤回）'
+                })
+            }
 
             // 如果有审核意见，保存到 task_proofs 表
             if (comments && comments.trim().length > 0) {
@@ -2709,6 +2726,113 @@ export const getCalendarCards = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[GET CALENDAR CARDS] Error:', error)
     handleError(res, error, '获取日历任务卡片失败')
+  }
+}
+
+// ==================== 领取者撤回提交 ====================
+
+/**
+ * 撤回提交（仅领取者；状态 submitted → unsubmit，保留 task_proofs）
+ * PATCH /api/tasks/:id/withdraw-submission
+ */
+export const withdrawSubmission = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    const taskId = String(req.params.id || '').trim()
+    if (!taskId) {
+      return res.status(400).json({ success: false, message: '缺少任务ID' })
+    }
+
+    const task = await getTaskFromDb(taskId)
+
+    let taskInfo: any = task.task_info || null
+    if (!taskInfo && task.task_info_id) {
+      const { data: infoData } = await supabase
+        .from('task_info')
+        .select('id, title, creator_id, community_id, submit_deadline')
+        .eq('id', task.task_info_id)
+        .single()
+      taskInfo = infoData
+    }
+
+    const validation = validateWithdrawSubmission({
+      userId: user?.id,
+      claimerId: task.claimer_id,
+      status: task.status,
+      proof: task.proof,
+      submitDeadline: taskInfo?.submit_deadline,
+    })
+
+    if (!validation.ok) {
+      const statusCode =
+        validation.code === 'UNAUTHORIZED' ? 401
+        : validation.code === 'NOT_CLAIMER' ? 403
+        : 400
+      return res.status(statusCode).json({ success: false, message: validation.message })
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('id, name')
+      .eq('id', user!.id)
+      .single()
+    const userName = userData?.name || '未知用户'
+
+    // 乐观锁：仅当仍为 submitted 时更新
+    const { data: updatedRow, error: updateError } = await supabase
+      .from('tasks')
+      .update({ status: 'unsubmit', updated_at: new Date().toISOString() })
+      .eq('id', taskId)
+      .eq('status', 'submitted')
+      .select('id')
+      .maybeSingle()
+
+    if (updateError) throw updateError
+    if (!updatedRow) {
+      return res.status(409).json({
+        success: false,
+        message: '任务状态已变更，无法撤回（可能已被审核）',
+      })
+    }
+
+    await appendStatusToTimeline(taskId, 'unsubmit', user!.id, userName, '撤回提交')
+
+    // 清理发布者的「待审核」通知
+    try {
+      await supabase
+        .from('notifications')
+        .delete()
+        .eq('dedupe_key', `task_submit:${taskId}`)
+    } catch (_) {}
+
+    // 可选：通知创建者
+    try {
+      const creatorId = taskInfo?.creator_id
+      if (creatorId && creatorId !== user!.id) {
+        const { data: settings } = await supabase
+          .from('user_notification_settings')
+          .select('task_enabled')
+          .eq('user_id', creatorId)
+          .maybeSingle()
+        const enabled = settings?.task_enabled !== false
+        if (enabled) {
+          await supabase.from('notifications').insert([{
+            user_id: creatorId,
+            community_id: taskInfo?.community_id || null,
+            category: 'task',
+            type: 'task_withdraw_submission',
+            title: '任务提交已撤回',
+            body: `${userName} 撤回了任务「${taskInfo?.title || ''}」的提交`,
+            data: { taskId, taskInfoId: taskInfo?.id || task.task_info_id, fromUserId: user!.id },
+          }])
+        }
+      }
+    } catch (_) {}
+
+    res.json({ success: true, message: '已撤回提交，可继续编辑后重新提交' })
+  } catch (error: any) {
+    console.error('[withdrawSubmission] error:', error)
+    res.status(500).json({ success: false, message: error?.message || '撤回提交失败' })
   }
 }
 

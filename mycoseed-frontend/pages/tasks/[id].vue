@@ -472,9 +472,20 @@
             >
               审核任务
             </PixelButton>
+
+            <PixelButton
+              v-if="task.status === 'submitted' && canWithdrawSubmission"
+              @click="handleWithdrawSubmission"
+              variant="secondary"
+              size="lg"
+              :block="true"
+              :disabled="loading"
+            >
+              撤回提交
+            </PixelButton>
             
             <PixelButton
-              v-if="task.status === 'submitted' && !canReview"
+              v-if="task.status === 'submitted' && !canReview && !canWithdrawSubmission"
               variant="secondary"
               size="lg"
               :block="true"
@@ -630,7 +641,7 @@ import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
 import { getTaskRewardSymbol, weiToToken } from '~/utils/display'
 import { parseBeijingTime, getCurrentBeijingDate, formatBeijingTime } from '~/utils/time'
-import { withdrawTask, deleteTask } from '~/utils/api'
+import { withdrawTask, deleteTask, withdrawSubmission } from '~/utils/api'
 
 // 获取路由参数
 const route = useRoute()
@@ -696,6 +707,19 @@ const canCreatorDelete = computed(() => isCreator.value && noOneClaimed.value)
 // 权限检查：判断当前用户是否是任务领取者
 const isClaimer = computed(() => {
   return userStore.user?.id === task.value.claimerId
+})
+
+// 提交截止是否已过（与撤回/再提交校验一致，不受 submitted 状态豁免影响）
+const isSubmitDeadlinePassed = computed(() => {
+  if (!task.value.submitDeadline) return false
+  const submitDeadline = parseBeijingTime(task.value.submitDeadline)
+  if (!submitDeadline) return false
+  const now = getCurrentBeijingDate()
+  return now.getTime() > submitDeadline.getTime()
+})
+
+const canWithdrawSubmission = computed(() => {
+  return isClaimer.value && task.value.status === 'submitted' && !isSubmitDeadlinePassed.value
 })
 
 // 获取用户名（用于显示预留用户）
@@ -1171,10 +1195,13 @@ const updateTimeline = () => {
             ? `任务已被${actorName || '参与者'}领取，等待提交`
             : action === '重新提交'
             ? `任务已重新提交，等待提交凭证${actorName ? `（操作者：${actorName}）` : ''}${reason ? `，原因：${reason}` : ''}`
+            : action === '撤回提交'
+            ? `${actorName || '参与者'}撤回了提交，可继续编辑后重新提交`
             : action === '审核驳回'
             ? `审核未通过，需要重新提交任务${actorName ? `（审核者：${actorName}）` : ''}${reason ? `，驳回原因：${reason}` : ''}`
             : '任务待提交'
           if (action === '审核驳回') title = '审核驳回'
+          if (action === '撤回提交') title = '撤回提交'
           break
         case 'submitted':
           title = action || '凭证提交'
@@ -1521,6 +1548,26 @@ async function handleWithdrawTask() {
     }
     toast.add({ title: '已撤回', description: '已为你保留草稿，可继续修改后重新发布', color: 'green' })
     router.push('/tasks/create?from=withdraw')
+  } catch (e: any) {
+    toast.add({ title: '撤回失败', description: e?.message || '请稍后重试', color: 'red' })
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleWithdrawSubmission() {
+  if (!canWithdrawSubmission.value) return
+  const ok = window.confirm('确认撤回提交？撤回后可继续编辑凭证并重新提交，审核者将暂时看不到待审记录。')
+  if (!ok) return
+  loading.value = true
+  try {
+    const baseUrl = getApiBaseUrl()
+    const targetId = task.value.id || taskId
+    const res = await withdrawSubmission(targetId, baseUrl)
+    const { responseCache } = await import('~/utils/cache')
+    responseCache.delete(`task:${targetId}`)
+    toast.add({ title: '已撤回', description: res.message || '可继续编辑后重新提交', color: 'green' })
+    await loadTask()
   } catch (e: any) {
     toast.add({ title: '撤回失败', description: e?.message || '请稍后重试', color: 'red' })
   } finally {

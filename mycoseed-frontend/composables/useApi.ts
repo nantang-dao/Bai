@@ -48,6 +48,7 @@ export const useApi = () => {
     approveTask: (taskId: string, comments?: string) => api.approveTask(taskId, apiBaseUrl, comments),
     rejectTask: (taskId: string, reason: string, rejectOption?: 'resubmit' | 'reclaim') => api.rejectTask(taskId, reason, apiBaseUrl, rejectOption),
     withdrawTask: (taskId: string) => api.withdrawTask(taskId, apiBaseUrl),
+    withdrawSubmission: (taskId: string) => api.withdrawSubmission(taskId, apiBaseUrl),
     deleteTask: (taskId: string) => api.deleteTask(taskId, apiBaseUrl),
     
     // 社群相关 API（暂时返回空数据）
