@@ -292,6 +292,71 @@ const isSubmitting = ref(false)
 const dragOver = ref(false)
 const taskRewardSymbol = ref('积分') // 任务奖励的积分符号
 
+const SUBMIT_DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+type SubmitDraft = {
+  description: string
+  savedAt: number
+}
+
+function getSubmitDraftKey(id: string) {
+  return `task_submit_draft_${id}`
+}
+
+let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+let restoringDraft = false
+
+function saveSubmitDraft(description: string) {
+  if (typeof window === 'undefined') return
+  const trimmed = description.trim()
+  const key = getSubmitDraftKey(taskId)
+  if (!trimmed) {
+    localStorage.removeItem(key)
+    return
+  }
+  const payload: SubmitDraft = { description: trimmed, savedAt: Date.now() }
+  localStorage.setItem(key, JSON.stringify(payload))
+}
+
+function clearSubmitDraft() {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(getSubmitDraftKey(taskId))
+}
+
+function restoreSubmitDraft(): boolean {
+  if (typeof window === 'undefined') return false
+  const raw = localStorage.getItem(getSubmitDraftKey(taskId))
+  if (!raw) return false
+  try {
+    const draft = JSON.parse(raw) as SubmitDraft
+    if (!draft?.description?.trim()) {
+      clearSubmitDraft()
+      return false
+    }
+    if (draft.savedAt && Date.now() - draft.savedAt > SUBMIT_DRAFT_TTL_MS) {
+      clearSubmitDraft()
+      return false
+    }
+    restoringDraft = true
+    submissionDescription.value = draft.description
+    restoringDraft = false
+    return true
+  } catch {
+    clearSubmitDraft()
+    return false
+  }
+}
+
+watch(submissionDescription, (val) => {
+  if (restoringDraft) return
+  if (draftSaveTimer) clearTimeout(draftSaveTimer)
+  draftSaveTimer = setTimeout(() => saveSubmitDraft(val), 300)
+})
+
+onBeforeUnmount(() => {
+  if (draftSaveTimer) clearTimeout(draftSaveTimer)
+})
+
 // 文件输入引用
 const mainFileInput = ref<HTMLInputElement | null>(null)
 const additionalFileInput = ref<HTMLInputElement | null>(null)
@@ -672,6 +737,7 @@ const submitForm = async () => {
     const result = await submitProof(taskId, proofData, baseUrl, receiverRemark.value)
     
     if (result.success) {
+      clearSubmitDraft()
       toast.add({
         title: '提交成功',
         description: result.message || '任务提交成功，等待审核',
@@ -708,6 +774,14 @@ const navigateTo = (path: string) => {
 
 // 组件挂载时加载任务
 onMounted(() => {
+  const restored = restoreSubmitDraft()
+  if (restored) {
+    toast.add({
+      title: '已恢复上次编辑内容',
+      description: '提交说明草稿已从本地恢复',
+      color: 'green'
+    })
+  }
   loadTask()
 })
 </script>
