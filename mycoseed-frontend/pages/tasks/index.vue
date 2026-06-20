@@ -222,6 +222,7 @@ import { useCommunityStore } from '~/stores/community'
 import { getAllTasks, getApiBaseUrl, getTaskTransactions, type Task, type TaskTag } from '~/utils/api'
 import { parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'
 import { weiToToken } from '~/utils/display'
+import { getTaskStatusText, mapPublishedTaskToFilter } from '~/utils/taskStatus'
 
 definePageMeta({
   layout: 'default'
@@ -323,108 +324,6 @@ interface TaskItem {
   _task?: Task // 原始任务对象，用于判断是否失效
 }
 
-// 检查任务是否已领取（通过 claimer_id 判断）
-const isTaskClaimed = (task: Task): boolean => {
-  // 如果 claimerId 不为 null，说明已领取
-  return !!task.claimerId
-}
-
-// 检查任务是否已过期（过了领取截止日期）
-// 对于多人任务：过了领取截止日期就不能再领取
-// 对于单人任务：过了领取截止日期且未领取才算过期
-// 统一使用 UTC+8 北京时间进行比较，不受机器时区影响
-const isTaskExpired = (task: Task): boolean => {
-  if (!task.deadline) {
-    return false // 如果没有领取截止时间，认为未过期
-  }
-  
-  // 使用统一的时间解析函数，将 YYYY-MM-DDTHH:mm 当作北京时间（UTC+8）处理
-  const deadline = parseBeijingTime(task.deadline)
-  if (!deadline) {
-    console.warn('[isTaskExpired] deadline 解析失败，返回 false')
-    return false
-  }
-  
-  // 获取当前北京时间（UTC+8）
-  const now = getCurrentBeijingDate()
-  
-  // 如果过了领取截止日期
-  if (now.getTime() > deadline.getTime()) {
-    // 多人任务：过了领取截止日期就不能再领取
-    if (task.participantLimit && task.participantLimit > 1) {
-      return true
-    }
-    // 单人任务：过了领取截止日期且未领取才算过期
-    return !isTaskClaimed(task)
-  }
-  
-  return false
-}
-
-// 检查任务是否已截止（过了提交截止日期且已领取但未提交）
-// 逻辑与任务详情页保持一致
-// 统一使用 UTC+8 北京时间进行比较，不受机器时区影响
-const isTaskOverdue = (task: Task): boolean => {
-  // 优先使用提交截止日期
-  const submitDeadline = task.submitDeadline
-  if (!submitDeadline) {
-    // 如果没有提交截止时间，使用领取截止时间作为后备（向后兼容）
-    if (!task.deadline) return false
-    
-    const deadline = parseBeijingTime(task.deadline)
-    if (!deadline) {
-      return false // 无效时间，认为未截止
-    }
-    
-    const now = getCurrentBeijingDate()
-    
-    // 如果过了领取截止时间且已领取但未提交，也算已截止
-    const isClaimed = !!task.claimerId
-    const isNotSubmitted = task.status !== 'completed' && task.status !== 'submitted' && task.status !== 'under_review'
-    return now.getTime() > deadline.getTime() && isClaimed && isNotSubmitted
-  }
-  
-  const deadline = parseBeijingTime(submitDeadline)
-  if (!deadline) {
-    return false // 无效时间，认为未截止
-  }
-  
-  const now = getCurrentBeijingDate()
-  
-  // 过了提交截止日期且已领取但未提交的任务才算已截止
-  // 检查条件：已领取 && 状态不是已完成和审核中 && 过了提交截止日期
-  const isClaimed = !!task.claimerId
-  const isNotSubmitted = task.status !== 'completed' && task.status !== 'under_review'
-  
-  return now.getTime() > deadline.getTime() && isClaimed && isNotSubmitted
-}
-
-// 检查任务是否被终止（rejected）
-// 通过检查时间线数组的最后一个状态是否为 'rejected' 来判断
-const isTaskRejected = (task: Task): boolean => {
-  // 如果时间线存在且不为空，检查最后一个状态
-  if (task.timeline && Array.isArray(task.timeline) && task.timeline.length > 0) {
-    const lastStatus = task.timeline[task.timeline.length - 1]
-    return lastStatus.status === 'rejected'
-  }
-  // 如果没有时间线，使用旧逻辑（向后兼容）
-  return task.status === 'rejected' && task.rejectOption === 'rejected'
-}
-
-// 从时间线获取最新状态（如果时间线存在）
-const getLatestStatusFromTimeline = (task: Task): TaskStatus | 'resubmit' | 'reclaim' | null => {
-  if (task.timeline && Array.isArray(task.timeline) && task.timeline.length > 0) {
-    const lastStatus = task.timeline[task.timeline.length - 1]
-    return lastStatus.status as TaskStatus | 'resubmit' | 'reclaim'
-  }
-  return null
-}
-
-// 检查任务是否已失效（过期、已截止或被终止）
-const isTaskInvalid = (task: Task): boolean => {
-  return isTaskExpired(task) || isTaskOverdue(task) || isTaskRejected(task)
-}
-
 // 任务列表
 const taskItems = computed<TaskItem[]>(() => {
   return tasks.value.map(task => ({
@@ -445,75 +344,14 @@ const taskItems = computed<TaskItem[]>(() => {
   }))
 })
 
-// 检查任务是否未领完（多人项目没领完的）
-// 通过比较已领取的行数和任务设置的参与人数来判断
-const isTaskNotFullyClaimed = (task: Task): boolean => {
-  // 如果任务有参与人数限制
-  if (task.participantLimit && task.participantLimit > 1) {
-    // 检查当前已领取人数（通过 participantsList，检查 claimerId 和 claimedAt）
-    const currentParticipants = task.participantsList?.filter(p => p.claimerId && p.claimedAt).length || 0
-    
-    // 未领完：已领取人数小于限制（包括0人领取的情况）
-    return currentParticipants < task.participantLimit
-  }
-  return false
-}
-
-// 状态映射：将任务状态映射到筛选状态
-// 优先使用时间线数组的最后一个状态来判断
 const mapTaskStatusToFilter = (item: TaskItem): string => {
-  // 首先检查是否已失效（过期、已截止或被终止）
-  // 注意：这个检查必须在状态映射之前，确保已失效的任务不会被归类到正常状态
-  if (item._task) {
-      // 优先检查已截止（因为已截止的任务状态可能还是 claimed 或 unsubmit）
-    if (isTaskOverdue(item._task)) {
-      return 'expired'
-    }
-    // 再检查是否已过期
-    if (isTaskExpired(item._task)) {
-      return 'expired'
-    }
-    // 再检查是否被终止（通过时间线最后一个状态判断）
-    if (isTaskRejected(item._task)) {
-      return 'expired'
-    }
-    
-    // 优先检查是否未领完（多人任务）- 应该在状态检查之前
-    if (isTaskNotFullyClaimed(item._task)) {
-      return 'pending' // 未领完的任务显示在"可领取"标签页
-    }
-    
-    // 尝试从时间线获取最新状态
-    const latestStatus = getLatestStatusFromTimeline(item._task)
-    if (latestStatus) {
-      // 根据时间线的最新状态映射
-      if (latestStatus === 'unclaimed' || (latestStatus === 'reclaim')) {
-        return 'pending'
-      }
-      if (latestStatus === 'claimed' || latestStatus === 'unsubmit' || latestStatus === 'submitted' || latestStatus === 'under_review' || latestStatus === 'resubmit') {
-        return 'unsubmit'
-      }
-      if (latestStatus === 'completed') {
-        return 'completed'
-      }
-      if (latestStatus === 'rejected') {
-        return 'expired'
-      }
-    }
-  }
-  
-  // 如果没有时间线，使用旧逻辑（向后兼容）
-  // "可领取"：包含"未领取"（unclaimed）和"未领完"（未领完的多人任务）
-  if (item.status === 'unclaimed' || (item._task && isTaskNotFullyClaimed(item._task))) {
-    return 'pending'
-  }
-  // "待审核"：包含"待提交"（claimed/unsubmit）和"审核中"（submitted/under_review）
+  if (item._task) return mapPublishedTaskToFilter(item._task)
+  if (item.status === 'unclaimed') return 'pending'
   if (item.status === 'claimed' || item.status === 'unsubmit' || item.status === 'submitted' || item.status === 'under_review') {
     return 'unsubmit'
   }
   if (item.status === 'completed') return 'completed'
   if (item.status === 'rejected') return 'expired'
-  
   return item.status
 }
 
@@ -564,55 +402,6 @@ const filteredItems = computed(() => {
   
   return items
 })
-
-// 任务状态文本（统一的状态文本映射）
-const getTaskStatusText = (status: string, task?: Task) => {
-  // 如果提供了任务对象，优先检查是否已失效（过期、已截止或被终止）
-  if (task) {
-    // 先检查是否已截止（优先级最高，因为已截止的任务状态可能还是 claimed 或 unsubmit）
-    if (isTaskOverdue(task)) {
-      return '已截止'
-    }
-    // 再检查是否已过期
-    if (isTaskExpired(task)) {
-      return '已过期'
-    }
-    // 再检查是否被终止（只有 rejectOption === 'rejected' 的才是真正的终止）
-    if (isTaskRejected(task)) {
-      return '已终止'
-    }
-    
-    // 对于多人任务，检查是否所有参与者都已完成
-    if (task.participantLimit && task.participantLimit > 1 && task.participantsList) {
-      const allCompleted = task.participantsList.every(p => 
-        p.status === 'completed' || p.status === 'rejected'
-      )
-      if (allCompleted && task.participantsList.length > 0) {
-        // 如果所有参与者都已完成或被驳回，检查是否至少有一个完成
-        const hasCompleted = task.participantsList.some(p => p.status === 'completed')
-        return hasCompleted ? '已完成' : '已终止'
-      }
-    }
-    
-    // 检查是否未领完（多人项目）
-    // 优先检查未领完状态（应该在过期检查之前）
-    if (isTaskNotFullyClaimed(task)) {
-      return '未领完'
-    }
-  }
-  
-  // 统一的状态文本映射
-  const statusMap: Record<string, string> = {
-    'unclaimed': '未领取',
-    'claimed': '已领取',
-    'unsubmit': '待提交',
-    'submitted': '已提交',
-    'under_review': '审核中',
-    'completed': '已完成',
-    'rejected': '已终止'  // 只有 rejectOption === 'rejected' 的才会显示这个
-  }
-  return statusMap[status] || '未知'
-}
 
 // 格式化时间差（统一使用 UTC+8 北京时间，不受机器时区影响）
 const formatTimeAgo = (dateString: string): string => {

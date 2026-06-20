@@ -124,7 +124,7 @@
 
     <!-- 下方 Tab 区域 -->
     <div class="mt-4 px-4">
-      <!-- 顶级 Tab 导航：发布任务 / 我的任务 -->
+      <!-- 顶级 Tab 导航：发布任务 / 领取任务 -->
       <div class="flex items-center justify-between border-b-2 border-black mb-4 gap-4">
         <div class="flex overflow-x-auto scrollbar-hide flex-1">
           <button
@@ -144,7 +144,7 @@
       <!-- 筛选标签 -->
       <div class="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
         <button
-          v-for="filter in filterTabs"
+          v-for="filter in currentFilterTabs"
           :key="filter.id"
           @click="activeFilter = filter.id"
           :class="[
@@ -166,9 +166,7 @@
         <!-- 任务列表 -->
         <div v-else-if="currentTasks.length > 0" class="space-y-4">
           <div v-for="task in currentTasks" :key="task.id" class="bg-white border border-border rounded-2xl p-4 shadow-soft-sm hover:shadow-soft transition-shadow cursor-pointer" @click="navigateTo(`/tasks/${task.id}`)">
-            <div class="flex items-start gap-3">
-              <div class="text-2xl">{{ getTaskIcon(task.status) }}</div>
-              <div class="flex-1">
+            <div>
                 <div class="flex justify-between items-start mb-1">
                   <div class="font-bold text-lg leading-tight">{{ task.title }}</div>
                   <div v-if="task.status === 'completed'" class="font-bold text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
@@ -176,11 +174,11 @@
                   </div>
                 </div>
                 <div class="flex items-center gap-2 mb-2">
-                  <span :class="getStatusBadgeClass(task.status)">
-                    {{ getStatusText(task.status) }}
-                  </span>
-                  <span v-if="task.status === 'claimed' || task.status === 'unsubmit'" class="font-bold text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                    进行中
+                  <span
+                    v-if="task.status !== 'completed'"
+                    :class="getTaskStatusBadgeClass(task.status, task)"
+                  >
+                    {{ getTaskStatusText(task.status, task) }}
                   </span>
                   <!-- 转账状态（仅已完成任务） -->
                   <span v-if="task.status === 'completed' && taskChainMap[task.id]?.length" class="font-bold text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded">
@@ -199,7 +197,6 @@
                 <div v-if="task.description" class="text-xs text-gray-600 mt-1 line-clamp-2">
                   {{ task.description }}
                 </div>
-              </div>
             </div>
           </div>
         </div>
@@ -217,13 +214,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '~/stores/user'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, getTaskTransactions, type Task, type Community } from '~/utils/api'
 import { getTaskRewardSymbol, weiToToken } from '~/utils/display'
-import { useApi } from '~/composables/useApi'
+import {
+  mapPublishedTaskToFilter,
+  mapClaimedTaskToFilter,
+  getTaskStatusText,
+  getTaskStatusBadgeClass,
+} from '~/utils/taskStatus'
 
 definePageMeta({
   layout: 'default'
@@ -292,16 +294,29 @@ const isMyProfile = computed(() => {
 
 const tabs = [
   { id: 'PUBLISHED', label: '发布任务' },
-  { id: 'ACCEPTED', label: '我的任务' }
+  { id: 'ACCEPTED', label: '领取任务' },
 ]
 
-const filterTabs = [
+const publishedFilterTabs = [
   { id: 'all', label: '全部' },
   { id: 'pending', label: '可领取' },
   { id: 'unsubmit', label: '待审核' },
   { id: 'completed', label: '已完成' },
-  { id: 'expired', label: '已失效' }
+  { id: 'expired', label: '已失效' },
 ]
+
+const claimedFilterTabs = [
+  { id: 'all', label: '全部' },
+  { id: 'to_submit', label: '待提交' },
+  { id: 'reviewing', label: '审核中' },
+  { id: 'completed', label: '已完成' },
+  { id: 'rejected', label: '已驳回' },
+  { id: 'expired', label: '已过期' },
+]
+
+const currentFilterTabs = computed(() =>
+  activeTab.value === 'PUBLISHED' ? publishedFilterTabs : claimedFilterTabs
+)
 
 // Mock Data
 const member = ref<any>(null)
@@ -405,36 +420,23 @@ const loadUserCommunity = async () => {
   }
 }
 
-// 任务状态映射到筛选分类（复用 tasks/index.vue 逻辑）
-const mapTaskStatusToFilter = (task: Task): string => {
-  // 已失效：rejected
-  if (task.status === 'rejected') return 'expired'
-  // 可领取：unclaimed
-  if (task.status === 'unclaimed') return 'pending'
-  // 待审核：claimed/unsubmit/submitted/under_review
-  if (task.status === 'claimed' || task.status === 'unsubmit' || task.status === 'submitted' || task.status === 'under_review') return 'unsubmit'
-  // 已完成
-  if (task.status === 'completed') return 'completed'
-  return 'pending'
-}
-
 // 发布的任务（我是创建者）
 const publishedTasks = computed(() => {
   const userId = userStore.user?.id
   if (!userId) return []
   return allTasks.value
     .filter(t => t.creatorId === userId)
-    .filter(t => activeFilter.value === 'all' || mapTaskStatusToFilter(t) === activeFilter.value)
+    .filter(t => activeFilter.value === 'all' || mapPublishedTaskToFilter(t) === activeFilter.value)
     .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
 })
 
-// 我领取的任务（我是领取者）
+// 领取的任务（我是领取者）
 const acceptedTasks = computed(() => {
   const userId = userStore.user?.id
   if (!userId) return []
   return allTasks.value
     .filter(t => t.claimerId === userId)
-    .filter(t => activeFilter.value === 'all' || mapTaskStatusToFilter(t) === activeFilter.value)
+    .filter(t => activeFilter.value === 'all' || mapClaimedTaskToFilter(t) === activeFilter.value)
     .sort((a, b) => new Date(b.updatedAt || a.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
 })
 
@@ -477,45 +479,6 @@ const loadClaimedTasks = async () => {
   } finally {
     loadingTasks.value = false
   }
-}
-
-// 获取任务状态文本
-const getStatusText = (status: Task['status']): string => {
-  const statusMap: Record<string, string> = {
-    'unclaimed': '未领取',
-    'claimed': '已领取',
-    'unsubmit': '待提交',
-    'under_review': '审核中',
-    'completed': '已完成',
-    'rejected': '已驳回'
-  }
-  return statusMap[status] || '未知'
-}
-
-// 获取任务状态图标
-const getTaskIcon = (status: Task['status']): string => {
-  const iconMap: Record<string, string> = {
-    'unclaimed': '📋',
-    'claimed': '✅',
-    'unsubmit': '🔄',
-    'under_review': '⏳',
-    'completed': '✅',
-    'rejected': '❌'
-  }
-  return iconMap[status] || '📋'
-}
-
-// 获取状态徽章样式
-const getStatusBadgeClass = (status: Task['status']): string => {
-  const classMap: Record<string, string> = {
-    'unclaimed': 'font-bold text-[10px] px-2 py-0.5 rounded border border-yellow-600 text-yellow-600 bg-yellow-50',
-    'claimed': 'font-bold text-[10px] px-2 py-0.5 rounded border border-blue-600 text-blue-600 bg-blue-50',
-    'unsubmit': 'font-bold text-[10px] px-2 py-0.5 rounded border border-blue-600 text-blue-600 bg-blue-50',
-    'under_review': 'font-bold text-[10px] px-2 py-0.5 rounded border border-orange-600 text-orange-600 bg-orange-50',
-    'completed': 'font-bold text-[10px] px-2 py-0.5 rounded border border-green-600 text-green-600 bg-green-50',
-    'rejected': 'font-bold text-[10px] px-2 py-0.5 rounded border border-red-600 text-red-600 bg-destructive-50'
-  }
-  return classMap[status] || 'font-bold text-[10px] px-2 py-0.5 rounded border border-gray-600 text-gray-600 bg-gray-50'
 }
 
 // 格式化任务日期
