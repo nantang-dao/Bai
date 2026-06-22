@@ -62,7 +62,7 @@
             
             <div class="pt-4 border-t-2 border-black/20">
               <h3 class="font-bold text-xs uppercase text-text-title mb-2">任务描述</h3>
-              <p class=" text-lg text-text-title leading-relaxed">{{ task.description }}</p>
+              <MarkdownContent :content="task.description" class="text-lg" />
               <!-- 标签 -->
               <div v-if="task.tags && task.tags.length > 0" class="mt-3 flex gap-1.5 flex-wrap">
                 <span
@@ -174,9 +174,7 @@
             
             <div v-if="task.submissionInstructions && task.submissionInstructions.trim()" class="pt-4 border-t-2 border-black/20">
               <h3 class="font-bold text-xs uppercase text-text-title mb-2">提交说明</h3>
-              <p class=" text-lg text-text-title leading-relaxed">
-                {{ task.submissionInstructions }}
-              </p>
+              <MarkdownContent :content="task.submissionInstructions" class="text-lg" />
             </div>
           </div>
         </PixelCard>

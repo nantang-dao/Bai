@@ -32,12 +32,10 @@
 
             <div>
               <label class="block font-bold text-xs uppercase mb-2 text-text-title">任务内容 *</label>
-              <textarea 
-                v-model="taskForm.objective" 
-                placeholder="描述任务的具体目标，开始、结束时间，地点等信息..."
-                rows="4"
-                class="w-full px-4 py-3 bg-input-bg border border-border rounded-2xl shadow-soft  text-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card transition-all resize-none"
-              ></textarea>
+              <SimpleMarkdownEditor
+                v-model="taskForm.objective"
+                placeholder="描述任务的具体目标、地点等信息..."
+              />
             </div>
 
             <!-- 参与人数和指定参与人员（同一行） -->
@@ -223,12 +221,11 @@
           <div class="border-t-2 border-black pt-4 md:pt-6">
             <div>
               <label class="block font-bold text-xs uppercase mb-2 text-text-title">提交说明（可选）</label>
-              <textarea
+              <SimpleMarkdownEditor
                 v-model="taskForm.submissionInstructions"
                 placeholder="补充任务完成后的提交说明，如需要强调的注意事项等..."
-                rows="3"
-                class="w-full px-4 py-3 bg-input-bg border border-border rounded-2xl shadow-soft  text-base text-text-title focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card transition-all resize-none"
-              ></textarea>
+                :rows="4"
+              />
             </div>
           </div>
 

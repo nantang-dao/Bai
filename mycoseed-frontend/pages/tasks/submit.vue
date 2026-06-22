@@ -34,7 +34,7 @@
             <!-- 任务信息 -->
             <div class="bg-card border border-border rounded-2xl shadow-soft p-4">
               <h3 class="font-bold text-xs uppercase text-text-title mb-2">{{ task.title }}</h3>
-              <p class=" text-base text-text-title mb-3">{{ task.description }}</p>
+              <MarkdownContent :content="task.description" class="mb-3" />
               <div class="flex items-center gap-3 flex-wrap">
                 <span class="px-3 py-1.5 bg-primary text-white border border-border rounded-2xl shadow-soft font-bold text-[10px] uppercase">
                   {{ task.reward }} {{ taskRewardSymbol }}
@@ -49,7 +49,7 @@
             <!-- 提交说明 -->
             <div class="pt-4 border-t border-border">
               <h3 class="font-bold text-xs uppercase text-text-title mb-2">提交说明</h3>
-              <p class=" text-base text-text-title">{{ task.submissionInstructions || '请按照任务要求完成并提交相关凭证。' }}</p>
+              <MarkdownContent :content="task.submissionInstructions || '请按照任务要求完成并提交相关凭证。'" />
             </div>
 
             <!-- 任务感想（上链备注，最多32字，可修改） -->

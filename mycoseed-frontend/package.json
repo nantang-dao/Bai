@@ -9,11 +9,14 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "test:task-proof": "tsx scripts/test-task-proof.ts",
-    "test:task-status": "tsx scripts/test-task-status.ts"
+    "test:task-status": "tsx scripts/test-task-status.ts",
+    "test:markdown": "tsx scripts/test-markdown.ts"
   },
   "dependencies": {
     "@types/d3": "^7.4.3",
     "d3": "^7.9.0",
+    "isomorphic-dompurify": "^3.18.0",
+    "marked": "^18.0.5",
     "nuxt": "^3.15.3",
     "vue": "^3.5.22",
     "vue-boring-avatars": "^1.4.0",

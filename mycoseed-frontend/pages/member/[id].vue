@@ -195,7 +195,7 @@
                   {{ formatTaskDate(task) }}
                 </div>
                 <div v-if="task.description" class="text-xs text-gray-600 mt-1 line-clamp-2">
-                  {{ task.description }}
+                  {{ stripTaskMarkdown(task.description) }}
                 </div>
             </div>
           </div>
@@ -226,6 +226,7 @@ import {
   getTaskStatusText,
   getTaskStatusBadgeClass,
 } from '~/utils/taskStatus'
+import { stripTaskMarkdown } from '~/utils/markdown'
 
 definePageMeta({
   layout: 'default'

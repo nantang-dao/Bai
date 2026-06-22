@@ -37,7 +37,11 @@
             <!-- 任务信息 -->
             <div class="bg-card border border-border rounded-2xl shadow-soft p-4">
               <h3 class="font-bold text-xs uppercase text-black mb-2">{{ task.title }}</h3>
-              <p class=" text-base text-black mb-3">{{ task.description }}</p>
+              <MarkdownContent :content="task.description" class="mb-3 text-black" />
+              <div v-if="task.submissionInstructions?.trim()" class="pt-3 border-t border-border mb-3">
+                <h4 class="font-bold text-[10px] uppercase text-black mb-2">提交说明</h4>
+                <MarkdownContent :content="task.submissionInstructions" class="text-black" />
+              </div>
               <div class="flex items-center gap-3 flex-wrap">
                 <span class="px-3 py-1.5 bg-primary text-white border border-border rounded-2xl shadow-soft font-bold text-[10px] uppercase">
                   {{ task.reward }} {{ taskRewardSymbol }}
@@ -475,6 +479,7 @@ const task = ref<{
   id: string
   title: string
   description: string
+  submissionInstructions?: string
   reward: number
   deadline: string
   submitDeadline?: string
@@ -493,6 +498,7 @@ const task = ref<{
   id: taskId,
   title: '',
   description: '',
+  submissionInstructions: '',
   reward: 0,
   deadline: '',
   submitDeadline: '',
@@ -766,6 +772,7 @@ const loadTask = async () => {
       taskInfoId: (taskData as any).taskInfoId || (taskData as any).taskInfo?.id,
       title: taskData.title,
       description: taskData.description,
+      submissionInstructions: taskData.submissionInstructions || '',
       reward: taskData.reward,
       deadline: taskData.deadline || taskData.createdAt || '', // 领取截止日期
       submitDeadline: taskData.submitDeadline || taskData.deadline || taskData.createdAt || '', // 提交截止日期
