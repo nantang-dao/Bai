@@ -278,6 +278,9 @@
 </template>
 
 <script setup lang="ts">
+import PixelButton from '~/components/pixel/PixelButton.vue'
+import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
+
 definePageMeta({
   layout: 'default',
   middleware: 'auth'

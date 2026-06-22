@@ -75,6 +75,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '~/composables/useApi'
 import { useUserStore } from '~/stores/user'
 import { getApiBaseUrl } from '~/utils/api'
+import PixelCard from '~/components/pixel/PixelCard.vue'
+import PixelButton from '~/components/pixel/PixelButton.vue'
 definePageMeta({
   layout: 'unauth'
 })

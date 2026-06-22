@@ -300,6 +300,7 @@ import { getTaskById, getApiBaseUrl, submitProof, uploadProofFile, type ProofDat
 import { useToast } from '~/composables/useToast'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
+import MarkdownContent from '~/components/markdown/MarkdownContent.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import type { Task } from '~/utils/api'
 import { formatBeijingTime, parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'

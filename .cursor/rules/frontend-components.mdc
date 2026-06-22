@@ -1,0 +1,28 @@
+---
+description: mycoseed-frontend 子目录组件显式 import 与关键 UI 验证
+globs: mycoseed-frontend/**/*.vue
+alwaysApply: false
+---
+
+# 子目录组件：显式 import
+
+在 `mycoseed-frontend` 中，`components/<子目录>/*.vue` 被 `pages/` 或 `layouts/` 使用时，**必须**在 `<script setup>` 显式 import，禁止只靠 Nuxt 自动注册。
+
+```vue
+// ✅
+import SimpleMarkdownEditor from '~/components/markdown/SimpleMarkdownEditor.vue'
+
+// ❌ 模板写 <SimpleMarkdownEditor> 却无 import → 页面空白、build 仍可能通过
+```
+
+详细说明见 `mycoseed-frontend/docs/frontend-conventions.md`。
+
+# 关键 UI 改动后必做
+
+修改页面表单、编辑器、展示组件后，在声称完成前：
+
+1. `npm run test:component-imports`（及相关的 `test:markdown` 等）
+2. `npm run build`
+3. 确认受影响路由在浏览器中控件可见（无法开浏览器时，至少保证 import 校验与 build 通过，并说明需人工点开哪条 URL）
+
+`npm run build` 与纯 utils 单元测试**不能**代替「组件是否在 DOM 挂载」的检查。

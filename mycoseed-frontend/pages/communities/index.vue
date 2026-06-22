@@ -246,6 +246,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useCommunityStore } from '~/stores/community'
 import { useUserStore } from '~/stores/user'
 import { getCommunities, joinCommunity, leaveCommunity, joinCommunityByInviteCode, createCommunity, getAllUsers, getApiBaseUrl, type Community, type UserListItem } from '~/utils/api'
+import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 
 definePageMeta({ layout: 'default' })
 

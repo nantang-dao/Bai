@@ -21,6 +21,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from '~/composables/useToast'
+import PixelCard from '~/components/pixel/PixelCard.vue'
 definePageMeta({
   layout: 'unauth',
   // 移除 ssr: false，确保路由在构建时被正确注册

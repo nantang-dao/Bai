@@ -637,6 +637,7 @@ import { getTaskById, claimTask, getApiBaseUrl, markTransferCompleted, unmarkTra
 import { useUserStore } from '~/stores/user'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
+import MarkdownContent from '~/components/markdown/MarkdownContent.vue'
 import { getTaskRewardSymbol, weiToToken } from '~/utils/display'
 import { parseBeijingTime, getCurrentBeijingDate, formatBeijingTime } from '~/utils/time'
 import { withdrawTask, deleteTask, withdrawSubmission } from '~/utils/api'

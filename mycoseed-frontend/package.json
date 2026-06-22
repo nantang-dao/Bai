@@ -10,7 +10,8 @@
     "postinstall": "nuxt prepare",
     "test:task-proof": "tsx scripts/test-task-proof.ts",
     "test:task-status": "tsx scripts/test-task-status.ts",
-    "test:markdown": "tsx scripts/test-markdown.ts"
+    "test:markdown": "tsx scripts/test-markdown.ts",
+    "test:component-imports": "tsx scripts/verify-component-imports.ts"
   },
   "dependencies": {
     "@types/d3": "^7.4.3",
