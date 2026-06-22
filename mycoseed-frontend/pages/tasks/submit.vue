@@ -34,7 +34,7 @@
             <!-- 任务信息 -->
             <div class="bg-card border border-border rounded-2xl shadow-soft p-4">
               <h3 class="font-bold text-xs uppercase text-text-title mb-2">{{ task.title }}</h3>
-              <MarkdownContent :content="task.description" class="mb-3" />
+              <div class="mb-3 text-text-title whitespace-pre-wrap leading-relaxed">{{ task.description }}</div>
               <div class="flex items-center gap-3 flex-wrap">
                 <span class="px-3 py-1.5 bg-primary text-white border border-border rounded-2xl shadow-soft font-bold text-[10px] uppercase">
                   {{ task.reward }} {{ taskRewardSymbol }}
@@ -49,7 +49,7 @@
             <!-- 提交说明 -->
             <div class="pt-4 border-t border-border">
               <h3 class="font-bold text-xs uppercase text-text-title mb-2">提交说明</h3>
-              <MarkdownContent :content="task.submissionInstructions || '请按照任务要求完成并提交相关凭证。'" />
+              <div class="text-text-title whitespace-pre-wrap leading-relaxed">{{ task.submissionInstructions || '请按照任务要求完成并提交相关凭证。' }}</div>
             </div>
 
             <!-- 任务感想（上链备注，最多32字，可修改） -->
@@ -300,7 +300,6 @@ import { getTaskById, getApiBaseUrl, submitProof, uploadProofFile, type ProofDat
 import { useToast } from '~/composables/useToast'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
-import MarkdownContent from '~/components/markdown/MarkdownContent.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import type { Task } from '~/utils/api'
 import { formatBeijingTime, parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'

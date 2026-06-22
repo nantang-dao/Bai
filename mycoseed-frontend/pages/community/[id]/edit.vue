@@ -80,7 +80,7 @@
       </div>
       <div class="space-y-2">
         <label class="text-sm font-medium text-text-title">社区介绍（Markdown）</label>
-        <textarea v-model="form.markdownIntro" rows="8" class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body font-mono text-sm" placeholder="支持 Markdown" />
+        <textarea v-model="form.markdownIntro" rows="8" class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body text-sm" placeholder="多行文字，换行会保留显示" />
       </div>
       <div class="space-y-2">
         <label class="text-sm font-medium text-text-title">积分名称</label>

@@ -8,8 +8,6 @@ import { join, relative } from 'node:path'
 const ROOT = join(import.meta.dirname, '..')
 
 const SUBDIR_COMPONENTS: Array<{ tag: string; importPath: string }> = [
-  { tag: 'SimpleMarkdownEditor', importPath: 'markdown/SimpleMarkdownEditor.vue' },
-  { tag: 'MarkdownContent', importPath: 'markdown/MarkdownContent.vue' },
   { tag: 'PixelCard', importPath: 'pixel/PixelCard.vue' },
   { tag: 'PixelButton', importPath: 'pixel/PixelButton.vue' },
   { tag: 'PixelAvatar', importPath: 'pixel/PixelAvatar.vue' },

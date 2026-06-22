@@ -31,10 +31,12 @@
             </div>
 
             <div>
-              <SimpleMarkdownEditor
+              <label class="block font-bold text-xs uppercase mb-2 text-text-title">任务内容 *</label>
+              <textarea
                 v-model="taskForm.objective"
-                label="任务内容 *"
+                rows="5"
                 placeholder="描述任务的具体目标、地点等信息..."
+                class="w-full px-4 py-3 bg-input-bg border border-border rounded-2xl shadow-soft text-base focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card transition-all resize-y"
               />
             </div>
 
@@ -220,11 +222,12 @@
           <!-- 提交说明（展示给报名者的信息补充） -->
           <div class="border-t-2 border-black pt-4 md:pt-6">
             <div>
-              <SimpleMarkdownEditor
+              <label class="block font-bold text-xs uppercase mb-2 text-text-title">提交说明（可选）</label>
+              <textarea
                 v-model="taskForm.submissionInstructions"
-                label="提交说明（可选）"
+                rows="4"
                 placeholder="补充任务完成后的提交说明，如需要强调的注意事项等..."
-                :rows="4"
+                class="w-full px-4 py-3 bg-input-bg border border-border rounded-2xl shadow-soft text-base focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card transition-all resize-y"
               />
             </div>
           </div>
@@ -391,7 +394,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
-import SimpleMarkdownEditor from '~/components/markdown/SimpleMarkdownEditor.vue'
 import { createTask, getApiBaseUrl, getCommunityMembers } from '~/utils/api'
 import { useToast } from '~/composables/useToast'
 import { getCurrentBeijingTime } from '~/utils/time'

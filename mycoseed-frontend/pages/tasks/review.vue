@@ -37,10 +37,10 @@
             <!-- 任务信息 -->
             <div class="bg-card border border-border rounded-2xl shadow-soft p-4">
               <h3 class="font-bold text-xs uppercase text-black mb-2">{{ task.title }}</h3>
-              <MarkdownContent :content="task.description" class="mb-3 text-black" />
+              <div class="mb-3 text-black whitespace-pre-wrap leading-relaxed">{{ task.description }}</div>
               <div v-if="task.submissionInstructions?.trim()" class="pt-3 border-t border-border mb-3">
                 <h4 class="font-bold text-[10px] uppercase text-black mb-2">提交说明</h4>
-                <MarkdownContent :content="task.submissionInstructions" class="text-black" />
+                <div class="text-black whitespace-pre-wrap leading-relaxed">{{ task.submissionInstructions }}</div>
               </div>
               <div class="flex items-center gap-3 flex-wrap">
                 <span class="px-3 py-1.5 bg-primary text-white border border-border rounded-2xl shadow-soft font-bold text-[10px] uppercase">
@@ -433,7 +433,6 @@ import { useToast } from '~/composables/useToast'
 import { useUserStore } from '~/stores/user'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
-import MarkdownContent from '~/components/markdown/MarkdownContent.vue'
 import { getTaskRewardSymbol } from '~/utils/display'
 import type { Task } from '~/utils/api'
 import { formatBeijingTime, parseBeijingTime } from '~/utils/time'

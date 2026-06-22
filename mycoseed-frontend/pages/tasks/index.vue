@@ -160,7 +160,7 @@
           
           <div class="task-card-content">
             <h3 class="font-bold text-lg text-text-title line-clamp-1">{{ item.title }}</h3>
-            <p class="text-text-body text-sm line-clamp-2 mt-1">{{ stripTaskMarkdown(item.description) }}</p>
+            <p class="text-text-body text-sm line-clamp-2 mt-1 whitespace-pre-wrap">{{ item.description }}</p>
             <!-- 标签 -->
             <div v-if="item.tags && item.tags.length > 0" class="mt-2 flex gap-1.5 flex-wrap">
               <span
@@ -223,8 +223,6 @@ import { getAllTasks, getApiBaseUrl, getTaskTransactions, type Task, type TaskTa
 import { parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'
 import { weiToToken } from '~/utils/display'
 import { getTaskStatusText, mapPublishedTaskToFilter } from '~/utils/taskStatus'
-import { stripTaskMarkdown } from '~/utils/markdown'
-
 definePageMeta({
   layout: 'default'
 })

@@ -1415,7 +1415,7 @@ export interface Community {
   memberCount: number            // 成员数量
   activityCount?: number         // 活动数量（可选）
   totalPoints?: number           // 总积分（可选）
-  markdownIntro?: string         // Markdown 格式的介绍
+  markdownIntro?: string         // 多行社区介绍
   category?: string              // 社群类别
   location?: string              // 社群位置
   pointName?: string             // 社区积分名称
@@ -2051,17 +2051,17 @@ const mockCommunities: Community[] = [
     location: '上海',
     pointName: '零废弃积分',
     createdAt: '2024-02-01T00:00:00Z',
-    markdownIntro: `# 有种行动队
+    markdownIntro: `有种行动队
 
 欢迎加入我们的社区种菜志愿者组织！一起体验种植的乐趣，践行零废弃生活。
 
-## 我们的目标
+我们的目标：
 - 推广绿色生活理念
 - 学习有机种植技术
 - 分享收获的喜悦
 - 践行零废弃生活方式
 
-## 活动安排
+活动安排：
 - 每周六上午：集体种植
 - 每月一次：收获分享会
 - 不定期：种植技术讲座
@@ -2079,17 +2079,17 @@ const mockCommunities: Community[] = [
     location: '安徽',
     pointName: '南塘豆',
     createdAt: '2024-03-15T00:00:00Z',
-    markdownIntro: `# 南塘
+    markdownIntro: `南塘
 
 欢迎来到南塘，素舍提供乡村村民宿餐饮服务。
 
-## 我们的特色
+我们的特色：
 - 乡村民宿体验
 - 地道乡村餐饮
 - 自然生态体验
 - 南塘豆积分奖励
 
-## 服务内容
+服务内容：
 - 民宿住宿服务
 - 乡村特色餐饮
 - 农事体验活动

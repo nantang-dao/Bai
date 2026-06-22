@@ -161,11 +161,11 @@
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-text-title mb-1">社区介绍（Markdown）</label>
+              <label class="block text-sm font-medium text-text-title mb-1">社区介绍</label>
               <textarea
                 v-model="createForm.markdownIntro"
                 rows="6"
-                placeholder="支持 Markdown 格式"
+                placeholder="多行文字，换行会保留显示"
                 class="w-full px-4 py-2 rounded-xl border border-border bg-input-bg text-text-body font-mono text-sm"
               />
             </div>

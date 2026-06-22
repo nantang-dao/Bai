@@ -62,7 +62,7 @@
             
             <div class="pt-4 border-t-2 border-black/20">
               <h3 class="font-bold text-xs uppercase text-text-title mb-2">任务描述</h3>
-              <MarkdownContent :content="task.description" class="text-lg" />
+              <div class="text-lg text-text-title whitespace-pre-wrap leading-relaxed">{{ task.description }}</div>
               <!-- 标签 -->
               <div v-if="task.tags && task.tags.length > 0" class="mt-3 flex gap-1.5 flex-wrap">
                 <span
@@ -174,7 +174,7 @@
             
             <div v-if="task.submissionInstructions && task.submissionInstructions.trim()" class="pt-4 border-t-2 border-black/20">
               <h3 class="font-bold text-xs uppercase text-text-title mb-2">提交说明</h3>
-              <MarkdownContent :content="task.submissionInstructions" class="text-lg" />
+              <div class="text-lg text-text-title whitespace-pre-wrap leading-relaxed">{{ task.submissionInstructions }}</div>
             </div>
           </div>
         </PixelCard>
@@ -637,7 +637,6 @@ import { getTaskById, claimTask, getApiBaseUrl, markTransferCompleted, unmarkTra
 import { useUserStore } from '~/stores/user'
 import PixelCard from '~/components/pixel/PixelCard.vue'
 import PixelButton from '~/components/pixel/PixelButton.vue'
-import MarkdownContent from '~/components/markdown/MarkdownContent.vue'
 import { getTaskRewardSymbol, weiToToken } from '~/utils/display'
 import { parseBeijingTime, getCurrentBeijingDate, formatBeijingTime } from '~/utils/time'
 import { withdrawTask, deleteTask, withdrawSubmission } from '~/utils/api'
