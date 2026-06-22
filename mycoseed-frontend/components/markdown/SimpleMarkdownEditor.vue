@@ -1,21 +1,13 @@
 <template>
   <div>
-    <div class="flex gap-2 mb-2">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <label v-if="label" class="font-bold text-xs uppercase text-text-title">{{ label }}</label>
       <button
         type="button"
-        title="加粗"
-        class="w-9 h-9 font-bold text-sm border border-border rounded-xl bg-card hover:bg-input-bg transition-colors"
+        class="shrink-0 px-3 py-1 text-xs font-bold border border-border rounded-xl bg-card hover:bg-input-bg transition-colors"
         @click="applyBold"
       >
-        B
-      </button>
-      <button
-        type="button"
-        title="无序列表"
-        class="h-9 px-3 text-sm border border-border rounded-xl bg-card hover:bg-input-bg transition-colors"
-        @click="applyList"
-      >
-        列表
+        加粗
       </button>
     </div>
     <textarea
@@ -26,21 +18,23 @@
       class="w-full px-4 py-3 bg-input-bg border border-border rounded-2xl shadow-soft text-base focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card transition-all resize-y"
       @input="onInput"
     />
-    <p class="text-xs text-text-placeholder mt-1">支持换行、加粗与列表，无需记忆语法</p>
+    <p class="text-xs text-text-placeholder mt-1">支持换行；选中文字后点「加粗」即可强调重点</p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { wrapBold, insertList } from '~/utils/markdown'
+import { nextTick, ref } from 'vue'
+import { applyBoldWrap } from '~/utils/markdown'
 
 withDefaults(
   defineProps<{
     modelValue: string
+    label?: string
     placeholder?: string
     rows?: number
   }>(),
   {
+    label: '',
     placeholder: '',
     rows: 6,
   }
@@ -56,15 +50,17 @@ function onInput(e: Event) {
   emit('update:modelValue', (e.target as HTMLTextAreaElement).value)
 }
 
-function applyBold() {
+async function applyBold() {
   const el = textareaRef.value
   if (!el) return
-  emit('update:modelValue', wrapBold(el))
-}
-
-function applyList() {
-  const el = textareaRef.value
-  if (!el) return
-  emit('update:modelValue', insertList(el))
+  const { value, selectionStart, selectionEnd } = applyBoldWrap(
+    el.value,
+    el.selectionStart,
+    el.selectionEnd
+  )
+  emit('update:modelValue', value)
+  await nextTick()
+  el.focus()
+  el.setSelectionRange(selectionStart, selectionEnd)
 }
 </script>

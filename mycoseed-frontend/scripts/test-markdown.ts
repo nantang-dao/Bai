@@ -2,7 +2,7 @@
  * 单元测试：任务 Markdown 渲染与摘要
  * npx tsx scripts/test-markdown.ts
  */
-import { renderTaskMarkdown, stripTaskMarkdown } from '../utils/markdown'
+import { renderTaskMarkdown, stripTaskMarkdown, applyBoldWrap } from '../utils/markdown'
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message)
@@ -20,6 +20,17 @@ function testBold() {
   assert(html.includes('<strong>') || html.includes('<b>'), '加粗应渲染')
   assert(html.includes('重点'), '加粗文字应保留')
   console.log('[OK] bold')
+}
+
+function testApplyBoldWrap() {
+  const empty = applyBoldWrap('hello', 5, 5)
+  assert(empty.value === 'hello**加粗文字**', '无选中应插入占位加粗')
+  assert(empty.selectionStart === 7 && empty.selectionEnd === 11, '应选中占位文字')
+
+  const withSel = applyBoldWrap('hello world', 0, 5)
+  assert(withSel.value === '**hello** world', '有选中应包裹加粗')
+  assert(withSel.selectionStart === 9 && withSel.selectionEnd === 9, '有选中光标应在加粗块后')
+  console.log('[OK] applyBoldWrap')
 }
 
 function testList() {
@@ -45,6 +56,7 @@ function testXss() {
 
 testPlainText()
 testBold()
+testApplyBoldWrap()
 testList()
 testStrip()
 testXss()

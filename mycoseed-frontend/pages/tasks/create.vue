@@ -31,9 +31,9 @@
             </div>
 
             <div>
-              <label class="block font-bold text-xs uppercase mb-2 text-text-title">任务内容 *</label>
               <SimpleMarkdownEditor
                 v-model="taskForm.objective"
+                label="任务内容 *"
                 placeholder="描述任务的具体目标、地点等信息..."
               />
             </div>
@@ -220,9 +220,9 @@
           <!-- 提交说明（展示给报名者的信息补充） -->
           <div class="border-t-2 border-black pt-4 md:pt-6">
             <div>
-              <label class="block font-bold text-xs uppercase mb-2 text-text-title">提交说明（可选）</label>
               <SimpleMarkdownEditor
                 v-model="taskForm.submissionInstructions"
+                label="提交说明（可选）"
                 placeholder="补充任务完成后的提交说明，如需要强调的注意事项等..."
                 :rows="4"
               />

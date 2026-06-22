@@ -8,6 +8,14 @@ const SANITIZE_OPTIONS = {
   ALLOWED_ATTR: [] as string[],
 }
 
+const BOLD_PLACEHOLDER = '加粗文字'
+
+export type BoldEditResult = {
+  value: string
+  selectionStart: number
+  selectionEnd: number
+}
+
 export function renderTaskMarkdown(text: string): string {
   if (!text?.trim()) return ''
   const raw = marked.parse(text, { async: false }) as string
@@ -28,26 +36,20 @@ export function stripTaskMarkdown(text: string): string {
     .trim()
 }
 
-export function wrapBold(textarea: HTMLTextAreaElement): string {
-  const { selectionStart: start, selectionEnd: end, value } = textarea
+/** 在选区插入加粗标记，返回新文本与光标/选区位置（供 nextTick 后写回 textarea） */
+export function applyBoldWrap(value: string, start: number, end: number): BoldEditResult {
   const selected = value.slice(start, end)
-  const insert = selected ? `**${selected}**` : '****'
+  if (selected) {
+    const insert = `**${selected}**`
+    const next = value.slice(0, start) + insert + value.slice(end)
+    const cursor = start + insert.length
+    return { value: next, selectionStart: cursor, selectionEnd: cursor }
+  }
+  const insert = `**${BOLD_PLACEHOLDER}**`
   const next = value.slice(0, start) + insert + value.slice(end)
-  const cursor = selected ? start + insert.length : start + 2
-  textarea.setSelectionRange(cursor, cursor)
-  textarea.focus()
-  return next
-}
-
-export function insertList(textarea: HTMLTextAreaElement): string {
-  const { selectionStart: start, selectionEnd: end, value } = textarea
-  const selected = value.slice(start, end)
-  const insert = selected
-    ? selected.split('\n').map((line) => (line.startsWith('- ') ? line : `- ${line}`)).join('\n')
-    : '- '
-  const next = value.slice(0, start) + insert + value.slice(end)
-  const cursor = start + insert.length
-  textarea.setSelectionRange(cursor, cursor)
-  textarea.focus()
-  return next
+  return {
+    value: next,
+    selectionStart: start + 2,
+    selectionEnd: start + 2 + BOLD_PLACEHOLDER.length,
+  }
 }
