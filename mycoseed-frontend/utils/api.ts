@@ -784,37 +784,24 @@ export const claimTask = async (taskId: string, baseUrl: string, userIdentifier?
 }
 
 /**
- * 获取我的任务列表
+ * 获取我的任务列表（仅当前用户发布或领取的任务行）
  * @param baseUrl API 基础 URL
  */
 export const getMyTasks = async (baseUrl: string): Promise<Task[]> => {
-  try {
-    // 获取所有任务，然后在前端过滤（需要根据用户ID过滤）
-    // 注意：这个功能需要后端支持，或者前端根据 task_claims 表查询
-    // 目前先返回所有任务，后续可以优化
-    const allTasks = await getAllTasks(baseUrl)
-    
-    // 尝试获取当前用户ID
-    try {
-      const user = await getMe(baseUrl)
-      if (!user?.id) {
-        return []
-      }
-      
-      // 返回用户发布的任务或用户领取的任务
-      // 包括所有状态：未领取、已领取、待提交、审核中、已完成、已驳回等
-      return allTasks.filter(task => 
-        task.creatorId === user.id ||  // 用户发布的任务
-        task.claimerId === user.id      // 用户领取的任务
-      )
-    } catch (e) {
-      // 如果未登录，返回空数组
-      return []
-    }
-  } catch (error: any) {
-    console.error('Get my tasks error:', error)
-    throw error
+  const response = await fetch(`${baseUrl}/api/tasks/mine`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error((error as { error?: string }).error || '获取我的任务失败')
   }
+
+  return response.json()
 }
 
 // 查询任务的链上转账记录
@@ -1807,6 +1794,37 @@ export async function markNotificationsRead (
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(body)
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+// ==================== 我的待结清款项 ====================
+
+export type PendingPaymentItem = {
+  type: 'task_payout' | 'event_registration'
+  id: string
+  title: string
+  amount: string
+  status: 'pending_transfer' | 'pending' | 'partial'
+  sourceUrl: string
+  communityId?: string
+}
+
+export type MyPaymentsPendingResponse = {
+  counts: { asPublisher: number; asParticipant: number }
+  asPublisher: PendingPaymentItem[]
+  asParticipant: PendingPaymentItem[]
+}
+
+export async function getMyPaymentsPending(baseUrl?: string): Promise<MyPaymentsPendingResponse> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const res = await fetch(`${url}/api/my-payments/pending`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))

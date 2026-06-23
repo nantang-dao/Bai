@@ -99,6 +99,24 @@ export function mapPublishedTaskToFilter(task: Task): string {
   return task.status
 }
 
+/** 发布者视角：是否待转账（已完成、未标记、无链上记录） */
+export function isPublishedTaskPendingSettlement(
+  task: Task,
+  hasChainTx?: boolean
+): boolean {
+  if (task.status !== 'completed') return false
+  if (task.transferredAt) return false
+  if (hasChainTx) return false
+  return true
+}
+
+/** 活动待结清状态文案 */
+export function getEventPaymentStatusLabel(status: 'pending' | 'partial' | 'pending_transfer'): string {
+  if (status === 'partial') return '付款不足'
+  if (status === 'pending_transfer') return '待转账'
+  return '待付款'
+}
+
 /** 领取任务 Tab：待提交/审核中/已完成/已驳回/已过期 */
 export function mapClaimedTaskToFilter(task: Task): string {
   if (task.status === 'completed') return 'completed'

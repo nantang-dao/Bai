@@ -33,6 +33,7 @@ export const useApi = () => {
     submitProof: (taskId: string, proof: api.ProofData) => api.submitProof(taskId, proof, apiBaseUrl),
     getTasks: (activityId: number) => api.getTasks(activityId, apiBaseUrl),
     getMyTasks: () => api.getMyTasks(apiBaseUrl),
+    getMyPaymentsPending: () => api.getMyPaymentsPending(apiBaseUrl),
     getReviewTasks: () => api.getReviewTasks(apiBaseUrl),
 
     // 文件上传

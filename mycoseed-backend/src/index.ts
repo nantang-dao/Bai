@@ -15,6 +15,7 @@ import faqRouter from './routes/faq'
 import notificationsRouter from './routes/notifications'
 import marketplaceRouter from './routes/marketplace'
 import communityEventsRouter from './routes/communityEvents'
+import myPaymentsRouter from './routes/myPayments'
 import { authenticate } from './middleware/auth'
 import { getTransactions } from './controllers/transactionsController'
 import { getAllowedFrontendOrigins } from './utils/frontendOrigins'
@@ -81,6 +82,7 @@ app.use('/api/faq', faqRouter)            // FAQ（帮助与反馈）
 app.use('/api/notifications', notificationsRouter) // 站内消息通知 & 设置
 app.use('/api/marketplace', marketplaceRouter) // 社区商城
 app.use('/api/community-events', communityEventsRouter) // 社区活动
+app.use('/api/my-payments', myPaymentsRouter) // 我的待结清款项
 app.get('/api/transactions', authenticate, getTransactions) // 链上转账记录查询
 
 

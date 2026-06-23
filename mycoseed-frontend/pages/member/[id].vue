@@ -124,7 +124,7 @@
 
     <!-- 下方 Tab 区域 -->
     <div class="mt-4 px-4">
-      <!-- 顶级 Tab 导航：发布任务 / 领取任务 -->
+      <!-- 顶级 Tab 导航：我发布的 / 我参与的 -->
       <div class="flex items-center justify-between border-b-2 border-black mb-4 gap-4">
         <div class="flex overflow-x-auto scrollbar-hide flex-1">
           <button
@@ -137,6 +137,10 @@
             ]"
           >
             {{ tab.label }}
+            <span
+              v-if="isMyProfile && tabBadgeCount(tab.id) > 0"
+              class="ml-1 text-orange-500"
+            >({{ tabBadgeCount(tab.id) }})</span>
           </button>
         </div>
       </div>
@@ -159,12 +163,47 @@
       <!-- Tab 内容 -->
       <div class="min-h-[300px]">
         <!-- 加载状态 -->
-        <div v-if="loadingTasks" class="text-center py-8 text-gray-500">
+        <div v-if="loadingTasks || loadingPending" class="text-center py-8 text-gray-500">
           加载中...
         </div>
 
-        <!-- 任务列表 -->
-        <div v-else-if="currentTasks.length > 0" class="space-y-4">
+        <template v-else>
+          <!-- 我参与的：待结清活动 -->
+          <div
+            v-if="isMyProfile && activeTab === 'ACCEPTED' && pendingEvents.length > 0"
+            class="mb-6"
+          >
+            <h3 class="text-xs font-bold text-gray-500 mb-3">待结清的活动</h3>
+            <div class="space-y-3">
+              <div
+                v-for="item in pendingEvents"
+                :key="item.id"
+                class="bg-white border border-orange-200 rounded-2xl p-4 shadow-soft-sm hover:shadow-soft transition-shadow cursor-pointer"
+                @click="navigateTo(item.sourceUrl)"
+              >
+                <div class="flex justify-between items-start gap-2">
+                  <div class="font-bold text-lg leading-tight">{{ item.title }}</div>
+                  <span class="font-bold text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded shrink-0">
+                    {{ getEventPaymentStatusLabel(item.status) }}
+                  </span>
+                </div>
+                <div class="text-sm text-gray-600 mt-2">
+                  {{ item.amount }} 积分
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 我参与的：参与的任务标题 -->
+          <h3
+            v-if="activeTab === 'ACCEPTED' && acceptedTasks.length > 0"
+            class="text-xs font-bold text-gray-500 mb-3"
+          >
+            参与的任务
+          </h3>
+
+          <!-- 任务列表 -->
+          <div v-if="currentTasks.length > 0" class="space-y-4">
           <div v-for="task in currentTasks" :key="task.id" class="bg-white border border-border rounded-2xl p-4 shadow-soft-sm hover:shadow-soft transition-shadow cursor-pointer" @click="navigateTo(`/tasks/${task.id}`)">
             <div>
                 <div class="flex justify-between items-start mb-1">
@@ -202,12 +241,16 @@
         </div>
 
         <!-- 空状态 -->
-        <div v-else class="text-center py-12">
+        <div
+          v-else-if="!(activeTab === 'ACCEPTED' && pendingEvents.length > 0)"
+          class="text-center py-12"
+        >
           <div class="text-4xl mb-4">📋</div>
           <div class="text-gray-500">
-            {{ activeTab === 'PUBLISHED' ? '还没有发布任何任务' : '还没有领取任何任务' }}
+            {{ emptyTabMessage }}
           </div>
         </div>
+        </template>
       </div>
     </div>
   </div>
@@ -218,13 +261,15 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '~/stores/user'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
-import { getMemberById, getCommunities, getMyTasks, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, getTaskTransactions, type Task, type Community } from '~/utils/api'
+import { getMemberById, getCommunities, getMyTasks, getMyPaymentsPending, getWalletAddressByMemberId, getUserCommunityPoints, getApiBaseUrl, getTaskTransactions, type Task, type Community, type MyPaymentsPendingResponse } from '~/utils/api'
 import { getTaskRewardSymbol, weiToToken } from '~/utils/display'
 import {
   mapPublishedTaskToFilter,
   mapClaimedTaskToFilter,
   getTaskStatusText,
   getTaskStatusBadgeClass,
+  isPublishedTaskPendingSettlement,
+  getEventPaymentStatusLabel,
 } from '~/utils/taskStatus'
 
 definePageMeta({
@@ -293,12 +338,13 @@ const isMyProfile = computed(() => {
 })
 
 const tabs = [
-  { id: 'PUBLISHED', label: '发布任务' },
-  { id: 'ACCEPTED', label: '领取任务' },
+  { id: 'PUBLISHED', label: '我发布的' },
+  { id: 'ACCEPTED', label: '我参与的' },
 ]
 
 const publishedFilterTabs = [
   { id: 'all', label: '全部' },
+  { id: 'settlement', label: '待结清' },
   { id: 'pending', label: '可领取' },
   { id: 'unsubmit', label: '待审核' },
   { id: 'completed', label: '已完成' },
@@ -324,6 +370,8 @@ const history = ref<any[]>([])
 const communities = ref<any[]>([])
 const allTasks = ref<Task[]>([])
 const loadingTasks = ref(false)
+const loadingPending = ref(false)
+const pendingPayments = ref<MyPaymentsPendingResponse | null>(null)
 const taskRewardSymbols = ref<Record<number, string>>({})
 const taskChainMap = ref<Record<string, any[]>>({})
 const activeFilter = ref('all')
@@ -426,7 +474,13 @@ const publishedTasks = computed(() => {
   if (!userId) return []
   return allTasks.value
     .filter(t => t.creatorId === userId)
-    .filter(t => activeFilter.value === 'all' || mapPublishedTaskToFilter(t) === activeFilter.value)
+    .filter(t => {
+      if (activeFilter.value === 'settlement') {
+        return isPublishedTaskPendingSettlement(t, !!(taskChainMap.value[t.id]?.length))
+      }
+      if (activeFilter.value === 'all') return true
+      return mapPublishedTaskToFilter(t) === activeFilter.value
+    })
     .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
 })
 
@@ -444,6 +498,42 @@ const acceptedTasks = computed(() => {
 const currentTasks = computed(() => {
   return activeTab.value === 'PUBLISHED' ? publishedTasks.value : acceptedTasks.value
 })
+
+const pendingEvents = computed(() => pendingPayments.value?.asParticipant ?? [])
+
+const publisherPendingCount = computed(() => pendingPayments.value?.counts.asPublisher ?? 0)
+const participantPendingCount = computed(() => pendingPayments.value?.counts.asParticipant ?? 0)
+
+function tabBadgeCount(tabId: string): number {
+  if (tabId === 'PUBLISHED') return publisherPendingCount.value
+  if (tabId === 'ACCEPTED') return participantPendingCount.value
+  return 0
+}
+
+const emptyTabMessage = computed(() => {
+  if (activeTab.value === 'PUBLISHED') {
+    if (activeFilter.value === 'settlement') return '暂无待结清的任务报酬'
+    return '还没有发布任何任务'
+  }
+  if (pendingEvents.value.length > 0) return '暂无参与的任务'
+  return '还没有参与任何任务'
+})
+
+async function loadPendingPayments() {
+  if (!isMyProfile.value) {
+    pendingPayments.value = null
+    return
+  }
+  loadingPending.value = true
+  try {
+    pendingPayments.value = await getMyPaymentsPending(getApiBaseUrl())
+  } catch (error) {
+    console.error('Failed to load pending payments:', error)
+    pendingPayments.value = { counts: { asPublisher: 0, asParticipant: 0 }, asPublisher: [], asParticipant: [] }
+  } finally {
+    loadingPending.value = false
+  }
+}
 
 // 加载任务列表
 const loadClaimedTasks = async () => {
@@ -572,8 +662,8 @@ onMounted(async () => {
         },
       ]
       
-      // 加载任务列表
-      loadClaimedTasks()
+      // 加载任务列表与待结清款项
+      await Promise.all([loadClaimedTasks(), loadPendingPayments()])
     }
   } catch (error) {
     console.error('Failed to load member data:', error)

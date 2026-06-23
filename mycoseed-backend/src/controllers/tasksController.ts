@@ -5,6 +5,12 @@ import { AuthRequest } from '../middleware/auth'
 import { ensureDefaultTaskTags } from '../services/taskTagsSeed'
 import { getMemberRole } from '../middleware/communityAdmin'
 import { validateWithdrawSubmission } from '../services/withdrawSubmission'
+import {
+  TASK_ROW_SELECT,
+  enrichTaskRows,
+  buildGroupedPlazaTasks,
+  buildFlatProfileTasks,
+} from '../services/taskListAssembly'
 
 // ==================== 类型定义 ====================
 
@@ -651,225 +657,52 @@ export const getAllTasks = async (req: Request, res: Response) => {
         tasksData = data || []
       }
 
-      // 获取所有 task_info_id
-      const taskInfoIds = [...new Set(tasksData.filter(t => t.task_info_id).map(t => t.task_info_id))]
-      
-      // 批量获取 task_info
-      let taskInfoMap: Record<string, any> = {}
-      if (taskInfoIds.length > 0) {
-        const { data: taskInfosData } = await supabase
-          .from('task_info')
-          .select('*')
-          .in('id', taskInfoIds)
-        
-        if (taskInfosData) {
-          taskInfoMap = taskInfosData.reduce((acc, info) => {
-            acc[info.id] = info
-            return acc
-          }, {} as Record<string, any>)
-        }
-      }
-
-      // 批量获取任务标签
-      let taskTagsMap: Record<string, { id: string; name: string; colorHex: string }[]> = {}
-      if (taskInfoIds.length > 0) {
-        const { data: tagLinks } = await supabase
-          .from('task_info_tags')
-          .select('task_info_id, tag_id, community_task_tags ( id, name, color_hex )')
-          .in('task_info_id', taskInfoIds)
-        if (tagLinks && tagLinks.length > 0) {
-          for (const link of tagLinks as any[]) {
-            const t = link.community_task_tags
-            if (!t) continue
-            if (!taskTagsMap[link.task_info_id]) taskTagsMap[link.task_info_id] = []
-            taskTagsMap[link.task_info_id].push({ id: t.id, name: t.name, colorHex: t.color_hex })
-          }
-        }
-      }
-
-      // 批量获取所有任务的 timeline
-      const taskIds = tasksData.map(t => t.id)
-      let timelinesMap: Record<string, any> = {}
-      if (taskIds.length > 0) {
-        const { data: timelinesData } = await supabase
-          .from('task_timelines')
-          .select('task_id, timeline')
-          .in('task_id', taskIds)
-        
-        if (timelinesData) {
-          timelinesMap = timelinesData.reduce((acc, t) => {
-            acc[t.task_id] = t
-            return acc
-          }, {} as Record<string, any>)
-        }
-      }
-  
-      // 批量获取所有任务的 proof
-      let proofsMap: Record<string, any> = {}
-      if (taskIds.length > 0) {
-        const { data: proofsData } = await supabase
-          .from('task_proofs')
-          .select('task_id, proof, reject_reason, reject_option, discount, discount_reason')
-          .in('task_id', taskIds)
-        
-        if (proofsData) {
-          proofsMap = proofsData.reduce((acc, p) => {
-            acc[p.task_id] = p
-            return acc
-          }, {} as Record<string, any>)
-        }
-      }
-  
-      // 获取所有创建者ID和领取者ID（含 task_info 的 creator_id，确保任务卡片能拿到发布者头像）
-      const creatorIdsFromTasks = [...new Set(tasksData.filter(t => t.creator_id).map(t => t.creator_id))]
-      const creatorIdsFromInfo = [...new Set(Object.values(taskInfoMap).filter((info: any) => info.creator_id).map((info: any) => info.creator_id))]
-      const creatorIds = [...new Set([...creatorIdsFromTasks, ...creatorIdsFromInfo])]
-      const claimerIds = [...new Set(tasksData.filter(t => t.claimer_id).map(t => t.claimer_id))]
-      const allUserIds = [...new Set([...creatorIds, ...claimerIds])]
-      
-      // 批量获取用户信息（含头像，用于任务卡片展示）
-      let usersMap: Record<string, { id: string; name: string; avatar?: string }> = {}
-      if (allUserIds.length > 0) {
-        const { data: usersData } = await supabase
-          .from('users')
-          .select('id, name, avatar')
-          .in('id', allUserIds)
-        
-        if (usersData) {
-          usersMap = usersData.reduce((acc, user) => {
-            acc[user.id] = user
-            return acc
-          }, {} as Record<string, { id: string; name: string; avatar?: string }>)
-        }
-      }
-      
-      // 为每个任务添加 task_info、用户信息、timeline 和 proof
-      const tasksWithInfo = tasksData
-        .filter(task => {
-          // 只保留有 task_info_id 且能找到对应 task_info 的任务
-          if (!task.task_info_id) return false
-          const taskInfo = taskInfoMap[task.task_info_id]
-          if (!taskInfo) return false
-          return true
-        })
-        .map(task => {
-          const taskInfo = taskInfoMap[task.task_info_id]
-          const creatorUser = (task.creator_id ? usersMap[task.creator_id] : null) || (taskInfo?.creator_id ? usersMap[taskInfo.creator_id] : null)
-          return {
-        ...task,
-            task_info: taskInfo,
-            creator: creatorUser,
-            claimer: task.claimer_id ? usersMap[task.claimer_id] : null,
-            task_timeline: timelinesMap[task.id] || { timeline: [] },
-            task_proof: proofsMap[task.id] || null
-          }
-        })
-  
-      // 按 task_info_id 分组（多人任务应该只显示一个卡片）
-      const taskGroups: Record<string, any[]> = {}
-      tasksWithInfo.forEach(task => {
-        const key = task.task_info_id
-        if (!taskGroups[key]) {
-          taskGroups[key] = []
-        }
-        taskGroups[key].push(task)
-      })
-  
-      // 为每个任务组创建一个代表任务
-      const groupedTasks = Object.values(taskGroups).map(taskGroup => {
-        const firstTask = taskGroup[0]
-        const firstTaskWithRelations = firstTask as TaskDataWithRelations
-        const taskInfo = firstTaskWithRelations.task_info
-        const taskTags = taskInfo ? (taskTagsMap[taskInfo.id] || []) : []
-        
-        // 如果是多人任务（participant_limit > 1），返回一个代表任务组
-        if (taskInfo.participant_limit && taskInfo.participant_limit > 1) {
-          // 计算已领取数量
-          const claimedCount = taskGroup.filter(t => t.claimer_id).length
-          
-          // 获取所有参与者的信息
-          const participants = taskGroup.map(t => {
-            const participantTask = mapDbTaskToTask(
-              t,
-              taskInfo,
-              t.task_timeline,
-              t.task_proof,
-              taskTags
-            )
-            return {
-              id: participantTask.id,
-              name: participantTask.claimerName || '未领取',
-              claimerId: participantTask.claimerId || undefined, // 添加 claimerId 用于前端匹配
-              claimedAt: participantTask.claimedAt || '',
-              submittedAt: participantTask.submittedAt,
-              proof: participantTask.proof,
-              status: participantTask.status,
-              reward: participantTask.reward,
-              currency: participantTask.currency
-            }
-          })
-          
-          // 使用第一个任务行的ID作为代表ID（用于路由）
-          const firstTaskWithRelations = firstTask as TaskDataWithRelations
-          const representativeTask = mapDbTaskToTask(
-            firstTask,
-            taskInfo,
-            firstTaskWithRelations.task_timeline,
-            firstTaskWithRelations.task_proof,
-            taskTags
-          )
-          
-          // 添加参与者列表
-          representativeTask.participantsList = participants
-          
-          // 计算整体状态：如果未领完，状态应该是 'unclaimed'（显示为"未领完"）
-          // 如果已领完但还有未提交的，状态应该是第一个未提交的状态
-          // 如果所有参与者都已完成，状态应该是 'completed'
-          if (claimedCount < taskInfo.participant_limit) {
-            // 未领完：使用 'unclaimed' 状态，但前端会通过 participantsList 判断显示"未领完"
-            representativeTask.status = 'unclaimed' as any
-          } else {
-            // 已领完：检查所有参与者的状态
-            const allCompleted = participants.every(p => 
-              p.status === 'completed' || p.status === 'rejected'
-            )
-            
-            if (allCompleted && participants.length > 0) {
-              // 所有参与者都已完成或被驳回
-              const hasCompleted = participants.some(p => p.status === 'completed')
-              representativeTask.status = hasCompleted ? 'completed' : 'rejected' as any
-            } else {
-              // 还有未完成的参与者：使用第一个未完成参与者的状态
-              const uncompletedParticipant = participants.find(p => 
-                p.status !== 'completed' && p.status !== 'rejected'
-              )
-              if (uncompletedParticipant) {
-                representativeTask.status = uncompletedParticipant.status as any
-              } else {
-                // 默认情况（不应该发生）
-                representativeTask.status = 'unclaimed' as any
-              }
-            }
-          }
-          
-          return representativeTask
-        } else {
-          // 单人任务：直接返回
-          return mapDbTaskToTask(
-            firstTask,
-            taskInfo,
-            firstTask.task_timeline,
-            firstTask.task_proof,
-            taskTags
-          )
-        }
-      })
-      
+      const { tasksWithInfo, taskTagsMap } = await enrichTaskRows(tasksData)
+      const groupedTasks = buildGroupedPlazaTasks(tasksWithInfo, taskTagsMap, mapDbTaskToTask)
       res.json(groupedTasks)
     } catch (error: any) {
       console.error('[GET ALL TASKS] Error:', error)
       handleError(res, error, '获取任务列表失败')
     }
+}
+
+/** 当前用户相关的任务（发布或领取），扁平列表，供「我的」页使用 */
+export const getMineTasks = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user
+    if (!user) {
+      return res.status(401).json({ error: '未授权' })
+    }
+
+    const userId = user.id
+    const communityId = (req.query.communityId as string)?.trim() || null
+
+    let query = supabase
+      .from('tasks')
+      .select(TASK_ROW_SELECT)
+      .or(`creator_id.eq.${userId},claimer_id.eq.${userId}`)
+      .order('created_at', { ascending: false })
+
+    if (communityId) {
+      const { data: infoIds } = await supabase.from('task_info').select('id').eq('community_id', communityId)
+      const ids = (infoIds || []).map((i: { id: string }) => i.id)
+      if (ids.length === 0) {
+        return res.json([])
+      }
+      query = query.in('task_info_id', ids)
+    }
+
+    const { data, error } = await query
+    if (error) throw error
+
+    const tasksData = data || []
+    const { tasksWithInfo, taskTagsMap } = await enrichTaskRows(tasksData)
+    const flatTasks = buildFlatProfileTasks(tasksWithInfo, taskTagsMap, mapDbTaskToTask)
+    res.json(flatTasks)
+  } catch (error: any) {
+    console.error('[GET MINE TASKS] Error:', error)
+    handleError(res, error, '获取我的任务失败')
+  }
 }
  
 // 获取单个任务
