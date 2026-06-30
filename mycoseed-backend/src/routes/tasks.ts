@@ -2,6 +2,7 @@ import { Router } from 'express'
 import {
     getAllTasks,
     getMineTasks,
+    getReviewTasks,
     getTaskById,
     createTask,
     claimTask,
@@ -32,6 +33,7 @@ router.delete('/tags/:communityId/:tagId', authenticate, requireCommunityMember,
 
 router.get('/', getAllTasks)
 router.get('/mine', authenticate, getMineTasks)
+router.get('/review', getReviewTasks)
 router.get('/calendar-cards', optionalAuthenticate, getCalendarCards)
 router.get('/:id', getTaskById)
 router.post('/', authenticate, createTask)

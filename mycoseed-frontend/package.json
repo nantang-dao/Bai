@@ -12,6 +12,7 @@
     "test:task-status": "tsx scripts/test-task-status.ts",
     "test:pending-see": "tsx scripts/test-pending-see.ts",
     "test:participation-feed": "tsx scripts/test-participation-feed.ts",
+    "test:plaza-api": "tsx scripts/test-plaza-api.ts",
     "test:component-imports": "tsx scripts/verify-component-imports.ts"
   },
   "dependencies": {

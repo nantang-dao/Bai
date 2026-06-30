@@ -120,7 +120,14 @@ export interface Task {
   submittedAt?: string           // 提交时间（单人任务）
   completedAt?: string           // 完成时间
   transferredAt?: string        // 转账完成时间
+  claimedCount?: number         // 多人任务已认领名额（列表页轻量字段）
   tags?: { id: string; name: string; colorHex: string }[]  // 任务标签
+}
+
+export interface TaskPlazaPage {
+  items: Task[]
+  nextCursor: string | null
+  hasMore: boolean
 }
 
 // ==================== Mock 数据 ====================
@@ -502,15 +509,79 @@ export const createActivity = async (params: CreateActivityParams): Promise<Acti
 
 // ==================== 任务相关 API ====================
 
+export interface GetPlazaTasksParams {
+  communityId?: string | null
+  limit?: number
+  cursor?: string | null
+  sort?: 'createdAt' | 'deadline' | 'reward'
+  status?: 'all' | 'pending' | 'unsubmit' | 'completed' | 'expired'
+  tagId?: string | null
+  search?: string | null
+}
+
+function buildPlazaTasksQuery(params: GetPlazaTasksParams & { all?: boolean }): string {
+  const sp = new URLSearchParams()
+  if (params.communityId) sp.set('communityId', params.communityId)
+  if (params.all) sp.set('all', '1')
+  if (params.limit != null) sp.set('limit', String(params.limit))
+  if (params.cursor) sp.set('cursor', params.cursor)
+  if (params.sort) sp.set('sort', params.sort)
+  if (params.status && params.status !== 'all') sp.set('status', params.status)
+  if (params.tagId) sp.set('tagId', params.tagId)
+  if (params.search?.trim()) sp.set('search', params.search.trim())
+  const q = sp.toString()
+  return q ? `?${q}` : ''
+}
+
+/** 任务广场分页（默认每页 20） */
+export const getPlazaTasksPage = async (
+  baseUrl: string,
+  params: GetPlazaTasksParams = {}
+): Promise<TaskPlazaPage> => {
+  const query = buildPlazaTasksQuery(params)
+  const response = await fetch(`${baseUrl}/api/tasks${query}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error((error as { error?: string }).error || '获取任务列表失败')
+  }
+  const data = await response.json()
+  if (Array.isArray(data)) {
+    return { items: data as Task[], nextCursor: null, hasMore: false }
+  }
+  return {
+    items: (data.items || []) as Task[],
+    nextCursor: data.nextCursor ?? null,
+    hasMore: !!data.hasMore,
+  }
+}
+
+/** 拉取全部广场任务（分页管道拼接，避免 1000 行截断） */
+export const fetchAllPlazaTasks = async (
+  baseUrl: string,
+  params: Omit<GetPlazaTasksParams, 'limit' | 'cursor'> = {}
+): Promise<Task[]> => {
+  const all: Task[] = []
+  let cursor: string | null = null
+  let hasMore = true
+  while (hasMore) {
+    const page = await getPlazaTasksPage(baseUrl, { ...params, limit: 100, cursor })
+    all.push(...page.items)
+    cursor = page.nextCursor
+    hasMore = page.hasMore
+    if (!page.items.length) break
+  }
+  return all
+}
+
 /**
  * 获取活动的任务列表
- * @param activityId 活动 ID
- * @param baseUrl API 基础 URL
  */
 export const getTasks = async (activityId: number, baseUrl: string): Promise<Task[]> => {
   try {
-    // 获取所有任务，然后在前端过滤
-    const allTasks = await getAllTasks(baseUrl)
+    const allTasks = await fetchAllPlazaTasks(baseUrl)
     return allTasks.filter(task => task.activityId === activityId)
   } catch (error: any) {
     console.error('Get tasks error:', error)
@@ -566,28 +637,10 @@ export const getTaskById = async (
   }
 }
 
-/**
- * 获取所有任务列表
- * @param baseUrl API 基础 URL
- */
-/** 获取任务列表；传入 communityId 时仅返回该社区任务 */
+/** 获取任务列表（全量，内部分页拼接）；传入 communityId 时仅返回该社区任务 */
 export const getAllTasks = async (baseUrl: string, communityId?: string | null): Promise<Task[]> => {
   try {
-    const params = communityId ? `?communityId=${encodeURIComponent(communityId)}` : ''
-    const response = await fetch(`${baseUrl}/api/tasks${params}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || '获取任务列表失败')
-    }
-
-    const tasks: Task[] = await response.json()
-    return tasks
+    return await fetchAllPlazaTasks(baseUrl, { communityId })
   } catch (error: any) {
     console.error('Get all tasks error:', error)
     throw error
@@ -861,11 +914,20 @@ export const submitProof = async (
  * 获取审核中的任务列表
  * @param baseUrl API 基础 URL
  */
-export const getReviewTasks = async (baseUrl: string): Promise<Task[]> => {
+export const getReviewTasks = async (baseUrl: string, communityId?: string | null): Promise<Task[]> => {
   try {
-    // 从后端获取所有任务，然后过滤出审核中的任务
-    const allTasks = await getAllTasks(baseUrl)
-    return allTasks.filter(task => task.status === 'under_review')
+    const sp = new URLSearchParams()
+    if (communityId) sp.set('communityId', communityId)
+    const q = sp.toString()
+    const response = await fetch(`${baseUrl}/api/tasks/review${q ? `?${q}` : ''}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error((error as { error?: string }).error || '获取审核任务失败')
+    }
+    return (await response.json()) as Task[]
   } catch (error) {
     console.error('Get review tasks error:', error)
     return []

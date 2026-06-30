@@ -1,4 +1,5 @@
 import { Task } from '../types/task'
+import { deriveGroupedPlazaStatus } from './taskPlazaListPure'
 
 export const TASK_ROW_SELECT =
   'id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at'
@@ -54,7 +55,6 @@ export function buildGroupedPlazaTasks(
     const taskTags = taskInfo ? taskTagsMap[taskInfo.id] || [] : []
 
     if (taskInfo?.participant_limit && taskInfo.participant_limit > 1) {
-      const claimedCount = taskGroup.filter(t => t.claimer_id).length
       const participants = taskGroup.map(t =>
         mapDbTaskToTask(t, taskInfo, t.task_timeline, t.task_proof, taskTags)
       ).map(participantTask => ({
@@ -77,21 +77,7 @@ export function buildGroupedPlazaTasks(
         taskTags
       )
       ;(representativeTask as any).participantsList = participants
-
-      if (claimedCount < taskInfo.participant_limit) {
-        representativeTask.status = 'unclaimed' as any
-      } else {
-        const allCompleted = participants.every(p => p.status === 'completed' || p.status === 'rejected')
-        if (allCompleted && participants.length > 0) {
-          const hasCompleted = participants.some(p => p.status === 'completed')
-          representativeTask.status = hasCompleted ? 'completed' : ('rejected' as any)
-        } else {
-          const uncompletedParticipant = participants.find(
-            p => p.status !== 'completed' && p.status !== 'rejected'
-          )
-          representativeTask.status = (uncompletedParticipant?.status || 'unclaimed') as any
-        }
-      }
+      representativeTask.status = deriveGroupedPlazaStatus(taskInfo.participant_limit, taskGroup) as any
       return representativeTask
     }
 

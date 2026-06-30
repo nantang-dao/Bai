@@ -11,6 +11,13 @@ import {
   buildGroupedPlazaTasks,
   buildFlatProfileTasks,
 } from '../services/taskListAssembly'
+import {
+  fetchPlazaTasksPage,
+  fetchAllPlazaTasks,
+  fetchReviewTasksList,
+  plazaItemsToApiTasks,
+} from '../services/taskPlazaList'
+import type { PlazaFilterTab, PlazaSortField } from '../services/taskPlazaListPure'
 
 // ==================== 类型定义 ====================
 
@@ -628,42 +635,50 @@ const handleError = (res: Response, error: any, defaultMessage: string) => {
 }
 
 
-// 获取所有任务（适配新数据库结构）；支持 ?communityId= 按社区过滤
+// 获取任务广场列表（task_info 游标分页）；支持 ?communityId= & limit & cursor & sort & status & tagId & search
+// ?all=1 时拉取全部页（供 dao 等管理页使用，仍走分页管道，不会触发 1000 行截断）
 export const getAllTasks = async (req: Request, res: Response) => {
     try {
       const communityId = (req.query.communityId as string)?.trim() || null
+      const fetchAll = req.query.all === '1' || req.query.all === 'true'
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined
+      const cursor = (req.query.cursor as string) || null
+      const sort = (req.query.sort as PlazaSortField) || 'createdAt'
+      const status = (req.query.status as PlazaFilterTab) || 'all'
+      const tagId = (req.query.tagId as string) || null
+      const search = (req.query.search as string) || null
 
-      // 只选择 tasks 表中存在的字段（排除已删除的字段）
-      let tasksData: any[] = []
-      if (communityId) {
-        const { data: infoIds } = await supabase.from('task_info').select('id').eq('community_id', communityId)
-        const ids = (infoIds || []).map((i: any) => i.id)
-        if (ids.length === 0) {
-          return res.json([])
-        }
-        const { data, error } = await supabase
-          .from('tasks')
-          .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at')
-          .in('task_info_id', ids)
-          .order('created_at', { ascending: false })
-        if (error) throw error
-        tasksData = data || []
-      } else {
-        const { data, error } = await supabase
-          .from('tasks')
-          .select('id, task_info_id, creator_id, claimer_id, reward, currency, weight_coefficient, participant_index, status, completed_at, transferred_at, created_at, updated_at')
-          .order('created_at', { ascending: false })
-        if (error) throw error
-        tasksData = data || []
+      const baseParams = { communityId, sort, status, tagId, search }
+
+      if (fetchAll) {
+        const items = await fetchAllPlazaTasks(baseParams)
+        return res.json(plazaItemsToApiTasks(items))
       }
 
-      const { tasksWithInfo, taskTagsMap } = await enrichTaskRows(tasksData)
-      const groupedTasks = buildGroupedPlazaTasks(tasksWithInfo, taskTagsMap, mapDbTaskToTask)
-      res.json(groupedTasks)
+      const page = await fetchPlazaTasksPage({ ...baseParams, limit, cursor })
+      res.json({
+        items: plazaItemsToApiTasks(page.items),
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+      })
     } catch (error: any) {
       console.error('[GET ALL TASKS] Error:', error)
       handleError(res, error, '获取任务列表失败')
     }
+}
+
+/** 审核中任务列表（不再依赖全量 GET /api/tasks） */
+export const getReviewTasks = async (req: Request, res: Response) => {
+  try {
+    const communityId = (req.query.communityId as string)?.trim() || null
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100
+    const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0
+    const items = await fetchReviewTasksList({ communityId, limit, offset })
+    res.json(items)
+  } catch (error: any) {
+    console.error('[GET REVIEW TASKS] Error:', error)
+    handleError(res, error, '获取审核任务失败')
+  }
 }
 
 /** 当前用户相关的任务（发布或领取），扁平列表，供「我的」页使用 */

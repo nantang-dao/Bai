@@ -65,6 +65,9 @@ export function getLatestStatusFromTimeline(task: Task): TimelineStatus | null {
 /** 检查多人任务是否未领完 */
 export function isTaskNotFullyClaimed(task: Task): boolean {
   if (task.participantLimit && task.participantLimit > 1) {
+    if (typeof task.claimedCount === 'number') {
+      return task.claimedCount < task.participantLimit
+    }
     const currentParticipants = task.participantsList?.filter(p => p.claimerId && p.claimedAt).length || 0
     return currentParticipants < task.participantLimit
   }

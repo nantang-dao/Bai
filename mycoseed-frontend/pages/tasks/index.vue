@@ -93,16 +93,11 @@
         <div class="text-xl text-text-body animate-pulse">加载中...</div>
       </div>
 
-      <!-- 空状态 -->
-      <div v-else-if="filteredItems.length === 0" class="text-center py-12">
-        <div class="text-xl text-text-body mb-4">暂无内容</div>
-      </div>
-
       <!-- 内容列表 -->
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <!-- 任务卡片 -->
         <PixelCard
-          v-for="item in filteredItems"
+          v-for="item in taskItems"
           :key="`task-${item.id}`"
           hover
           class="cursor-pointer task-card-container"
@@ -207,6 +202,25 @@
           </template>
         </PixelCard>
       </div>
+
+      <!-- 空状态 -->
+      <div v-if="!loading && taskItems.length === 0" class="text-center py-12">
+        <div class="text-xl text-text-body mb-4">暂无内容</div>
+      </div>
+
+      <!-- 加载更多 -->
+      <div v-if="taskItems.length > 0" class="mt-8 text-center">
+        <div v-if="loadingMore" class="text-text-body animate-pulse py-4">加载更多...</div>
+        <button
+          v-else-if="hasMore"
+          type="button"
+          class="px-6 py-2 rounded-2xl bg-card border border-border text-sm text-text-body hover:bg-input-bg transition-colors"
+          @click="loadMore"
+        >
+          加载更多
+        </button>
+        <div v-else class="text-sm text-text-placeholder py-4">已加载全部任务</div>
+      </div>
     </div>
   </div>
 </template>
@@ -219,10 +233,10 @@ import PixelButton from '~/components/pixel/PixelButton.vue'
 import PixelAvatar from '~/components/pixel/PixelAvatar.vue'
 import { useUserStore } from '~/stores/user'
 import { useCommunityStore } from '~/stores/community'
-import { getAllTasks, getApiBaseUrl, getTaskTransactions, type Task, type TaskTag } from '~/utils/api'
+import { getPlazaTasksPage, getApiBaseUrl, getTaskTransactions, type Task, type TaskTag } from '~/utils/api'
 import { parseBeijingTime, getCurrentBeijingDate } from '~/utils/time'
 import { weiToToken } from '~/utils/display'
-import { getTaskStatusText, mapPublishedTaskToFilter } from '~/utils/taskStatus'
+import { getTaskStatusText } from '~/utils/taskStatus'
 definePageMeta({
   layout: 'default'
 })
@@ -259,6 +273,9 @@ const availableTags = ref<TaskTag[]>([])
 
 // 加载状态
 const loading = ref(false)
+const loadingMore = ref(false)
+const hasMore = ref(false)
+const nextCursor = ref<string | null>(null)
 
 // 任务列表
 const tasks = ref<Task[]>([])
@@ -266,43 +283,76 @@ const tasks = ref<Task[]>([])
 // 链上交易记录：taskId -> transactions[]
 const taskChainMap = ref<Record<string, any[]>>({})
 
-// 从 API 加载数据（按当前社区过滤）
+const plazaQueryParams = () => ({
+  communityId: communityStore.currentCommunityId || undefined,
+  sort: sortBy.value,
+  status: activeStatusTab.value as 'all' | 'pending' | 'unsubmit' | 'completed' | 'expired',
+  tagId: activeTagId.value || undefined,
+  search: searchQuery.value.trim() || undefined,
+  limit: 20,
+})
+
+const enrichCompletedTaskChain = async (newTasks: Task[]) => {
+  const baseUrl = getApiBaseUrl()
+  const completedTasks = newTasks.filter(t => t.status === 'completed')
+  if (completedTasks.length === 0) return
+  await Promise.all(
+    completedTasks.map(async (t) => {
+      try {
+        const txs = await getTaskTransactions(t.id, baseUrl)
+        if (txs?.length) {
+          taskChainMap.value = { ...taskChainMap.value, [t.id]: txs }
+        }
+      } catch { /* ignore */ }
+    })
+  )
+}
+
+const loadPage = async (append: boolean) => {
+  const baseUrl = getApiBaseUrl()
+  const page = await getPlazaTasksPage(baseUrl, {
+    ...plazaQueryParams(),
+    cursor: append ? nextCursor.value : null,
+  })
+  tasks.value = append ? [...tasks.value, ...page.items] : page.items
+  nextCursor.value = page.nextCursor
+  hasMore.value = page.hasMore
+  await enrichCompletedTaskChain(page.items)
+}
+
+// 从 API 加载数据（按当前社区 + 筛选分页）
 const loadData = async () => {
   loading.value = true
+  nextCursor.value = null
+  hasMore.value = false
   try {
-    const baseUrl = getApiBaseUrl()
     const communityId = communityStore.currentCommunityId || undefined
-    const apiTasks = await getAllTasks(baseUrl, communityId)
-    tasks.value = apiTasks
-
-    // 加载标签
     if (communityId) {
       try {
         const api = useApi()
         availableTags.value = await api.listTaskTags(communityId)
       } catch { /* ignore */ }
+    } else {
+      availableTags.value = []
     }
-
-    // 对已完成的任务，查询链上交易记录
-    const completedTasks = apiTasks.filter(t => t.status === 'completed')
-    if (completedTasks.length > 0) {
-      const chainMap: Record<string, any[]> = {}
-      await Promise.all(
-        completedTasks.map(async (t) => {
-          try {
-            const txs = await getTaskTransactions(t.id, baseUrl)
-            if (txs && txs.length > 0) {
-              chainMap[t.id] = txs
-            }
-          } catch { /* ignore */ }
-        })
-      )
-      taskChainMap.value = chainMap
-    }
+    await loadPage(false)
   } catch (error) {
     console.error('加载数据失败:', error)
+    tasks.value = []
   } finally {
     loading.value = false
+  }
+}
+
+const loadMore = async () => {
+  if (!hasMore.value || loadingMore.value || loading.value) return
+  loadingMore.value = true
+  try {
+    await loadPage(true)
+  } catch (error) {
+    console.error('加载更多失败:', error)
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -323,7 +373,7 @@ interface TaskItem {
   _task?: Task // 原始任务对象，用于判断是否失效
 }
 
-// 任务列表
+// 任务列表（服务端已筛选排序）
 const taskItems = computed<TaskItem[]>(() => {
   return tasks.value.map(task => ({
     id: task.id,
@@ -338,69 +388,21 @@ const taskItems = computed<TaskItem[]>(() => {
     creatorId: task.creatorId,
     creatorAvatar: task.creatorAvatar,
     tags: task.tags || [],
-    // 添加原始任务对象，用于判断是否失效
     _task: task
   }))
 })
 
-const mapTaskStatusToFilter = (item: TaskItem): string => {
-  if (item._task) return mapPublishedTaskToFilter(item._task)
-  if (item.status === 'unclaimed') return 'pending'
-  if (item.status === 'claimed' || item.status === 'unsubmit' || item.status === 'submitted' || item.status === 'under_review') {
-    return 'unsubmit'
-  }
-  if (item.status === 'completed') return 'completed'
-  if (item.status === 'rejected') return 'expired'
-  return item.status
+// 筛选/排序变更时重新请求第一页
+let filterDebounce: ReturnType<typeof setTimeout> | null = null
+const scheduleReload = () => {
+  if (filterDebounce) clearTimeout(filterDebounce)
+  filterDebounce = setTimeout(() => {
+    if (route.path === '/tasks') loadData()
+  }, 300)
 }
 
-// 过滤后的任务列表
-const filteredItems = computed(() => {
-  let items = taskItems.value
-  
-  // 搜索筛选
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.trim().toLowerCase()
-    items = items.filter(item =>
-      item.title.toLowerCase().includes(q) ||
-      item.description.toLowerCase().includes(q) ||
-      (item.creator || '').toLowerCase().includes(q)
-    )
-  }
-
-  // 标签筛选
-  if (activeTagId.value) {
-    items = items.filter(item =>
-      item.tags?.some(tag => tag.id === activeTagId.value)
-    )
-  }
-  
-  // 状态筛选
-  if (activeStatusTab.value !== 'all') {
-    items = items.filter(item => {
-      const filterStatus = mapTaskStatusToFilter(item)
-      return filterStatus === activeStatusTab.value
-    })
-  }
-
-  // 排序
-  items = [...items].sort((a, b) => {
-    if (sortBy.value === 'deadline') {
-      const da = a.submitDeadline || a.deadline || ''
-      const db = b.submitDeadline || b.deadline || ''
-      if (!da) return 1
-      if (!db) return -1
-      return da.localeCompare(db)
-    }
-    if (sortBy.value === 'reward') {
-      return (b.reward || 0) - (a.reward || 0)
-    }
-    // 默认按创建时间降序
-    return (b.createdAt || '').localeCompare(a.createdAt || '')
-  })
-  
-  return items
-})
+watch([activeStatusTab, sortBy, activeTagId], () => scheduleReload())
+watch(searchQuery, () => scheduleReload())
 
 // 格式化时间差（统一使用 UTC+8 北京时间，不受机器时区影响）
 const formatTimeAgo = (dateString: string): string => {
