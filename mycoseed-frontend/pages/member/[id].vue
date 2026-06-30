@@ -168,8 +168,24 @@
         </div>
 
         <template v-else>
+          <!-- 任务列表加载失败 -->
+          <div
+            v-if="tasksLoadError && activeTab !== 'PAYMENT'"
+            class="text-center py-12"
+          >
+            <div class="text-4xl mb-4">⚠️</div>
+            <div class="text-gray-500 mb-4">{{ tasksLoadError }}</div>
+            <button
+              type="button"
+              class="px-4 py-2 rounded-xl bg-black text-white text-sm font-bold hover:opacity-90"
+              @click="retryLoadTasks"
+            >
+              点击重试
+            </button>
+          </div>
+
           <!-- 待付款 Tab -->
-          <div v-if="activeTab === 'PAYMENT'" class="space-y-3">
+          <div v-else-if="activeTab === 'PAYMENT'" class="space-y-3">
             <div
               v-for="item in pendingFeed"
               :key="item.id"
@@ -393,6 +409,7 @@ const member = ref<any>(null)
 const history = ref<any[]>([])
 const communities = ref<any[]>([])
 const allTasks = ref<Task[]>([])
+const tasksLoadError = ref<string | null>(null)
 const loadingTasks = ref(false)
 const loadingPending = ref(false)
 const loadingEvents = ref(false)
@@ -629,9 +646,15 @@ async function loadPendingPayments() {
   }
 }
 
+async function retryLoadTasks() {
+  tasksLoadError.value = null
+  await loadClaimedTasks()
+}
+
 // 加载任务列表
 const loadClaimedTasks = async () => {
   loadingTasks.value = true
+  tasksLoadError.value = null
   try {
     const baseUrl = getApiBaseUrl()
     const tasks = await getMyTasks(baseUrl)
@@ -658,8 +681,10 @@ const loadClaimedTasks = async () => {
       )
       taskChainMap.value = chainMap
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to load tasks:', error)
+    allTasks.value = []
+    tasksLoadError.value = error?.message || '加载失败，请稍后重试'
   } finally {
     loadingTasks.value = false
   }
