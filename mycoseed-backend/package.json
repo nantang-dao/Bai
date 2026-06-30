@@ -11,7 +11,8 @@
     "oauth-diagnose": "cross-env NODE_ENV=development tsx scripts/oauth-diagnose.ts",
     "test:resolve-semi-user": "cross-env NODE_ENV=development tsx scripts/test-resolve-semi-user.ts",
     "test:withdraw-submission": "tsx scripts/test-withdraw-submission.ts",
-    "test:pending-see": "tsx scripts/test-pending-see.ts"
+    "test:pending-see": "tsx scripts/test-pending-see.ts",
+    "test:event-profile": "tsx scripts/test-event-profile.ts"
   },
   "keywords": [],
   "author": "",

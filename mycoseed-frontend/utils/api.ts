@@ -1802,7 +1802,7 @@ export async function markNotificationsRead (
   return res.json()
 }
 
-// ==================== 我的待结清款项 ====================
+// ==================== 我的待付款款项 ====================
 
 export type PendingPaymentItem = {
   type: 'task_payout' | 'event_registration'
@@ -1812,6 +1812,7 @@ export type PendingPaymentItem = {
   status: 'pending_transfer' | 'pending' | 'partial'
   sourceUrl: string
   communityId?: string
+  sortAt: string
 }
 
 export type MyPaymentsPendingResponse = {
@@ -1823,6 +1824,55 @@ export type MyPaymentsPendingResponse = {
 export async function getMyPaymentsPending(baseUrl?: string): Promise<MyPaymentsPendingResponse> {
   const url = baseUrl ?? getApiBaseUrl()
   const res = await fetch(`${url}/api/my-payments/pending`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+// ==================== 我报名 / 我发布的活动 ====================
+
+export type EventParticipationItem = {
+  participationId: string
+  eventId: string
+  communityId: string
+  title: string
+  registeredAt: string
+  amount: string | null
+  paymentStatus: 'free' | 'paid' | 'partial' | 'pending'
+  sourceUrl: string
+  sortAt: string
+}
+
+export type EventPublicationItem = {
+  eventId: string
+  communityId: string
+  title: string
+  createdAt: string
+  sourceUrl: string
+  sortAt: string
+}
+
+export async function getMyParticipatedEvents(baseUrl?: string): Promise<{ events: EventParticipationItem[]; total: number }> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const res = await fetch(`${url}/api/my-participations/events`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || res.statusText)
+  }
+  return res.json()
+}
+
+export async function getMyPublishedEvents(baseUrl?: string): Promise<{ events: EventPublicationItem[]; total: number }> {
+  const url = baseUrl ?? getApiBaseUrl()
+  const res = await fetch(`${url}/api/my-publications/events`, {
     method: 'GET',
     headers: getAuthHeaders(),
   })

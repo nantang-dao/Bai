@@ -34,6 +34,8 @@ export const useApi = () => {
     getTasks: (activityId: number) => api.getTasks(activityId, apiBaseUrl),
     getMyTasks: () => api.getMyTasks(apiBaseUrl),
     getMyPaymentsPending: () => api.getMyPaymentsPending(apiBaseUrl),
+    getMyParticipatedEvents: () => api.getMyParticipatedEvents(apiBaseUrl),
+    getMyPublishedEvents: () => api.getMyPublishedEvents(apiBaseUrl),
     getReviewTasks: () => api.getReviewTasks(apiBaseUrl),
 
     // 文件上传

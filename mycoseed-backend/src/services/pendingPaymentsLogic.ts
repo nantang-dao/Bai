@@ -55,6 +55,7 @@ export type PendingPaymentItem = {
   status: 'pending_transfer' | 'pending' | 'partial'
   sourceUrl: string
   communityId?: string
+  sortAt: string
 }
 
 export type MyPaymentsPendingResponse = {

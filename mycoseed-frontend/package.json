@@ -11,6 +11,7 @@
     "test:task-proof": "tsx scripts/test-task-proof.ts",
     "test:task-status": "tsx scripts/test-task-status.ts",
     "test:pending-see": "tsx scripts/test-pending-see.ts",
+    "test:participation-feed": "tsx scripts/test-participation-feed.ts",
     "test:component-imports": "tsx scripts/verify-component-imports.ts"
   },
   "dependencies": {

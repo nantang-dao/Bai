@@ -47,6 +47,7 @@ async function fetchPublisherPendingTasks(userId: string): Promise<PendingPaymen
       status: 'pending_transfer',
       sourceUrl: `/tasks/${t.id}`,
       communityId: info.community_id || undefined,
+      sortAt: t.completed_at || t.updated_at || t.created_at || new Date().toISOString(),
     })
   }
   return items
@@ -63,7 +64,7 @@ async function fetchParticipantPendingEvents(userId: string): Promise<PendingPay
 
   const { data: participations, error: pErr } = await supabase
     .from('community_event_participations')
-    .select('id, occurrence_id, option_id')
+    .select('id, occurrence_id, option_id, created_at')
     .eq('user_id', userId)
     .eq('status', 'registered')
 
@@ -152,6 +153,7 @@ async function fetchParticipantPendingEvents(userId: string): Promise<PendingPay
       status: payStatus === 'partial' ? 'partial' : 'pending',
       sourceUrl: `/community/${ev.community_id}/events/${eventId}`,
       communityId: ev.community_id,
+      sortAt: p.created_at || new Date().toISOString(),
     })
   }
 
