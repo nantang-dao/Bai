@@ -1,6 +1,14 @@
 import { supabase } from './supabase'
 import { createHash } from 'crypto'
 import { Readable } from 'stream'
+import { compressProofImage, extensionForMime } from './imageCompress'
+
+export type StorageUploadResult = {
+    url: string
+    hash: string
+    size: number
+    contentType: string
+}
 
 // 计算文件的 SHA-256 哈希值
 export const calculateFileHash = async (buffer: Buffer): Promise<string> => {
@@ -29,7 +37,7 @@ export const uploadFileToStorage = async (
     bucket: string,
     path: string,
     contentType: string
-): Promise<{ url: string; hash: string }> => {
+): Promise<StorageUploadResult> => {
     // 计算文件哈希
     const hash = await calculateFileHash(file)
 
@@ -53,7 +61,9 @@ export const uploadFileToStorage = async (
 
     return {
         url: publicUrl,
-        hash
+        hash,
+        size: file.length,
+        contentType,
     }
 }
 
@@ -68,22 +78,10 @@ export const uploadAvatar = async (
     file: Buffer,
     userId: string,
     contentType: string
-): Promise<{ url: string; hash: string }> => {
-    // 根据 MIME 类型推断文件扩展名
-    const getExtension = (mimeType: string): string => {
-        const mimeToExt: Record<string, string> = {
-            'image/jpeg': 'jpg',
-            'image/jpg': 'jpg',
-            'image/png': 'png',
-            'image/gif': 'gif',
-            'image/webp': 'webp'
-        }
-        return mimeToExt[mimeType.toLowerCase()] || 'jpg'
-    }
-
-    // 生成唯一文件名
+): Promise<StorageUploadResult> => {
     const timestamp = Date.now()
-    const ext = getExtension(contentType)
+    const extRaw = extensionForMime(contentType)
+    const ext = extRaw === 'bin' ? 'jpg' : extRaw
     const fileName = `${userId}/${timestamp}.${ext}`
 
     return await uploadFileToStorage(file, 'avatars', fileName, contentType)
@@ -104,29 +102,17 @@ export const uploadTaskProof = async (
     userId: string,
     index: number = 0,
     contentType: string
-): Promise<{ url: string; hash: string }> => {
-    // 根据 MIME 类型推断文件扩展名
-    const getExtension = (mimeType: string): string => {
-        if (mimeType === 'application/pdf') {
-            return 'pdf'
-        }
-        // 图片类型
-        const mimeToExt: Record<string, string> = {
-            'image/jpeg': 'jpg',
-            'image/jpg': 'jpg',
-            'image/png': 'png',
-            'image/gif': 'gif',
-            'image/webp': 'webp'
-        }
-        return mimeToExt[mimeType.toLowerCase()] || 'bin'
-    }
-
-    // 生成唯一文件名
+): Promise<StorageUploadResult> => {
+    const compressed = await compressProofImage(file, contentType)
     const timestamp = Date.now()
-    const ext = getExtension(contentType)
-    const fileName = `${taskId}/${userId}/${timestamp}_${index}.${ext}`
+    const fileName = `${taskId}/${userId}/${timestamp}_${index}.${compressed.extension}`
 
-    return await uploadFileToStorage(file, 'task-proofs', fileName, contentType)
+    return await uploadFileToStorage(
+        compressed.buffer,
+        'task-proofs',
+        fileName,
+        compressed.contentType
+    )
 }
 
 
@@ -145,7 +131,7 @@ export const uploadPostImage = async (
     communityId: string,
     index: number = 0,
     contentType: string
-): Promise<{ url: string; hash: string }> => {
+): Promise<StorageUploadResult> => {
     // 根据 MIME 类型推断文件扩展名（仅支持图片）
     const getExtension = (mimeType: string): string => {
         const mimeToExt: Record<string, string> = {
@@ -186,7 +172,7 @@ export const uploadMarketplaceImage = async (
     draftListingId: string,
     index: number,
     contentType: string
-): Promise<{ url: string; hash: string }> => {
+): Promise<StorageUploadResult> => {
     const getExtension = (mimeType: string): string => {
         const mimeToExt: Record<string, string> = {
             'image/jpeg': 'jpg',

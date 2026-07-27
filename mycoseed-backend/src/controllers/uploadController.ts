@@ -81,20 +81,20 @@ export const uploadProofController = async (req: AuthRequest, res: Response) => 
       }
     }
 
-    // 上传所有文件
+    // 上传所有文件（图片会在 storage 层压缩后再落盘）
     const uploadResults = await Promise.all(
       files.map((file, index) => 
         uploadTaskProof(file.buffer, taskId, user.id, index, file.mimetype)
       )
     )
 
-    // 构建返回数据
+    // 构建返回数据（size/type 以实际上传后的压缩结果为准）
     const fileInfos = uploadResults.map((result, index) => ({
       url: result.url,
       hash: result.hash,
       name: files[index].originalname,
-      size: files[index].size,
-      type: files[index].mimetype
+      size: result.size,
+      type: result.contentType
     }))
 
     res.json({
